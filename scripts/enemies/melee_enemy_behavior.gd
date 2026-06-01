@@ -15,11 +15,11 @@ func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 		return {}
 
 	while unit.current_ap > 0 and unit.is_alive():
-		var target := controller.get_nearest_opponent(unit)
+		var target = controller.get_nearest_opponent(unit)
 		if target == null:
 			break
 
-		var card := controller.find_playable_card_against(unit, target)
+		var card = controller.find_playable_card_against(unit, target)
 		if card != null:
 			state = State.ATTACK
 			if not controller.play_card(unit, card, [target]):

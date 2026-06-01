@@ -124,6 +124,15 @@ func get_attack_range() -> float:
 	return 0.0
 
 
+func get_battle_texture() -> Texture2D:
+	if character_state != null and character_state.character_data != null:
+		return character_state.character_data.battle_sprite
+	if enemy_state != null and enemy_state.enemy_data != null:
+		return enemy_state.enemy_data.battle_sprite
+
+	return null
+
+
 func get_max_ap(config: BattleConfig) -> int:
 	if character_state != null:
 		return character_state.get_max_ap(config)

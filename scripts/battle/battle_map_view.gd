@@ -21,7 +21,10 @@ func _draw() -> void:
 		return
 
 	var map_rect := Rect2(Vector2.ZERO, controller.map_data.map_size)
-	draw_rect(map_rect, Color(0.105, 0.12, 0.12, 1), true)
+	if controller.map_data.background_texture != null:
+		draw_texture_rect(controller.map_data.background_texture, map_rect, false)
+	else:
+		draw_rect(map_rect, Color(0.105, 0.12, 0.12, 1), true)
 	draw_rect(map_rect, Color(0.42, 0.48, 0.5, 1), false, 2.0)
 	draw_rect(controller.map_data.player_deployment_rect, Color(0.15, 0.45, 0.8, 0.18), true)
 	draw_rect(controller.map_data.player_deployment_rect, Color(0.25, 0.6, 0.95, 0.8), false, 2.0)
@@ -39,6 +42,12 @@ func _draw() -> void:
 		if unit == controller.current_unit:
 			draw_circle(unit.position, unit.radius + 6.0, Color(1.0, 0.9, 0.35, 0.45))
 
-		draw_circle(unit.position, unit.radius, color)
+		var token_rect := Rect2(unit.position - Vector2(unit.radius, unit.radius), Vector2(unit.radius * 2.0, unit.radius * 2.0))
+		var battle_texture := unit.get_battle_texture()
+		if battle_texture != null:
+			draw_texture_rect(battle_texture, token_rect, false)
+			draw_arc(unit.position, unit.radius, 0.0, TAU, 48, color, 3.0)
+		else:
+			draw_circle(unit.position, unit.radius, color)
 		draw_arc(unit.position, unit.get_attack_range() + unit.radius, 0.0, TAU, 64, Color(color.r, color.g, color.b, 0.22), 2.0)
 		draw_string(get_theme_default_font(), unit.position + Vector2(-unit.radius, -unit.radius - 8.0), unit.get_display_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)

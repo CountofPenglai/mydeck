@@ -1,16 +1,17 @@
-[gd_resource type="Resource" script_class="EnemyData" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="EnemyData" load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/enemy_data.gd" id="1_enemy_data"]
-[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+[ext_resource type="Texture2D" path="res://assets/art/portraits/ranged_cultist_portrait.png" id="2_portrait"]
 [ext_resource type="Resource" path="res://resources/enemies/battle_enemy_deck_rule.tres" id="3_deck_rule"]
 [ext_resource type="Resource" path="res://resources/enemies/battle_ranged_behavior.tres" id="4_behavior"]
+[ext_resource type="Texture2D" path="res://assets/art/battle_units/ranged_cultist_battle.png" id="5_battle"]
 
 [resource]
 script = ExtResource("1_enemy_data")
 enemy_name = "远程训练敌"
 enemy_rank = 1
-portrait = ExtResource("2_icon")
-battle_sprite = ExtResource("2_icon")
+portrait = ExtResource("2_portrait")
+battle_sprite = ExtResource("5_battle")
 base_max_health = 20
 base_attack = 3
 base_speed = 7

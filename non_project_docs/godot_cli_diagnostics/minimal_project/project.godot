@@ -1,0 +1,6 @@
+config_version=5
+
+[application]
+
+config/name="godot_cli_minimal_diagnostic"
+config/features=PackedStringArray("4.6", "Forward Plus")

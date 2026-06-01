@@ -1,9 +1,11 @@
-[gd_resource type="Resource" script_class="BattleMapData" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BattleMapData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_map_data.gd" id="1_map"]
+[ext_resource type="Texture2D" path="res://assets/art/battlefields/ruined_keep_courtyard.png" id="2_bg"]
 
 [resource]
 script = ExtResource("1_map")
 map_size = Vector2(900, 600)
+background_texture = ExtResource("2_bg")
 player_deployment_rect = Rect2(40, 160, 220, 280)
 enemy_spawn_rect = Rect2(640, 120, 220, 360)
