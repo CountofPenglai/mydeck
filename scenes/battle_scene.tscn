@@ -1,0 +1,103 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_scene.gd" id="1_scene"]
+[ext_resource type="Script" path="res://scripts/battle/battle_map_view.gd" id="2_map_view"]
+[ext_resource type="Resource" path="res://resources/battle/sample_battle_scenario.tres" id="3_scenario"]
+
+[node name="BattleScene" type="Control"]
+custom_minimum_size = Vector2(1180, 680)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1180.0
+offset_bottom = 680.0
+script = ExtResource("1_scene")
+scenario = ExtResource("3_scenario")
+
+[node name="Layout" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="MapView" type="Control" parent="Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(900, 600)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+mouse_filter = 0
+script = ExtResource("2_map_view")
+
+[node name="Sidebar" type="VBoxContainer" parent="Layout"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="PhaseLabel" type="Label" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "阶段：部署"
+
+[node name="CurrentLabel" type="Label" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "当前单位：-"
+
+[node name="DeployTitle" type="Label" parent="Layout/Sidebar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "部署"
+
+[node name="DeployList" type="VBoxContainer" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StartButton" type="Button" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "开始战斗"
+
+[node name="ActionTitle" type="Label" parent="Layout/Sidebar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "行动"
+
+[node name="BasicAttackButton" type="Button" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "普通攻击"
+
+[node name="EndTurnButton" type="Button" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "结束回合"
+
+[node name="HandTitle" type="Label" parent="Layout/Sidebar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "手牌"
+
+[node name="HandList" type="VBoxContainer" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LogTitle" type="Label" parent="Layout/Sidebar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "战斗日志"
+
+[node name="LogLabel" type="RichTextLabel" parent="Layout/Sidebar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = false
+scroll_following = true

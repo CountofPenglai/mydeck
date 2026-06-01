@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="EnemyDeckRule" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_deck_rule.gd" id="1_deck_rule"]
+[ext_resource type="Resource" path="res://resources/cards/sample_card_stack.tres" id="2_sample_stack"]
+
+[resource]
+script = ExtResource("1_deck_rule")
+fixed_cards = [ExtResource("2_sample_stack")]
+random_pool = [ExtResource("2_sample_stack")]
+random_pick_count = 1

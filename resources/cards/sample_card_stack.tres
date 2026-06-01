@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CardStack" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_stack.gd" id="1_card_stack"]
+[ext_resource type="Resource" path="res://resources/cards/sample_card.tres" id="2_sample_card"]
+
+[resource]
+script = ExtResource("1_card_stack")
+card_data = ExtResource("2_sample_card")
+count = 2

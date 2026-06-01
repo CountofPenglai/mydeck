@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_data.gd" id="1_enemy_data"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+[ext_resource type="Resource" path="res://resources/enemies/battle_enemy_deck_rule.tres" id="3_deck_rule"]
+[ext_resource type="Resource" path="res://resources/enemies/battle_ranged_behavior.tres" id="4_behavior"]
+
+[resource]
+script = ExtResource("1_enemy_data")
+enemy_name = "远程训练敌"
+enemy_rank = 1
+portrait = ExtResource("2_icon")
+battle_sprite = ExtResource("2_icon")
+base_max_health = 20
+base_attack = 3
+base_speed = 7
+base_attack_range = 240.0
+deck_rule = ExtResource("3_deck_rule")
+behavior = ExtResource("4_behavior")

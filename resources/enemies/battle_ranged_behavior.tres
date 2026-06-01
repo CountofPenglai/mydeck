@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="RangedEnemyBehavior" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/ranged_enemy_behavior.gd" id="1_behavior"]
+
+[resource]
+script = ExtResource("1_behavior")
+behavior_label = "远程状态机"
+min_preferred_range = 180.0
+max_preferred_range = 260.0
+state = 0

@@ -1,0 +1,160 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_view.gd" id="1_enemy_view"]
+[ext_resource type="Resource" path="res://resources/enemies/sample_enemy_state.tres" id="2_enemy_state"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.13, 0.12, 0.12, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.72, 0.48, 0.42, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_image"]
+bg_color = Color(0.08, 0.075, 0.07, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="EnemyView" type="Control"]
+custom_minimum_size = Vector2(700, 500)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 700.0
+offset_bottom = 500.0
+script = ExtResource("1_enemy_view")
+enemy_state = ExtResource("2_enemy_state")
+
+[node name="RootPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Margin" type="MarginContainer" parent="RootPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+
+[node name="Layout" type="HBoxContainer" parent="RootPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="VisualColumn" type="VBoxContainer" parent="RootPanel/Margin/Layout"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PortraitPanel" type="PanelContainer" parent="RootPanel/Margin/Layout/VisualColumn"]
+custom_minimum_size = Vector2(0, 210)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_image")
+
+[node name="PortraitRect" type="TextureRect" parent="RootPanel/Margin/Layout/VisualColumn/PortraitPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+texture = ExtResource("3_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BattlePanel" type="PanelContainer" parent="RootPanel/Margin/Layout/VisualColumn"]
+custom_minimum_size = Vector2(0, 180)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_image")
+
+[node name="BattleRect" type="TextureRect" parent="RootPanel/Margin/Layout/VisualColumn/BattlePanel"]
+unique_name_in_owner = true
+layout_mode = 2
+texture = ExtResource("3_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="InfoColumn" type="VBoxContainer" parent="RootPanel/Margin/Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Header" type="VBoxContainer" parent="RootPanel/Margin/Layout/InfoColumn"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="NameLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "训练假想敌"
+text_overrun_behavior = 3
+
+[node name="RankLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "类别：普通"
+
+[node name="StatsGrid" type="GridContainer" parent="RootPanel/Margin/Layout/InfoColumn"]
+layout_mode = 2
+columns = 3
+
+[node name="HealthLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/StatsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "生命：24/24"
+
+[node name="AttackLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/StatsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "攻击：4"
+
+[node name="SpeedLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/StatsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 16
+text = "速度：3"
+
+[node name="BehaviorLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "战斗逻辑：空行为占位"
+
+[node name="RuleSummaryLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "卡组规则：固定 2 张，随机池 2 张，抽取 1 张"
+autowrap_mode = 3
+
+[node name="DeckSummaryLabel" type="Label" parent="RootPanel/Margin/Layout/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "本场卡组：4 张 / 1 种"
+
+[node name="DeckTitle" type="Label" parent="RootPanel/Margin/Layout/InfoColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "本场卡组"
+
+[node name="DeckList" type="VBoxContainer" parent="RootPanel/Margin/Layout/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="SampleDeckItem" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/DeckList"]
+layout_mode = 2
+text = "战术打击 x4"

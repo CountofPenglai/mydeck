@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="EnemyState" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_state.gd" id="1_enemy_state"]
+[ext_resource type="Resource" path="res://resources/enemies/battle_ranged_enemy_data.tres" id="2_enemy_data"]
+
+[resource]
+script = ExtResource("1_enemy_state")
+enemy_data = ExtResource("2_enemy_data")
+current_health = 20
+extra_ap_bonus = 0
