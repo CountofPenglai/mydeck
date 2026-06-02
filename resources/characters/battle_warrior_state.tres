@@ -1,18 +1,19 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
 [ext_resource type="Resource" path="res://resources/cards/battle_strike_stack.tres" id="3_card_stack"]
 [ext_resource type="Resource" path="res://resources/items/training_sword.tres" id="4_main_hand"]
-[ext_resource type="Resource" path="res://resources/items/guard_dagger.tres" id="5_off_hand"]
+[ext_resource type="Resource" path="res://resources/items/basic_shield.tres" id="5_off_hand"]
 [ext_resource type="Resource" path="res://resources/cards/quick_flourish_stack.tres" id="6_quick"]
 [ext_resource type="Resource" path="res://resources/cards/heavy_cleave_stack.tres" id="7_heavy"]
+[ext_resource type="Resource" path="res://resources/cards/battle_slam_stack.tres" id="8_slam"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 36
-deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy")]
+deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam")]
 main_hand_weapon = ExtResource("4_main_hand")
 off_hand_weapon = ExtResource("5_off_hand")
 extra_ap_bonus = 0

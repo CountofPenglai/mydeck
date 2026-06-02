@@ -18,6 +18,7 @@ var current_ap: int = 0
 var draw_pile: Array[CardData] = []
 var hand: Array[CardData] = []
 var discard_pile: Array[CardData] = []
+var statuses: Array[StatusEffect] = []
 
 func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	unit_id = id
@@ -124,6 +125,13 @@ func get_attack_range() -> float:
 	return 0.0
 
 
+func has_equipment_tag(tag: String) -> bool:
+	if character_state != null:
+		return character_state.has_equipment_tag(tag)
+
+	return false
+
+
 func get_battle_texture() -> Texture2D:
 	if character_state != null and character_state.character_data != null:
 		return character_state.character_data.battle_sprite
@@ -172,6 +180,44 @@ func discard_card(card: CardData) -> void:
 	if index >= 0:
 		hand.remove_at(index)
 		discard_pile.append(card)
+
+
+func add_status(status: StatusEffect) -> void:
+	if status == null or status.status_id.is_empty() or status.stacks <= 0:
+		return
+
+	var existing := get_status(status.status_id)
+	if existing != null:
+		existing.add_stacks(status.stacks)
+		return
+
+	statuses.append(status.duplicate(true))
+
+
+func get_status(status_id: String) -> StatusEffect:
+	for status in statuses:
+		if status != null and status.status_id == status_id:
+			return status
+
+	return null
+
+
+func has_status(status_id: String) -> bool:
+	return get_status(status_id) != null
+
+
+func remove_status(status_id: String) -> void:
+	for i in range(statuses.size() - 1, -1, -1):
+		var status := statuses[i]
+		if status != null and status.status_id == status_id:
+			statuses.remove_at(i)
+
+
+func remove_expired_statuses() -> void:
+	for i in range(statuses.size() - 1, -1, -1):
+		var status := statuses[i]
+		if status == null or status.should_remove():
+			statuses.remove_at(i)
 
 
 func _prepare_deck(stacks: Array[CardStack], rng: RandomNumberGenerator, starting_hand_size: int) -> void:

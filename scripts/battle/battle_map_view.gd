@@ -26,6 +26,11 @@ func _draw() -> void:
 	else:
 		draw_rect(map_rect, Color(0.105, 0.12, 0.12, 1), true)
 	draw_rect(map_rect, Color(0.42, 0.48, 0.5, 1), false, 2.0)
+	if controller.map_data.boundary_points.size() >= 3:
+		for index in range(controller.map_data.boundary_points.size()):
+			var start := controller.map_data.boundary_points[index]
+			var end := controller.map_data.boundary_points[(index + 1) % controller.map_data.boundary_points.size()]
+			draw_line(start, end, Color(0.95, 0.85, 0.45, 0.75), 3.0, true)
 	draw_rect(controller.map_data.player_deployment_rect, Color(0.15, 0.45, 0.8, 0.18), true)
 	draw_rect(controller.map_data.player_deployment_rect, Color(0.25, 0.6, 0.95, 0.8), false, 2.0)
 	draw_rect(controller.map_data.enemy_spawn_rect, Color(0.85, 0.25, 0.18, 0.14), true)

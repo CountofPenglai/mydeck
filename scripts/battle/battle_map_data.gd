@@ -3,10 +3,14 @@ class_name BattleMapData
 
 @export var map_size: Vector2 = Vector2(900, 600)
 @export var background_texture: Texture2D
+@export var boundary_points: PackedVector2Array = PackedVector2Array()
 @export var player_deployment_rect: Rect2 = Rect2(Vector2(40, 160), Vector2(220, 280))
 @export var enemy_spawn_rect: Rect2 = Rect2(Vector2(640, 120), Vector2(220, 360))
 
 func contains_map_position(position: Vector2) -> bool:
+	if boundary_points.size() >= 3:
+		return Geometry2D.is_point_in_polygon(position, boundary_points)
+
 	return Rect2(Vector2.ZERO, map_size).has_point(position)
 
 

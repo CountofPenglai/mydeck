@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="BattleGlobalEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_global_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_name = "无全局效果"
+description = "占位接口。该场景暂无实际全局战斗效果。"

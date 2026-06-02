@@ -3,6 +3,7 @@ class_name BattleController
 
 signal log_message(message: String)
 signal state_changed
+signal basic_attack_triggered(context: Dictionary)
 
 enum Phase {
 	DEPLOYMENT,
@@ -13,6 +14,7 @@ enum Phase {
 var scenario: BattleScenario
 var config: BattleConfig
 var map_data: BattleMapData
+var scene_prototype
 var rng := RandomNumberGenerator.new()
 var phase: int = Phase.DEPLOYMENT
 var units: Array[BattleUnitState] = []
@@ -21,11 +23,19 @@ var enemy_units: Array[BattleUnitState] = []
 var turn_order: Array[BattleUnitState] = []
 var current_turn_index: int = -1
 var current_unit: BattleUnitState
+var _effect_queue_scopes: Array = []
+var _effect_queue_sequence: int = 0
+var _effect_queue_depth: int = 0
+var _card_resolution_stack: Array = []
+var _card_resolution_depth: int = 0
 
 func setup(new_scenario: BattleScenario) -> void:
 	scenario = new_scenario
 	config = scenario.battle_config
-	map_data = scenario.map_data
+	scene_prototype = scenario.scene_prototype
+	map_data = scenario.get_map_data()
+	if scene_prototype != null and scene_prototype.scene_texture != null:
+		map_data.background_texture = scene_prototype.scene_texture
 	rng.seed = scenario.seed
 	phase = Phase.DEPLOYMENT
 	units.clear()
@@ -34,6 +44,11 @@ func setup(new_scenario: BattleScenario) -> void:
 	turn_order.clear()
 	current_turn_index = -1
 	current_unit = null
+	_effect_queue_scopes = [[]]
+	_effect_queue_sequence = 0
+	_effect_queue_depth = 0
+	_card_resolution_stack.clear()
+	_card_resolution_depth = 0
 
 	var id := 0
 	for character_state in scenario.players:
@@ -47,7 +62,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		units.append(unit)
 		player_units.append(unit)
 
-	for enemy_state in scenario.enemies:
+	for enemy_state in scenario.get_enemy_states():
 		if enemy_state == null:
 			continue
 		enemy_state.ensure_initialized(rng.randi())
@@ -60,6 +75,10 @@ func setup(new_scenario: BattleScenario) -> void:
 		units.append(unit)
 		enemy_units.append(unit)
 
+	_queue_global_effects("on_battle_setup")
+	resolve_effect_queue()
+	if scene_prototype != null:
+		_emit_log("载入场景原型：%s。" % scene_prototype.get_display_title())
 	_emit_log("进入部署阶段。请选择玩家单位并点击部署区。")
 	state_changed.emit()
 
@@ -125,6 +144,10 @@ func advance_turn() -> void:
 		current_unit = turn_order[current_turn_index]
 		if current_unit.is_alive():
 			current_unit.start_turn(config)
+			_queue_unit_status_effects("on_turn_start", current_unit)
+			_queue_global_effects("on_turn_start", current_unit)
+			resolve_effect_queue()
+			current_unit.remove_expired_statuses()
 			_emit_log("轮到 %s，AP：%d。" % [current_unit.get_display_name(), current_unit.current_ap])
 			state_changed.emit()
 			if current_unit.faction == BattleUnitState.Faction.ENEMY:
@@ -147,6 +170,8 @@ func end_current_turn() -> void:
 		_emit_log("%s 保留 %d AP，抽取 %d 张牌。" % [current_unit.get_display_name(), current_unit.current_ap, drawn])
 
 	current_unit.current_ap = 0
+	_queue_global_effects("on_turn_end", current_unit)
+	resolve_effect_queue()
 	advance_turn()
 
 
@@ -209,11 +234,15 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array) -> bool:
 		return false
 
 	user.current_ap -= card.ap_cost
-	card.play(context, targets)
-	user.discard_card(card)
-	_emit_log("%s 打出 %s，消耗 %d AP。" % [user.get_display_name(), card.card_name, card.ap_cost])
-	state_changed.emit()
-	_check_battle_end()
+	_card_resolution_stack.append({
+		"user": user,
+		"card": card,
+		"targets": targets.duplicate(),
+		"context": context,
+	})
+	if _card_resolution_depth <= 0 and _effect_queue_depth <= 0:
+		_resolve_card_stack()
+
 	return true
 
 
@@ -235,21 +264,42 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState) -> bool:
 		return false
 
 	attacker.current_ap -= config.basic_attack_ap_cost
-	apply_damage(attacker, target, attacker.get_attack(), "普通攻击")
+	perform_strike(attacker, target, null, "普通攻击")
+	resolve_effect_queue()
 	state_changed.emit()
 	_check_battle_end()
 	return true
 
 
-func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害") -> void:
+func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击") -> int:
+	if attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
+		return 0
+
+	var damage_amount := attacker.get_attack()
+	var actual_damage := apply_damage(attacker, target, damage_amount, label)
+	var trigger_context := {
+		"controller": self,
+		"attacker": attacker,
+		"target": target,
+		"source": source,
+		"damage_amount": damage_amount,
+		"actual_damage": actual_damage,
+		"label": label,
+	}
+	enqueue_trigger(Callable(self, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
+	return actual_damage
+
+
+func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害") -> int:
 	if target == null or not target.is_alive():
-		return
+		return 0
 
 	var actual := target.apply_damage(amount)
 	var source_name := "效果"
 	if source != null:
 		source_name = source.get_display_name()
 	_emit_log("%s 对 %s 造成 %d 点%s。" % [source_name, target.get_display_name(), actual, label])
+	return actual
 
 
 func get_opposing_units(unit: BattleUnitState) -> Array[BattleUnitState]:
@@ -418,6 +468,9 @@ func _rebuild_turn_order() -> void:
 
 
 func clamp_to_map(position: Vector2) -> Vector2:
+	if map_data.boundary_points.size() >= 3:
+		return _closest_boundary_point(position)
+
 	return Vector2(
 		clampf(position.x, 0.0, map_data.map_size.x),
 		clampf(position.y, 0.0, map_data.map_size.y)
@@ -458,3 +511,214 @@ func _check_battle_end() -> bool:
 
 func _emit_log(message: String) -> void:
 	log_message.emit(message)
+
+
+func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context: Dictionary = {}) -> void:
+	if not callback.is_valid():
+		return
+
+	var queue := _get_current_effect_queue()
+	queue.append({
+		"callback": callback,
+		"args": args,
+		"priority": priority,
+		"order": _effect_queue_sequence,
+		"label": label,
+		"context": context,
+		"is_trigger": false,
+	})
+	_effect_queue_sequence += 1
+
+
+func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context: Dictionary = {}) -> void:
+	if not callback.is_valid():
+		return
+
+	var queue := _get_current_effect_queue()
+	queue.append({
+		"callback": callback,
+		"args": args,
+		"priority": priority,
+		"order": _effect_queue_sequence,
+		"label": label,
+		"context": context,
+		"is_trigger": true,
+	})
+	_effect_queue_sequence += 1
+
+
+func resolve_effect_queue() -> void:
+	if _effect_queue_scopes.is_empty():
+		_effect_queue_scopes.append([])
+
+	_drain_current_effect_queue()
+
+
+func _emit_basic_attack_trigger(context: Dictionary) -> void:
+	basic_attack_triggered.emit(context)
+
+
+func _queue_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
+	if scene_prototype == null:
+		return
+
+	for effect in scene_prototype.global_effects:
+		if effect == null or not effect.has_method(callback_name):
+			continue
+
+		var context := {
+			"controller": self,
+			"scenario": scenario,
+			"scene_prototype": scene_prototype,
+			"unit": unit,
+		}
+		enqueue_effect(
+			Callable(effect, callback_name),
+			[context],
+			_get_effect_priority(effect),
+			"%s.%s" % [effect.get_display_name(), callback_name],
+			context
+		)
+
+
+func _queue_unit_status_effects(callback_name: String, unit: BattleUnitState) -> void:
+	if unit == null:
+		return
+
+	for status in unit.statuses.duplicate():
+		if status == null or not status.has_method(callback_name):
+			continue
+
+		var context := {
+			"controller": self,
+			"unit": unit,
+			"status": status,
+		}
+		enqueue_effect(
+			Callable(status, callback_name),
+			[unit, context],
+			_get_effect_priority(status),
+			"%s.%s" % [status.display_name, callback_name],
+			context
+		)
+
+
+func _resolve_card_stack() -> void:
+	while not _card_resolution_stack.is_empty():
+		var frame: Dictionary = _card_resolution_stack.pop_back()
+		_card_resolution_depth += 1
+		_resolve_card_frame(frame)
+		_card_resolution_depth -= 1
+
+
+func _resolve_card_frame(frame: Dictionary) -> void:
+	var user: BattleUnitState = frame.get("user")
+	var card: CardData = frame.get("card")
+	var targets: Array = frame.get("targets", [])
+	var context: Dictionary = frame.get("context", {})
+	if user == null or card == null:
+		return
+
+	_push_effect_queue_scope()
+	enqueue_effect(
+		Callable(card, "play"),
+		[context, targets],
+		_get_card_effect_priority(card),
+		"%s 卡牌效果" % card.card_name,
+		context
+	)
+	_drain_current_effect_queue()
+	_pop_effect_queue_scope()
+
+	user.discard_card(card)
+	_emit_log("%s 打出 %s，消耗 %d AP。" % [user.get_display_name(), card.card_name, card.ap_cost])
+	state_changed.emit()
+	_check_battle_end()
+
+
+func _drain_current_effect_queue() -> void:
+	var queue := _get_current_effect_queue()
+	_effect_queue_depth += 1
+	while not queue.is_empty():
+		queue.sort_custom(Callable(self, "_compare_effect_queue_entries"))
+		var entry: Dictionary = queue.pop_front()
+		_execute_effect_queue_entry(entry)
+		if not _card_resolution_stack.is_empty():
+			_resolve_card_stack()
+	_effect_queue_depth -= 1
+
+
+func _execute_effect_queue_entry(entry: Dictionary) -> void:
+	var callback: Callable = entry.get("callback", Callable())
+	if not callback.is_valid():
+		return
+
+	var args: Array = entry.get("args", [])
+	callback.callv(args)
+
+
+func _compare_effect_queue_entries(a: Dictionary, b: Dictionary) -> bool:
+	var priority_a := int(a.get("priority", 0))
+	var priority_b := int(b.get("priority", 0))
+	if priority_a == priority_b:
+		return int(a.get("order", 0)) < int(b.get("order", 0))
+
+	return priority_a > priority_b
+
+
+func _get_current_effect_queue() -> Array:
+	if _effect_queue_scopes.is_empty():
+		_effect_queue_scopes.append([])
+
+	return _effect_queue_scopes[_effect_queue_scopes.size() - 1]
+
+
+func _push_effect_queue_scope() -> void:
+	_effect_queue_scopes.append([])
+
+
+func _pop_effect_queue_scope() -> void:
+	if _effect_queue_scopes.size() <= 1:
+		_get_current_effect_queue().clear()
+		return
+
+	_effect_queue_scopes.remove_at(_effect_queue_scopes.size() - 1)
+
+
+func _get_card_effect_priority(card: CardData) -> int:
+	if card != null and card.effect != null:
+		return _get_effect_priority(card.effect)
+
+	return 0
+
+
+func _get_effect_priority(effect) -> int:
+	if effect == null:
+		return 0
+
+	var value = effect.get("effect_priority")
+	if value == null:
+		return 0
+
+	return int(value)
+
+
+func _apply_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
+	_queue_global_effects(callback_name, unit)
+	resolve_effect_queue()
+
+
+func _closest_boundary_point(position: Vector2) -> Vector2:
+	var closest := position
+	var closest_distance := INF
+	var point_count := map_data.boundary_points.size()
+	for index in range(point_count):
+		var start := map_data.boundary_points[index]
+		var end := map_data.boundary_points[(index + 1) % point_count]
+		var candidate := Geometry2D.get_closest_point_to_segment(position, start, end)
+		var distance := position.distance_to(candidate)
+		if distance < closest_distance:
+			closest = candidate
+			closest_distance = distance
+
+	return closest

@@ -87,6 +87,15 @@ func get_attack_range() -> float:
 	return character_data.base_attack_range
 
 
+func has_equipment_tag(tag: String) -> bool:
+	if main_hand_weapon != null and main_hand_weapon.has_tag(tag):
+		return true
+	if off_hand_weapon != null and not (main_hand_weapon != null and main_hand_weapon.is_two_handed()):
+		return off_hand_weapon.has_tag(tag)
+
+	return false
+
+
 func get_max_ap(config = null) -> int:
 	var base_ap := 4
 	if config != null:

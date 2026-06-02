@@ -1,6 +1,8 @@
 extends Resource
 class_name CardEffect
 
+@export var effect_priority: int = 0
+
 func can_play(_context: Dictionary = {}) -> bool:
 	return true
 

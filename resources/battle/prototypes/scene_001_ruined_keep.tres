@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BattleScenePrototype" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_scene_prototype.gd" id="1_prototype"]
+[ext_resource type="Texture2D" path="res://assets/art/battlefields/ruined_keep_courtyard.png" id="2_texture"]
+[ext_resource type="Resource" path="res://resources/battle/sample_battle_map.tres" id="3_map"]
+[ext_resource type="Resource" path="res://resources/battle/sample_melee_enemy_config.tres" id="4_melee"]
+[ext_resource type="Resource" path="res://resources/battle/sample_ranged_enemy_config.tres" id="5_ranged"]
+[ext_resource type="Resource" path="res://resources/battle/sample_scene_global_effect.tres" id="6_effect"]
+
+[resource]
+script = ExtResource("1_prototype")
+scene_id = "BATTLE-001"
+difficulty = 2
+scene_texture = ExtResource("2_texture")
+map_data = ExtResource("3_map")
+enemy_configs = [ExtResource("4_melee"), ExtResource("5_ranged")]
+global_effects = [ExtResource("6_effect")]

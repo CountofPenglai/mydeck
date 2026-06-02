@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BattleEnemyConfig" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/battle/battle_enemy_config.gd" id="1_config"]
+[ext_resource type="Resource" path="res://resources/enemies/battle_melee_enemy_state.tres" id="2_enemy"]
+
+[resource]
+script = ExtResource("1_config")
+enemy_state = ExtResource("2_enemy")
+count = 1
