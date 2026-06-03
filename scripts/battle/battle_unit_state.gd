@@ -26,7 +26,7 @@ func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	faction = Faction.PLAYER
 	character_state = state
 	enemy_state = null
-	radius = unit_radius
+	radius = _resolve_collision_radius(unit_radius)
 	is_deployed = false
 
 
@@ -36,7 +36,7 @@ func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position:
 	faction = Faction.ENEMY
 	character_state = null
 	enemy_state = state
-	radius = unit_radius
+	radius = _resolve_collision_radius(unit_radius)
 	position = start_position
 	is_deployed = true
 
@@ -99,30 +99,84 @@ func get_max_health() -> int:
 
 
 func get_attack() -> int:
+	var profile := build_strike_profile()
+	return int(profile.get("primary_power", 0)) + int(profile.get("damage_bonus", 0))
+
+
+func get_damage_bonus(context: Dictionary = {}) -> int:
 	if character_state != null:
-		return character_state.get_attack()
+		var merged_context := context.duplicate()
+		merged_context["unit"] = self
+		return character_state.get_damage_bonus(merged_context)
 	if enemy_state != null:
-		return enemy_state.get_attack()
+		return enemy_state.get_damage_bonus(context)
+
+	return 0
+
+
+func get_status_damage_bonus(context: Dictionary = {}) -> int:
+	var bonus := 0
+	for status in statuses:
+		if status != null and status.has_method("get_damage_bonus"):
+			bonus += status.get_damage_bonus(self, context)
+
+	return bonus
+
+
+func get_agility() -> int:
+	if character_state != null:
+		return character_state.get_agility()
+	if enemy_state != null:
+		return enemy_state.get_agility()
 
 	return 0
 
 
 func get_speed() -> int:
+	return get_agility()
+
+
+func get_attack_range(weapon_slot: String = "") -> float:
 	if character_state != null:
-		return character_state.get_speed()
+		return character_state.get_attack_range(weapon_slot)
 	if enemy_state != null:
-		return enemy_state.get_speed()
-
-	return 0
-
-
-func get_attack_range() -> float:
-	if character_state != null:
-		return character_state.get_attack_range()
-	if enemy_state != null:
-		return enemy_state.get_attack_range()
+		return enemy_state.get_attack_range(weapon_slot)
 
 	return 0.0
+
+
+func build_strike_profile(weapon_slot: String = "") -> Dictionary:
+	var context := {"unit": self}
+	if character_state != null:
+		return character_state.build_strike_profile(weapon_slot, context)
+	if enemy_state != null:
+		return enemy_state.build_strike_profile(weapon_slot, context)
+
+	return {
+		"primary_slot": "unarmed",
+		"primary_weapon": null,
+		"primary_power": 1,
+		"primary_range": 0.0,
+		"primary_weapon_type": WeaponData.WeaponType.MELEE,
+		"damage_bonus": 0,
+		"add_offhand": false,
+		"offhand_weapon": null,
+		"offhand_power": 0,
+	}
+
+
+func needs_weapon_choice() -> bool:
+	if character_state != null:
+		return character_state.needs_weapon_choice()
+
+	return false
+
+
+func get_attack_weapon_options() -> Array:
+	if character_state != null:
+		return character_state.get_attack_weapon_options()
+
+	return []
 
 
 func has_equipment_tag(tag: String) -> bool:
@@ -151,7 +205,7 @@ func get_max_ap(config: BattleConfig) -> int:
 
 
 func get_move_distance_per_ap(config: BattleConfig) -> float:
-	return config.move_distance_per_ap + float(get_speed()) * config.move_distance_per_speed
+	return config.move_distance_per_ap + float(get_agility()) * config.move_distance_per_agility
 
 
 func distance_to(other: BattleUnitState) -> float:
@@ -243,3 +297,16 @@ func _shuffle_cards(cards: Array[CardData], rng: RandomNumberGenerator) -> void:
 		var temp := cards[i]
 		cards[i] = cards[j]
 		cards[j] = temp
+
+
+func _resolve_collision_radius(default_radius: float) -> float:
+	var data_radius := 0.0
+	if character_state != null:
+		data_radius = character_state.get_collision_radius()
+	elif enemy_state != null:
+		data_radius = enemy_state.get_collision_radius()
+
+	if data_radius > 0.0:
+		return data_radius
+
+	return default_radius

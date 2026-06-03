@@ -11,5 +11,6 @@ icon = ExtResource("2_icon")
 max_stack = 1
 equipment_tag = "武器"
 grip_type = 0
-attack_bonus = 3
+weapon_type = 0
+weapon_power = 5
 attack_range = 90.0

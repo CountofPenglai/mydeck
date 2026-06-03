@@ -8,8 +8,14 @@ enum GripType {
 	TWO_HAND,
 }
 
+enum WeaponType {
+	MELEE,
+	RANGED,
+}
+
 @export_enum("单手", "主手", "副手", "双手") var grip_type: int = GripType.ONE_HAND
-@export var attack_bonus: int = 0
+@export_enum("近战", "远程") var weapon_type: int = WeaponType.MELEE
+@export var weapon_power: int = 1
 @export var attack_range: float = 80.0
 
 func can_equip_main_hand() -> bool:
@@ -22,6 +28,16 @@ func can_equip_off_hand() -> bool:
 
 func is_two_handed() -> bool:
 	return grip_type == GripType.TWO_HAND
+
+
+func get_weapon_type_label() -> String:
+	match weapon_type:
+		WeaponType.MELEE:
+			return "近战"
+		WeaponType.RANGED:
+			return "远程"
+		_:
+			return "未知"
 
 
 func get_grip_label() -> String:

@@ -4,11 +4,20 @@ class_name BattleController
 signal log_message(message: String)
 signal state_changed
 signal basic_attack_triggered(context: Dictionary)
+signal weapon_switch_started(context: Dictionary)
+signal weapon_switched_out(context: Dictionary)
+signal weapon_switched_in(context: Dictionary)
 
 enum Phase {
 	DEPLOYMENT,
 	BATTLE,
 	ENDED,
+}
+
+enum UnitFilter {
+	OPPONENTS,
+	ALLIES,
+	ALL,
 }
 
 var scenario: BattleScenario
@@ -28,6 +37,9 @@ var _effect_queue_sequence: int = 0
 var _effect_queue_depth: int = 0
 var _card_resolution_stack: Array = []
 var _card_resolution_depth: int = 0
+var _current_card_effect_count: int = 0
+var _effect_limit_reached: bool = false
+const MAX_EFFECTS_PER_CARD := 32
 
 func setup(new_scenario: BattleScenario) -> void:
 	scenario = new_scenario
@@ -49,6 +61,8 @@ func setup(new_scenario: BattleScenario) -> void:
 	_effect_queue_depth = 0
 	_card_resolution_stack.clear()
 	_card_resolution_depth = 0
+	_current_card_effect_count = 0
+	_effect_limit_reached = false
 
 	var id := 0
 	for character_state in scenario.players:
@@ -68,7 +82,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		enemy_state.ensure_initialized(rng.randi())
 		enemy_state.current_health = enemy_state.get_max_health()
 		enemy_state.generate_deck(rng.randi())
-		var spawn_position := _find_enemy_spawn_position()
+		var spawn_position := _find_enemy_spawn_position(enemy_state)
 		var unit := BattleUnitState.new()
 		unit.setup_enemy(id, enemy_state, config.default_unit_radius, spawn_position)
 		id += 1
@@ -208,7 +222,7 @@ func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
 	return true
 
 
-func play_card(user: BattleUnitState, card: CardData, targets: Array) -> bool:
+func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}) -> bool:
 	if phase != Phase.BATTLE:
 		_emit_log("战斗尚未开始。")
 		return false
@@ -221,17 +235,23 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array) -> bool:
 		_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, card.ap_cost])
 		return false
 
-	if not _targets_are_valid(user, card, targets):
+	var weapon_slot := str(strike_context.get("weapon_slot", ""))
+	if not _targets_are_valid(user, card, targets, true, weapon_slot):
 		return false
 
 	var context := {
 		"controller": self,
 		"user": user,
 		"card": card,
+		"weapon_slot": weapon_slot,
 	}
 	if not card.can_play(context):
 		_emit_log("%s 当前不能打出。" % card.card_name)
 		return false
+
+	if _effect_limit_reached:
+		_emit_log("%s 未加入结算：单张卡牌效果结算已达到上限。" % card.card_name)
+		return true
 
 	user.current_ap -= card.ap_cost
 	_card_resolution_stack.append({
@@ -246,7 +266,7 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array) -> bool:
 	return true
 
 
-func basic_attack(attacker: BattleUnitState, target: BattleUnitState) -> bool:
+func basic_attack(attacker: BattleUnitState, target: BattleUnitState, weapon_slot: String = "") -> bool:
 	if phase != Phase.BATTLE:
 		return false
 
@@ -258,43 +278,189 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState) -> bool:
 		_emit_log("%s AP不足，普通攻击需要 %d AP。" % [attacker.get_display_name(), config.basic_attack_ap_cost])
 		return false
 
+	var attack_range := attacker.get_attack_range(weapon_slot)
 	var distance := attacker.distance_to(target)
-	if distance > attacker.get_attack_range():
-		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attacker.get_attack_range()])
+	if distance > attack_range:
+		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return false
 
 	attacker.current_ap -= config.basic_attack_ap_cost
-	perform_strike(attacker, target, null, "普通攻击")
+	perform_strike(attacker, target, null, "普通攻击", weapon_slot)
 	resolve_effect_queue()
 	state_changed.emit()
 	_check_battle_end()
 	return true
 
 
-func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击") -> int:
+func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击", weapon_slot: String = "") -> int:
+	return perform_strike_with_modifier(attacker, target, source, 0, label, weapon_slot)
+
+
+func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, label: String = "打击", weapon_slot: String = "") -> int:
 	if attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
 		return 0
 
-	var damage_amount := attacker.get_attack()
-	var actual_damage := apply_damage(attacker, target, damage_amount, label)
+	var profile := attacker.build_strike_profile(weapon_slot)
+	var primary_damage := maxi(0, int(profile.get("primary_power", 0)) + int(profile.get("damage_bonus", 0)) + damage_modifier)
+	var actual_damage := apply_damage(attacker, target, primary_damage, label)
+	var attack_results := [{
+		"slot": profile.get("primary_slot", ""),
+		"weapon": profile.get("primary_weapon"),
+		"damage_amount": primary_damage,
+		"actual_damage": actual_damage,
+	}]
+	if bool(profile.get("add_offhand", false)) and target.is_alive():
+		var offhand_damage := maxi(0, int(profile.get("offhand_power", 0)))
+		var offhand_actual := apply_damage(attacker, target, offhand_damage, "%s（副手）" % label)
+		actual_damage += offhand_actual
+		attack_results.append({
+			"slot": "off",
+			"weapon": profile.get("offhand_weapon"),
+			"damage_amount": offhand_damage,
+			"actual_damage": offhand_actual,
+		})
+
 	var trigger_context := {
 		"controller": self,
 		"attacker": attacker,
 		"target": target,
 		"source": source,
-		"damage_amount": damage_amount,
+		"damage_amount": primary_damage,
 		"actual_damage": actual_damage,
 		"label": label,
+		"strike_profile": profile,
+		"attack_results": attack_results,
 	}
 	enqueue_trigger(Callable(self, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
 	return actual_damage
 
 
+func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agility_modifier: int = 0, truncate_to_range: bool = true) -> Dictionary:
+	var result := {
+		"success": false,
+		"start_position": Vector2.ZERO,
+		"end_position": Vector2.ZERO,
+		"requested_position": target_position,
+		"max_distance": 0.0,
+	}
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return result
+
+	var start_position := unit.position
+	var end_position := target_position
+	result["start_position"] = start_position
+
+	if not map_data.contains_map_position(end_position):
+		end_position = clamp_to_map(end_position)
+
+	var max_distance := maxf(0.0, float(unit.get_agility() + agility_modifier) * config.move_distance_per_agility)
+	result["max_distance"] = max_distance
+	var direction := end_position - start_position
+	if truncate_to_range and direction.length() > max_distance:
+		if direction.length() <= 0.001:
+			end_position = start_position
+		else:
+			end_position = start_position + direction.normalized() * max_distance
+			end_position = clamp_to_map(end_position)
+
+	end_position = _find_clear_endpoint_along_segment(unit, start_position, end_position)
+	if not map_data.contains_map_position(end_position) or not _is_unit_position_clear(unit, end_position, true):
+		return result
+
+	unit.position = end_position
+	result["success"] = true
+	result["end_position"] = end_position
+	_emit_log("%s 移动到 (%.0f, %.0f)。" % [unit.get_display_name(), end_position.x, end_position.y])
+	state_changed.emit()
+	return result
+
+
+func get_units_by_filter(source: BattleUnitState, filter: int) -> Array[BattleUnitState]:
+	var result: Array[BattleUnitState] = []
+	if source == null:
+		return result
+
+	for unit in units:
+		if unit == null or unit == source or not unit.is_deployed or not unit.is_alive():
+			continue
+
+		if filter == UnitFilter.ALL:
+			result.append(unit)
+		elif filter == UnitFilter.OPPONENTS and unit.faction != source.faction:
+			result.append(unit)
+		elif filter == UnitFilter.ALLIES and unit.faction == source.faction:
+			result.append(unit)
+
+	return result
+
+
+func get_units_in_swept_circle(source: BattleUnitState, start_position: Vector2, end_position: Vector2, sweep_radius: float, filter: int) -> Array[BattleUnitState]:
+	var hits: Array[BattleUnitState] = []
+	for unit in get_units_by_filter(source, filter):
+		var hit_radius := sweep_radius + unit.radius
+		if _segment_intersects_circle(start_position, end_position, unit.position, hit_radius):
+			hits.append(unit)
+
+	hits.sort_custom(func(a: BattleUnitState, b: BattleUnitState) -> bool:
+		return _path_progress(start_position, end_position, a.position) < _path_progress(start_position, end_position, b.position)
+	)
+	return hits
+
+
+func switch_weapon_from_inventory(unit: BattleUnitState, preferred_weapon: WeaponData = null) -> Dictionary:
+	var result := {"success": false}
+	if unit == null or unit.character_state == null:
+		return result
+
+	var before_context := {
+		"controller": self,
+		"unit": unit,
+		"preferred_weapon": preferred_weapon,
+	}
+	enqueue_trigger(Callable(self, "_emit_weapon_switch_started"), [before_context], 0, "切换武器时", before_context)
+
+	result = unit.character_state.switch_weapon_from_inventory(preferred_weapon)
+	result["controller"] = self
+	result["unit"] = unit
+	if not bool(result.get("success", false)):
+		_emit_log("%s 没有可切换的背包武器。" % unit.get_display_name())
+		return result
+
+	var old_weapon = result.get("old_weapon")
+	var new_weapon = result.get("new_weapon")
+	if old_weapon != null:
+		enqueue_trigger(Callable(self, "_emit_weapon_switched_out"), [result], 0, "切换掉当前武器", result)
+	if new_weapon != null:
+		enqueue_trigger(Callable(self, "_emit_weapon_switched_in"), [result], 0, "切换出新的武器", result)
+
+	_emit_log("%s 切换武器：%s 装备到%s。" % [
+		unit.get_display_name(),
+		new_weapon.item_name,
+		"主手" if str(result.get("slot", "")) == "main" else "副手",
+	])
+	state_changed.emit()
+	return result
+
+
 func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害") -> int:
 	if target == null or not target.is_alive():
 		return 0
+	if amount <= 0:
+		return 0
 
-	var actual := target.apply_damage(amount)
+	var damage_context := {
+		"controller": self,
+		"source": source,
+		"target": target,
+		"amount": maxi(0, amount),
+		"label": label,
+		"prevented": false,
+	}
+	_process_before_damage(target, damage_context)
+	if bool(damage_context.get("prevented", false)):
+		return 0
+
+	var actual := target.apply_damage(int(damage_context.get("amount", amount)))
 	var source_name := "效果"
 	if source != null:
 		source_name = source.get_display_name()
@@ -390,8 +556,26 @@ func _run_enemy_turn(unit: BattleUnitState) -> void:
 		end_current_turn()
 
 
-func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true) -> bool:
+func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, weapon_slot: String = "") -> bool:
 	if card.target_type == CardEnums.TargetType.NONE:
+		return true
+
+	if card.target_type == CardEnums.TargetType.AREA:
+		if targets.size() != 1 or not (targets[0] is Vector2):
+			if write_log:
+				_emit_log("%s 需要一个位置目标。" % card.card_name)
+			return false
+		if not map_data.contains_map_position(targets[0]):
+			if write_log:
+				_emit_log("目标位置超出地图边界。")
+			return false
+		return true
+
+	if card.target_type == CardEnums.TargetType.SELF:
+		if targets.size() != 1 or targets[0] != user:
+			if write_log:
+				_emit_log("%s 目标必须是自己。" % card.card_name)
+			return false
 		return true
 
 	if card.target_type == CardEnums.TargetType.SINGLE and targets.size() != 1:
@@ -406,7 +590,7 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 			return false
 
 		var distance := user.distance_to(target)
-		var card_range := card.get_effective_range(user)
+		var card_range := card.get_effective_range(user, weapon_slot)
 		if distance > card_range:
 			if write_log:
 				_emit_log("%s 距离 %.0f，超出 %s 射程 %.0f。" % [target.get_display_name(), distance, card.card_name, card_range])
@@ -424,21 +608,14 @@ func _is_position_valid_for_unit(unit: BattleUnitState, position: Vector2, deplo
 		_emit_log("目标位置不在玩家部署区内。")
 		return false
 
-	for other in units:
-		if other == unit or not other.is_deployed or not other.is_alive():
-			continue
-		if position.distance_to(other.position) < unit.radius + other.radius:
-			_emit_log("目标位置与 %s 重叠。" % other.get_display_name())
-			return false
-
-	return true
+	return _is_unit_position_clear(unit, position, true)
 
 
-func _find_enemy_spawn_position() -> Vector2:
+func _find_enemy_spawn_position(enemy_state: EnemyState) -> Vector2:
 	for _i in range(40):
 		var position := map_data.random_enemy_spawn_position(rng)
 		var fake := BattleUnitState.new()
-		fake.radius = config.default_unit_radius
+		fake.setup_enemy(-1, enemy_state, config.default_unit_radius, position)
 		if _is_spawn_position_valid(fake, position):
 			return position
 
@@ -449,13 +626,7 @@ func _is_spawn_position_valid(unit: BattleUnitState, position: Vector2) -> bool:
 	if not map_data.contains_map_position(position):
 		return false
 
-	for other in units:
-		if not other.is_deployed:
-			continue
-		if position.distance_to(other.position) < unit.radius + other.radius:
-			return false
-
-	return true
+	return _is_unit_position_clear(unit, position, false)
 
 
 func _rebuild_turn_order() -> void:
@@ -478,10 +649,10 @@ func clamp_to_map(position: Vector2) -> Vector2:
 
 
 func _compare_turn_order(a: BattleUnitState, b: BattleUnitState) -> bool:
-	if a.get_speed() == b.get_speed():
+	if a.get_agility() == b.get_agility():
 		return a.turn_order_index < b.turn_order_index
 
-	return a.get_speed() > b.get_speed()
+	return a.get_agility() > b.get_agility()
 
 
 func _check_battle_end() -> bool:
@@ -516,6 +687,8 @@ func _emit_log(message: String) -> void:
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context: Dictionary = {}) -> void:
 	if not callback.is_valid():
 		return
+	if not _can_enqueue_resolution_item(label):
+		return
 
 	var queue := _get_current_effect_queue()
 	queue.append({
@@ -532,6 +705,8 @@ func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, lab
 
 func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context: Dictionary = {}) -> void:
 	if not callback.is_valid():
+		return
+	if not _can_enqueue_resolution_item(label):
 		return
 
 	var queue := _get_current_effect_queue()
@@ -556,6 +731,18 @@ func resolve_effect_queue() -> void:
 
 func _emit_basic_attack_trigger(context: Dictionary) -> void:
 	basic_attack_triggered.emit(context)
+
+
+func _emit_weapon_switch_started(context: Dictionary) -> void:
+	weapon_switch_started.emit(context)
+
+
+func _emit_weapon_switched_out(context: Dictionary) -> void:
+	weapon_switched_out.emit(context)
+
+
+func _emit_weapon_switched_in(context: Dictionary) -> void:
+	weapon_switched_in.emit(context)
 
 
 func _queue_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
@@ -603,12 +790,41 @@ func _queue_unit_status_effects(callback_name: String, unit: BattleUnitState) ->
 		)
 
 
+func queue_status_event(status: StatusEffect, callback_name: String, unit: BattleUnitState, context: Dictionary = {}) -> void:
+	if status == null or unit == null or not status.has_method(callback_name):
+		return
+
+	var event_context := context.duplicate()
+	event_context["controller"] = self
+	event_context["unit"] = unit
+	event_context["status"] = status
+	enqueue_effect(
+		Callable(status, callback_name),
+		[unit, event_context],
+		_get_effect_priority(status),
+		"%s.%s" % [status.display_name, callback_name],
+		event_context
+	)
+
+
+func queue_unit_status_event(callback_name: String, unit: BattleUnitState, context: Dictionary = {}) -> void:
+	if unit == null:
+		return
+
+	for status in unit.statuses.duplicate():
+		queue_status_event(status, callback_name, unit, context)
+
+
 func _resolve_card_stack() -> void:
 	while not _card_resolution_stack.is_empty():
 		var frame: Dictionary = _card_resolution_stack.pop_back()
 		_card_resolution_depth += 1
+		_current_card_effect_count = 0
+		_effect_limit_reached = false
 		_resolve_card_frame(frame)
 		_card_resolution_depth -= 1
+		_current_card_effect_count = 0
+		_effect_limit_reached = false
 
 
 func _resolve_card_frame(frame: Dictionary) -> void:
@@ -640,6 +856,9 @@ func _drain_current_effect_queue() -> void:
 	var queue := _get_current_effect_queue()
 	_effect_queue_depth += 1
 	while not queue.is_empty():
+		if _effect_limit_reached:
+			queue.clear()
+			break
 		queue.sort_custom(Callable(self, "_compare_effect_queue_entries"))
 		var entry: Dictionary = queue.pop_front()
 		_execute_effect_queue_entry(entry)
@@ -649,6 +868,9 @@ func _drain_current_effect_queue() -> void:
 
 
 func _execute_effect_queue_entry(entry: Dictionary) -> void:
+	if not _record_effect_resolution(str(entry.get("label", "效果"))):
+		return
+
 	var callback: Callable = entry.get("callback", Callable())
 	if not callback.is_valid():
 		return
@@ -703,9 +925,106 @@ func _get_effect_priority(effect) -> int:
 	return int(value)
 
 
+func _can_enqueue_resolution_item(label: String = "") -> bool:
+	if _card_resolution_depth <= 0:
+		return true
+	if _effect_limit_reached:
+		return false
+	if _current_card_effect_count >= MAX_EFFECTS_PER_CARD:
+		_effect_limit_reached = true
+		_emit_log("单张卡牌效果结算达到 %d 个，后续效果不再加入结算。" % MAX_EFFECTS_PER_CARD)
+		return false
+
+	return true
+
+
+func _record_effect_resolution(label: String = "") -> bool:
+	if _card_resolution_depth <= 0:
+		return true
+	if _effect_limit_reached:
+		return false
+
+	_current_card_effect_count += 1
+	if _current_card_effect_count > MAX_EFFECTS_PER_CARD:
+		_effect_limit_reached = true
+		_emit_log("单张卡牌效果结算达到 %d 个，停止结算后续效果。" % MAX_EFFECTS_PER_CARD)
+		return false
+
+	return true
+
+
+func _process_before_damage(target: BattleUnitState, damage_context: Dictionary) -> void:
+	for status in target.statuses.duplicate():
+		if status == null or not status.has_method("on_before_damage"):
+			continue
+		status.on_before_damage(target, damage_context)
+		if bool(damage_context.get("prevented", false)):
+			break
+
+	target.remove_expired_statuses()
+
+
 func _apply_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
 	_queue_global_effects(callback_name, unit)
 	resolve_effect_queue()
+
+
+func _is_unit_position_clear(unit: BattleUnitState, position: Vector2, write_log: bool = false) -> bool:
+	for other in units:
+		if other == unit or not other.is_deployed or not other.is_alive():
+			continue
+		if position.distance_to(other.position) < unit.radius + other.radius:
+			if write_log:
+				_emit_log("目标位置与 %s 重叠。" % other.get_display_name())
+			return false
+
+	return true
+
+
+func _find_clear_endpoint_along_segment(unit: BattleUnitState, start_position: Vector2, end_position: Vector2) -> Vector2:
+	if _is_unit_position_clear(unit, end_position, false):
+		return end_position
+
+	var segment := end_position - start_position
+	var length := segment.length()
+	if length <= 0.001:
+		return start_position
+
+	var direction := segment / length
+	var step := maxf(4.0, unit.radius * 0.25)
+	var distance := length
+	while distance > 0.0:
+		distance = maxf(0.0, distance - step)
+		var candidate := start_position + direction * distance
+		if map_data.contains_map_position(candidate) and _is_unit_position_clear(unit, candidate, false):
+			return candidate
+
+	return start_position
+
+
+func _segment_intersects_circle(start_position: Vector2, end_position: Vector2, circle_center: Vector2, circle_radius: float) -> bool:
+	if start_position.distance_to(circle_center) <= circle_radius:
+		return true
+	if end_position.distance_to(circle_center) <= circle_radius:
+		return true
+
+	var segment := end_position - start_position
+	var length_squared := segment.length_squared()
+	if length_squared <= 0.001:
+		return false
+
+	var t := clampf((circle_center - start_position).dot(segment) / length_squared, 0.0, 1.0)
+	var closest := start_position + segment * t
+	return closest.distance_to(circle_center) <= circle_radius
+
+
+func _path_progress(start_position: Vector2, end_position: Vector2, point: Vector2) -> float:
+	var segment := end_position - start_position
+	var length_squared := segment.length_squared()
+	if length_squared <= 0.001:
+		return 0.0
+
+	return clampf((point - start_position).dot(segment) / length_squared, 0.0, 1.0)
 
 
 func _closest_boundary_point(position: Vector2) -> Vector2:

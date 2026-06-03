@@ -11,8 +11,8 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		return
 
 	var total_damage := damage_amount
-	if add_user_attack and user.has_method("get_attack"):
-		total_damage += user.get_attack()
+	if add_user_attack and user.has_method("get_damage_bonus"):
+		total_damage += user.get_damage_bonus()
 
 	for target in targets:
 		if target != null and controller.has_method("apply_damage"):

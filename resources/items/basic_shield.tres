@@ -12,5 +12,6 @@ max_stack = 1
 equipment_tag = "盾牌"
 equipment_tags = PackedStringArray("盾牌")
 grip_type = 2
-attack_bonus = 0
+weapon_type = 0
+weapon_power = 0
 attack_range = 60.0

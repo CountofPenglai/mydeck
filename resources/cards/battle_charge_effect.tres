@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="ChargeCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/charge_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_priority = 0
+uses_strike = true
+agility_modifier = 3
+strike_damage_modifier = -2

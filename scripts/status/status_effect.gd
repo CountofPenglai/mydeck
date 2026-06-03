@@ -14,5 +14,13 @@ func on_turn_start(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 
 
+func on_before_damage(_unit: BattleUnitState, damage_context: Dictionary = {}) -> void:
+	pass
+
+
+func get_damage_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
+	return 0
+
+
 func should_remove() -> bool:
 	return stacks <= 0

@@ -9,9 +9,10 @@ class_name EnemyData
 
 @export_group("Base Stats")
 @export var base_max_health: int = 20
-@export var base_attack: int = 3
-@export var base_speed: int = 4
+@export var innate_power: int = 3
+@export var base_agility: int = 4
 @export var base_attack_range: float = 80.0
+@export var collision_radius: float = 24.0
 
 @export_group("Deck and Behavior")
 @export var deck_rule: EnemyDeckRule

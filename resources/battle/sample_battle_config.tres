@@ -6,7 +6,7 @@
 script = ExtResource("1_config")
 base_ap = 4
 move_distance_per_ap = 100.0
-move_distance_per_speed = 5.0
+move_distance_per_agility = 5.0
 starting_hand_size = 4
 ap_per_end_turn_draw = 2
 basic_attack_ap_cost = 2

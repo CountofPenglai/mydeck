@@ -47,8 +47,8 @@ func _refresh() -> void:
 	name_label.text = _character_state.get_character_name()
 	class_label.text = "职业：" + _character_state.get_class_label()
 	health_label.text = "生命：%d/%d" % [_character_state.current_health, _character_state.get_max_health()]
-	attack_label.text = "攻击：%d" % _character_state.get_attack()
-	speed_label.text = "速度：%d" % _character_state.get_speed()
+	attack_label.text = "力量：%d" % _character_state.get_strength()
+	speed_label.text = "敏捷：%d" % _character_state.get_agility()
 	main_hand_label.text = _character_state.get_main_hand_label()
 	off_hand_label.text = _character_state.get_off_hand_label()
 	deck_label.text = "当前卡组：%d 张 / %d 种" % [_character_state.get_deck_card_count(), _character_state.deck.size()]
@@ -62,8 +62,8 @@ func _show_empty_state() -> void:
 	name_label.text = "未绑定角色"
 	class_label.text = "职业：-"
 	health_label.text = "生命：-"
-	attack_label.text = "攻击：-"
-	speed_label.text = "速度：-"
+	attack_label.text = "力量：-"
+	speed_label.text = "敏捷：-"
 	main_hand_label.text = "主手：-"
 	off_hand_label.text = "副手：-"
 	deck_label.text = "当前卡组：-"
