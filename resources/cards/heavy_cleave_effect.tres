@@ -5,4 +5,4 @@
 [resource]
 script = ExtResource("1_effect")
 damage_amount = 8
-add_user_attack = true
+add_damage_bonus = true

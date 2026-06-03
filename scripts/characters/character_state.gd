@@ -60,8 +60,8 @@ func get_max_health() -> int:
 
 
 func get_attack() -> int:
-	var profile := build_strike_profile()
-	return int(profile.get("primary_power", 0)) + int(profile.get("damage_bonus", 0))
+	var profile := build_strike_profile_object()
+	return profile.primary_power + profile.damage_bonus
 
 
 func get_strength() -> int:
@@ -147,37 +147,31 @@ func get_attack_weapon_options() -> Array:
 
 
 func build_strike_profile(weapon_slot: String = "", context: Dictionary = {}) -> Dictionary:
+	return build_strike_profile_object(weapon_slot, context).to_dict()
+
+
+func build_strike_profile_object(weapon_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
 	var primary_slot := _resolve_primary_attack_slot(weapon_slot)
 	var primary_weapon := get_weapon_for_attack_slot(primary_slot)
-	var damage_bonus := get_damage_bonus(context)
-	var primary_power := UNARMED_POWER
-	var primary_range := character_data.base_attack_range if character_data != null else 0.0
-	var primary_type := WeaponData.WeaponType.MELEE
+	var profile := StrikeProfile.new()
+	profile.primary_slot = primary_slot
+	profile.damage_bonus = get_damage_bonus(context)
+	profile.primary_power = UNARMED_POWER
+	profile.primary_range = character_data.base_attack_range if character_data != null else 0.0
+	profile.primary_weapon_type = WeaponData.WeaponType.MELEE
 	if primary_weapon != null:
-		primary_power = primary_weapon.weapon_power
-		primary_range = primary_weapon.attack_range
-		primary_type = primary_weapon.weapon_type
+		profile.primary_weapon = primary_weapon
+		profile.primary_power = primary_weapon.weapon_power
+		profile.primary_range = primary_weapon.attack_range
+		profile.primary_weapon_type = primary_weapon.weapon_type
 
-	var offhand_weapon: WeaponData = null
-	var offhand_power := 0
-	var add_offhand := false
 	if primary_slot == "main" and primary_weapon != null and off_hand_weapon != null and off_hand_enabled:
 		if primary_weapon.weapon_type == off_hand_weapon.weapon_type:
-			offhand_weapon = off_hand_weapon
-			offhand_power = off_hand_weapon.weapon_power
-			add_offhand = true
+			profile.offhand_weapon = off_hand_weapon
+			profile.offhand_power = off_hand_weapon.weapon_power
+			profile.add_offhand = true
 
-	return {
-		"primary_slot": primary_slot,
-		"primary_weapon": primary_weapon,
-		"primary_power": primary_power,
-		"primary_range": primary_range,
-		"primary_weapon_type": primary_type,
-		"damage_bonus": damage_bonus,
-		"add_offhand": add_offhand,
-		"offhand_weapon": offhand_weapon,
-		"offhand_power": offhand_power,
-	}
+	return profile
 
 
 func get_weapon_for_attack_slot(slot: String) -> WeaponData:
@@ -245,52 +239,7 @@ func equip_off_hand(weapon: WeaponData) -> bool:
 
 
 func switch_weapon_from_inventory(preferred_weapon: WeaponData = null) -> Dictionary:
-	var weapon := preferred_weapon
-	var stack_index := -1
-	if weapon == null:
-		for i in range(inventory.size()):
-			var stack := inventory[i]
-			if stack != null and stack.item_data is WeaponData and stack.count > 0:
-				weapon = stack.item_data
-				stack_index = i
-				break
-	else:
-		for i in range(inventory.size()):
-			var stack := inventory[i]
-			if stack != null and stack.item_data == weapon and stack.count > 0:
-				stack_index = i
-				break
-
-	if weapon == null or stack_index < 0:
-		return {"success": false}
-
-	var slot := _choose_switch_slot(weapon)
-	if slot.is_empty():
-		return {"success": false}
-
-	var previous: WeaponData = null
-	if slot == "main":
-		previous = main_hand_weapon
-		main_hand_weapon = weapon
-	elif slot == "off":
-		previous = off_hand_weapon
-		off_hand_weapon = weapon
-	else:
-		return {"success": false}
-
-	_remove_inventory_item_at(stack_index)
-	if previous != null:
-		_add_inventory_item(previous)
-
-	_refresh_equipment_enabled()
-	return {
-		"success": true,
-		"slot": slot,
-		"old_weapon": previous,
-		"new_weapon": weapon,
-		"main_hand_enabled": main_hand_enabled,
-		"off_hand_enabled": off_hand_enabled,
-	}
+	return CharacterEquipmentModel.switch_weapon_from_inventory(self, preferred_weapon)
 
 
 func get_main_hand_label() -> String:
@@ -332,51 +281,16 @@ func _resolve_primary_attack_slot(weapon_slot: String = "") -> String:
 
 
 func _choose_switch_slot(weapon: WeaponData) -> String:
-	if weapon.grip_type == WeaponData.GripType.TWO_HAND or weapon.grip_type == WeaponData.GripType.MAIN_HAND:
-		return "main"
-	if weapon.grip_type == WeaponData.GripType.OFF_HAND:
-		return "off"
-	if main_hand_weapon == null and weapon.can_equip_main_hand():
-		return "main"
-	if off_hand_weapon == null and weapon.can_equip_off_hand():
-		return "off"
-	if weapon.can_equip_main_hand():
-		return "main"
-	if weapon.can_equip_off_hand():
-		return "off"
-
-	return ""
+	return CharacterEquipmentModel.choose_switch_slot(self, weapon)
 
 
 func _refresh_equipment_enabled() -> void:
-	main_hand_enabled = main_hand_weapon != null
-	off_hand_enabled = off_hand_weapon != null
-	if main_hand_weapon != null and main_hand_weapon.is_two_handed():
-		off_hand_enabled = false
+	CharacterEquipmentModel.refresh_enabled(self)
 
 
 func _remove_inventory_item_at(index: int) -> void:
-	if index < 0 or index >= inventory.size():
-		return
-	var stack := inventory[index]
-	if stack == null:
-		return
-
-	stack.count -= 1
-	if stack.count <= 0:
-		inventory.remove_at(index)
+	CharacterEquipmentModel.remove_inventory_item_at(self, index)
 
 
 func _add_inventory_item(item: ItemData) -> void:
-	if item == null:
-		return
-
-	for stack in inventory:
-		if stack != null and stack.item_data == item and stack.count < item.max_stack:
-			stack.count += 1
-			return
-
-	var new_stack := InventoryStack.new()
-	new_stack.item_data = item
-	new_stack.count = 1
-	inventory.append(new_stack)
+	CharacterEquipmentModel.add_inventory_item(self, item)

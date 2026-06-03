@@ -6,15 +6,14 @@ func _init() -> void:
 	display_name = "抵挡"
 
 
-func on_before_damage(unit: BattleUnitState, damage_context: Dictionary = {}) -> void:
-	if unit == null or stacks <= 0 or bool(damage_context.get("prevented", false)):
+func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> void:
+	if unit == null or damage_context == null or stacks <= 0 or damage_context.prevented:
 		return
 
-	damage_context["prevented"] = true
-	damage_context["prevented_by"] = self
+	damage_context.prevent(self)
 	stacks = maxi(0, stacks - 1)
 
-	var controller = damage_context.get("controller")
+	var controller = damage_context.controller
 	if controller != null and controller.has_method("_emit_log"):
 		controller._emit_log("%s 抵挡了伤害。" % unit.get_display_name())
 

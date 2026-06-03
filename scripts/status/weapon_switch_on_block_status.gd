@@ -6,11 +6,15 @@ func _init() -> void:
 	display_name = "防御架势"
 
 
-func on_block_spent(unit: BattleUnitState, context: Dictionary = {}) -> void:
+func on_block_spent(unit: BattleUnitState, context = null) -> void:
 	if unit == null or stacks <= 0:
 		return
 
-	var controller = context.get("controller")
+	var controller = null
+	if context is DamageContext:
+		controller = context.controller
+	elif context is Dictionary:
+		controller = context.get("controller")
 	if controller != null and controller.has_method("switch_weapon_from_inventory"):
 		controller.switch_weapon_from_inventory(unit)
 

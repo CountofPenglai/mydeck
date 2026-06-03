@@ -14,7 +14,7 @@ func on_turn_start(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 
 
-func on_before_damage(_unit: BattleUnitState, damage_context: Dictionary = {}) -> void:
+func on_before_damage(_unit: BattleUnitState, _damage_context: DamageContext) -> void:
 	pass
 
 

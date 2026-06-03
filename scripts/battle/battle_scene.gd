@@ -3,18 +3,24 @@ class_name BattleScene
 
 const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
 
+enum InputMode {
+	NONE,
+	MOVE,
+	BASIC_ATTACK_TARGET,
+	CARD_TARGET,
+}
+
 @export var scenario: BattleScenario
 
 var controller := BattleController.new()
 var selected_deploy_unit: BattleUnitState
-var selected_card: CardData
-var selected_weapon_slot: String = ""
-var pending_basic_attack := false
-var pending_move := false
+var input_mode: int = InputMode.NONE
+var pending_card: CardData
+var pending_weapon_slot: String = ""
 var _weapon_choice_popup: PopupPanel
 var _weapon_choice_list: VBoxContainer
-var _pending_weapon_action: String = ""
-var _pending_weapon_card: CardData
+var _weapon_choice_next_mode: int = InputMode.NONE
+var _weapon_choice_card: CardData
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -28,6 +34,7 @@ var _pending_weapon_card: CardData
 @onready var deck_button: TextureButton = %DeckButton
 @onready var ap_label: Label = %APLabel
 @onready var log_label: RichTextLabel = %LogLabel
+
 
 func _ready() -> void:
 	controller.log_message.connect(_append_log)
@@ -46,52 +53,59 @@ func _ready() -> void:
 
 func handle_map_click(position: Vector2) -> void:
 	if controller.phase == BattleController.Phase.DEPLOYMENT:
-		if selected_deploy_unit == null:
-			selected_deploy_unit = controller.get_first_undeployed_player()
-		if selected_deploy_unit != null and controller.deploy_player_unit(selected_deploy_unit, position):
-			selected_deploy_unit = controller.get_first_undeployed_player()
-		_refresh()
+		_handle_deployment_click(position)
 		return
 
 	if controller.phase != BattleController.Phase.BATTLE:
 		return
-
 	if controller.current_unit == null or controller.current_unit.faction != BattleUnitState.Faction.PLAYER:
 		return
 
 	var clicked_unit := controller.get_unit_at_position(position)
-	if pending_basic_attack:
-		if clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
-			controller.basic_attack(controller.current_unit, clicked_unit, selected_weapon_slot)
-			pending_basic_attack = false
-			selected_weapon_slot = ""
-		else:
-			_append_log("请选择一个敌方目标进行普通攻击。")
-		_refresh()
-		return
-
-	if selected_card != null:
-		if selected_card.target_type == CardEnums.TargetType.AREA:
-			if controller.play_card(controller.current_unit, selected_card, [position], {"weapon_slot": selected_weapon_slot}):
-				selected_card = null
-				selected_weapon_slot = ""
-		elif clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
-			if controller.play_card(controller.current_unit, selected_card, [clicked_unit], {"weapon_slot": selected_weapon_slot}):
-				selected_card = null
-				selected_weapon_slot = ""
-		else:
-			_append_log("请选择一个敌方目标打出卡牌。")
-		_refresh()
-		return
-
-	if pending_move:
-		if controller.move_current_unit_to(position):
-			pending_move = false
-		_refresh()
-		return
-
-	_append_log("请选择移动、攻击或一张手牌。")
+	match input_mode:
+		InputMode.BASIC_ATTACK_TARGET:
+			_handle_basic_attack_target(clicked_unit)
+		InputMode.CARD_TARGET:
+			_handle_card_target(position, clicked_unit)
+		InputMode.MOVE:
+			if controller.move_current_unit_to(position):
+				_clear_input()
+		_:
+			_append_log("请选择移动、攻击或一张手牌。")
 	_refresh()
+
+
+func _handle_deployment_click(position: Vector2) -> void:
+	if selected_deploy_unit == null:
+		selected_deploy_unit = controller.get_first_undeployed_player()
+	if selected_deploy_unit != null and controller.deploy_player_unit(selected_deploy_unit, position):
+		selected_deploy_unit = controller.get_first_undeployed_player()
+	_refresh()
+
+
+func _handle_basic_attack_target(clicked_unit: BattleUnitState) -> void:
+	if clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
+		controller.basic_attack(controller.current_unit, clicked_unit, pending_weapon_slot)
+		_clear_input()
+	else:
+		_append_log("请选择一个敌方目标进行普通攻击。")
+
+
+func _handle_card_target(position: Vector2, clicked_unit: BattleUnitState) -> void:
+	if pending_card == null:
+		_clear_input()
+		return
+
+	var played := false
+	if pending_card.target_type == CardEnums.TargetType.AREA:
+		played = controller.play_card(controller.current_unit, pending_card, [position], {"weapon_slot": pending_weapon_slot})
+	elif clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
+		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], {"weapon_slot": pending_weapon_slot})
+	else:
+		_append_log("请选择一个敌方目标打出卡牌。")
+
+	if played:
+		_clear_input()
 
 
 func _on_start_pressed() -> void:
@@ -100,22 +114,18 @@ func _on_start_pressed() -> void:
 
 
 func _on_move_pressed() -> void:
-	selected_card = null
-	selected_weapon_slot = ""
-	pending_basic_attack = false
-	pending_move = true
+	_clear_input()
+	input_mode = InputMode.MOVE
 	_append_log("请选择移动位置。")
 	_refresh()
 
 
 func _on_attack_pressed() -> void:
-	selected_card = null
-	selected_weapon_slot = ""
-	pending_move = false
+	_clear_input()
 	if _needs_weapon_choice(controller.current_unit):
-		_show_weapon_choice("basic_attack")
+		_show_weapon_choice(InputMode.BASIC_ATTACK_TARGET)
 	else:
-		pending_basic_attack = true
+		input_mode = InputMode.BASIC_ATTACK_TARGET
 		_append_log("请选择普通攻击目标。")
 	_refresh()
 
@@ -128,9 +138,8 @@ func _on_deck_pressed() -> void:
 
 	var preview: PackedStringArray = []
 	for card in unit.draw_pile:
-		if card == null:
-			continue
-		preview.append(card.card_name)
+		if card != null:
+			preview.append(card.card_name)
 
 	var preview_text := "无"
 	if not preview.is_empty():
@@ -150,10 +159,7 @@ func _on_deck_pressed() -> void:
 
 
 func _on_end_turn_pressed() -> void:
-	selected_card = null
-	selected_weapon_slot = ""
-	pending_basic_attack = false
-	pending_move = false
+	_clear_input()
 	controller.end_current_turn()
 	_refresh()
 
@@ -165,28 +171,31 @@ func _select_deploy_unit(unit: BattleUnitState) -> void:
 
 
 func _select_card(card: CardData) -> void:
+	_clear_input()
 	if card.target_type == CardEnums.TargetType.SELF:
 		if controller.current_unit != null and controller.play_card(controller.current_unit, card, [controller.current_unit]):
-			selected_card = null
-			selected_weapon_slot = ""
-		_refresh()
+			_refresh()
 		return
 
 	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card}) and _needs_weapon_choice(controller.current_unit):
-		selected_card = null
-		selected_weapon_slot = ""
-		pending_move = false
-		pending_basic_attack = false
-		_show_weapon_choice("card", card)
+		_show_weapon_choice(InputMode.CARD_TARGET, card)
 		_refresh()
 		return
 
-	selected_card = card
-	selected_weapon_slot = ""
-	pending_move = false
-	pending_basic_attack = false
-	_append_log("选择卡牌：%s，请点击%s。" % [card.card_name, "位置" if card.target_type == CardEnums.TargetType.AREA else "目标"])
+	_begin_card_targeting(card)
 	_refresh()
+
+
+func _begin_card_targeting(card: CardData) -> void:
+	pending_card = card
+	input_mode = InputMode.CARD_TARGET
+	_append_log("选择卡牌：%s，请点击%s。" % [card.card_name, "位置" if card.target_type == CardEnums.TargetType.AREA else "目标"])
+
+
+func _clear_input() -> void:
+	input_mode = InputMode.NONE
+	pending_card = null
+	pending_weapon_slot = ""
 
 
 func _refresh() -> void:
@@ -197,20 +206,20 @@ func _refresh() -> void:
 	if controller.scene_prototype != null:
 		phase_label.text += " | " + controller.scene_prototype.get_display_title()
 
-		if controller.current_unit == null:
-			current_label.text = "当前单位：无"
-			ap_label.text = "AP -"
-		else:
-			current_label.text = "当前单位：%s | 生命 %d/%d | 敏捷 %d%s" % [
-				controller.current_unit.get_display_name(),
-				controller.current_unit.get_current_health(),
-				controller.current_unit.get_max_health(),
-				controller.current_unit.get_agility(),
-				_current_unit_weapon_summary(controller.current_unit),
-			]
-			ap_label.text = "AP %d / %d" % [
-				controller.current_unit.current_ap,
-				controller.current_unit.get_max_ap(controller.config),
+	if controller.current_unit == null:
+		current_label.text = "当前单位：无"
+		ap_label.text = "AP -"
+	else:
+		current_label.text = "当前单位：%s | 生命 %d/%d | 敏捷 %d%s" % [
+			controller.current_unit.get_display_name(),
+			controller.current_unit.get_current_health(),
+			controller.current_unit.get_max_health(),
+			controller.current_unit.get_agility(),
+			_current_unit_weapon_summary(controller.current_unit),
+		]
+		ap_label.text = "AP %d / %d" % [
+			controller.current_unit.current_ap,
+			controller.current_unit.get_max_ap(controller.config),
 		]
 
 	start_button.disabled = controller.phase != BattleController.Phase.DEPLOYMENT or not controller.can_start_battle()
@@ -248,17 +257,17 @@ func _refresh_hand_list(is_player_turn: bool) -> void:
 	for card in controller.current_unit.hand:
 		var button := TextureButton.new()
 		button.texture_normal = HAND_CARD_SLOT_TEXTURE
-			button.ignore_texture_size = true
-			button.stretch_mode = 0
-			button.custom_minimum_size = Vector2(112, 138)
-			button.tooltip_text = _build_card_tooltip(card)
-			button.pressed.connect(_select_card.bind(card))
+		button.ignore_texture_size = true
+		button.stretch_mode = 0
+		button.custom_minimum_size = Vector2(112, 138)
+		button.tooltip_text = _build_card_tooltip(card)
+		button.pressed.connect(_select_card.bind(card))
 
 		var label := Label.new()
 		label.text = "%s\n%dAP\n射程 %.0f" % [
 			card.card_name,
 			card.ap_cost,
-			card.get_effective_range(controller.current_unit, selected_weapon_slot),
+			card.get_effective_range(controller.current_unit, pending_weapon_slot),
 		]
 		label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -268,7 +277,6 @@ func _refresh_hand_list(is_player_turn: bool) -> void:
 		label.add_theme_font_size_override("font_size", 12)
 		label.add_theme_color_override("font_color", Color(0.09, 0.055, 0.025))
 		button.add_child(label)
-
 		hand_list.add_child(button)
 
 	if controller.current_unit.hand.is_empty():
@@ -299,10 +307,8 @@ func _phase_text() -> String:
 func _current_unit_weapon_summary(unit: BattleUnitState) -> String:
 	if unit == null:
 		return ""
-
 	if unit.faction == BattleUnitState.Faction.PLAYER:
 		return " | %s" % _strike_preview_text(unit)
-
 	return " | 威力 %d" % unit.get_attack()
 
 
@@ -311,20 +317,20 @@ func _build_card_tooltip(card: CardData) -> String:
 	parts.append(card.card_name)
 	parts.append("%dAP" % card.ap_cost)
 	parts.append(card.get_play_timing_label())
-	parts.append("射程 %.0f" % card.get_effective_range(controller.current_unit, selected_weapon_slot))
+	parts.append("射程 %.0f" % card.get_effective_range(controller.current_unit, pending_weapon_slot))
 	if controller.current_unit != null and card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card}):
 		parts.append(_strike_preview_text(controller.current_unit))
 	return " | ".join(parts)
 
 
 func _strike_preview_text(unit: BattleUnitState) -> String:
-	var profile := unit.build_strike_profile(selected_weapon_slot)
+	var profile := unit.build_strike_profile_object(pending_weapon_slot)
 	var text := "力量 %d / 武器威力 %d" % [
 		unit.get_damage_bonus(),
-		int(profile.get("primary_power", 0)),
+		profile.primary_power,
 	]
-	if bool(profile.get("add_offhand", false)):
-		text += " / 副手威力 %d" % int(profile.get("offhand_power", 0))
+	if profile.add_offhand:
+		text += " / 副手威力 %d" % profile.offhand_power
 	return text
 
 
@@ -356,12 +362,12 @@ func _create_weapon_choice_popup() -> void:
 	margin.add_child(_weapon_choice_list)
 
 
-func _show_weapon_choice(action: String, card: CardData = null) -> void:
+func _show_weapon_choice(next_mode: int, card: CardData = null) -> void:
 	if controller.current_unit == null:
 		return
 
-	_pending_weapon_action = action
-	_pending_weapon_card = card
+	_weapon_choice_next_mode = next_mode
+	_weapon_choice_card = card
 	_clear_children(_weapon_choice_list)
 
 	var title := Label.new()
@@ -378,19 +384,14 @@ func _show_weapon_choice(action: String, card: CardData = null) -> void:
 
 
 func _on_weapon_choice_pressed(slot: String) -> void:
-	selected_weapon_slot = slot
+	pending_weapon_slot = slot
 	_weapon_choice_popup.hide()
-
-	if _pending_weapon_action == "basic_attack":
-		pending_basic_attack = true
+	input_mode = _weapon_choice_next_mode
+	if input_mode == InputMode.BASIC_ATTACK_TARGET:
 		_append_log("请选择普通攻击目标。")
-	elif _pending_weapon_action == "card" and _pending_weapon_card != null:
-		selected_card = _pending_weapon_card
-		_append_log("选择卡牌：%s，请点击%s。" % [
-			selected_card.card_name,
-			"位置" if selected_card.target_type == CardEnums.TargetType.AREA else "目标",
-		])
+	elif input_mode == InputMode.CARD_TARGET and _weapon_choice_card != null:
+		_begin_card_targeting(_weapon_choice_card)
 
-	_pending_weapon_action = ""
-	_pending_weapon_card = null
+	_weapon_choice_next_mode = InputMode.NONE
+	_weapon_choice_card = null
 	_refresh()

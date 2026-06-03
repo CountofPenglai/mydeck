@@ -48,8 +48,8 @@ func get_max_health() -> int:
 
 
 func get_attack() -> int:
-	var profile := build_strike_profile()
-	return int(profile.get("primary_power", 0)) + int(profile.get("damage_bonus", 0))
+	var profile := build_strike_profile_object()
+	return profile.primary_power + profile.damage_bonus
 
 
 func get_damage_bonus(_context: Dictionary = {}) -> int:
@@ -57,23 +57,27 @@ func get_damage_bonus(_context: Dictionary = {}) -> int:
 
 
 func build_strike_profile(_weapon_slot: String = "", context: Dictionary = {}) -> Dictionary:
+	return build_strike_profile_object(_weapon_slot, context).to_dict()
+
+
+func build_strike_profile_object(_weapon_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
+	var profile := StrikeProfile.new()
+	profile.primary_slot = "innate"
+	profile.primary_weapon = null
+	profile.primary_weapon_type = WeaponData.WeaponType.MELEE
+	profile.add_offhand = false
+	profile.offhand_weapon = null
+	profile.offhand_power = 0
 	var power := 1
 	var attack_range := 80.0
 	if enemy_data != null:
 		power = enemy_data.innate_power
 		attack_range = enemy_data.base_attack_range
 
-	return {
-		"primary_slot": "innate",
-		"primary_weapon": null,
-		"primary_power": power,
-		"primary_range": attack_range,
-		"primary_weapon_type": WeaponData.WeaponType.MELEE,
-		"damage_bonus": get_damage_bonus(context),
-		"add_offhand": false,
-		"offhand_weapon": null,
-		"offhand_power": 0,
-	}
+	profile.primary_power = power
+	profile.primary_range = attack_range
+	profile.damage_bonus = get_damage_bonus(context)
+	return profile
 
 
 func get_agility() -> int:

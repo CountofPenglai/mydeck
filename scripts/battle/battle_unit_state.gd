@@ -99,8 +99,8 @@ func get_max_health() -> int:
 
 
 func get_attack() -> int:
-	var profile := build_strike_profile()
-	return int(profile.get("primary_power", 0)) + int(profile.get("damage_bonus", 0))
+	var profile := build_strike_profile_object()
+	return profile.primary_power + profile.damage_bonus
 
 
 func get_damage_bonus(context: Dictionary = {}) -> int:
@@ -146,23 +146,27 @@ func get_attack_range(weapon_slot: String = "") -> float:
 
 
 func build_strike_profile(weapon_slot: String = "") -> Dictionary:
+	return build_strike_profile_object(weapon_slot).to_dict()
+
+
+func build_strike_profile_object(weapon_slot: String = "") -> StrikeProfile:
 	var context := {"unit": self}
 	if character_state != null:
-		return character_state.build_strike_profile(weapon_slot, context)
+		return character_state.build_strike_profile_object(weapon_slot, context)
 	if enemy_state != null:
-		return enemy_state.build_strike_profile(weapon_slot, context)
+		return enemy_state.build_strike_profile_object(weapon_slot, context)
 
-	return {
-		"primary_slot": "unarmed",
-		"primary_weapon": null,
-		"primary_power": 1,
-		"primary_range": 0.0,
-		"primary_weapon_type": WeaponData.WeaponType.MELEE,
-		"damage_bonus": 0,
-		"add_offhand": false,
-		"offhand_weapon": null,
-		"offhand_power": 0,
-	}
+	var profile := StrikeProfile.new()
+	profile.primary_slot = "unarmed"
+	profile.primary_weapon = null
+	profile.primary_power = 1
+	profile.primary_range = 0.0
+	profile.primary_weapon_type = WeaponData.WeaponType.MELEE
+	profile.damage_bonus = 0
+	profile.add_offhand = false
+	profile.offhand_weapon = null
+	profile.offhand_power = 0
+	return profile
 
 
 func needs_weapon_choice() -> bool:
