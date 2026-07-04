@@ -2,6 +2,7 @@ extends Control
 class_name BattleScene
 
 const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
+const DEFAULT_SCENARIO := preload("res://resources/battle/sample_battle_scenario.tres")
 
 enum InputMode {
 	NONE,
@@ -74,7 +75,10 @@ func _ready() -> void:
 	_create_discard_popup()
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
-	controller.setup(scenario)
+	var startup_scenario := scenario
+	if startup_scenario == null:
+		startup_scenario = DEFAULT_SCENARIO
+	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
 	_refresh()
 

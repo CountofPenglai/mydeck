@@ -42,39 +42,47 @@ var strike_resolver := BattleStrikeResolver.new()
 
 func setup(new_scenario: BattleScenario) -> void:
 	scenario = new_scenario
-	config = scenario.battle_config
+	if scenario == null:
+		config = BattleConfig.new()
+		scene_prototype = null
+		map_data = BattleMapData.new()
+		_reset_runtime_state()
+		resolution_runner.setup(self)
+		targeting.setup(self)
+		strike_resolver.setup(self)
+		_emit_log("战斗场景缺少 BattleScenario，已使用空白配置。")
+		state_changed.emit()
+		return
+
+	config = scenario.battle_config if scenario.battle_config != null else BattleConfig.new()
 	scene_prototype = scenario.scene_prototype
 	var source_map_data := scenario.get_map_data()
 	map_data = source_map_data.duplicate(true) if source_map_data != null else BattleMapData.new()
 	if scene_prototype != null and scene_prototype.scene_texture != null:
 		map_data.background_texture = scene_prototype.scene_texture
 	rng.seed = scenario.seed
-	phase = Phase.DEPLOYMENT
-	units.clear()
-	player_units.clear()
-	enemy_units.clear()
-	turn_order.clear()
-	current_turn_index = -1
-	current_unit = null
-	class_resource_actions_used.clear()
-	action_resolution_lock_count = 0
+	_reset_runtime_state()
 	resolution_runner.setup(self)
 	targeting.setup(self)
 	strike_resolver.setup(self)
 
 	var id := 0
-	for character_state in scenario.get_player_states():
+	for character_template in scenario.get_player_states():
+		if character_template == null:
+			continue
+		var character_state := _create_runtime_character_state(character_template)
 		if character_state == null:
 			continue
-		character_state.ensure_initialized()
-		character_state.current_health = character_state.get_max_health()
 		var unit := BattleUnitState.new()
 		unit.setup_player(id, character_state, config.default_unit_radius)
 		id += 1
 		units.append(unit)
 		player_units.append(unit)
 
-	for enemy_state in scenario.get_enemy_states():
+	for enemy_template in scenario.get_enemy_states():
+		if enemy_template == null:
+			continue
+		var enemy_state := _create_runtime_enemy_state(enemy_template)
 		if enemy_state == null:
 			continue
 		enemy_state.ensure_initialized(rng.randi())
@@ -93,6 +101,49 @@ func setup(new_scenario: BattleScenario) -> void:
 		_emit_log("载入场景原型：%s。" % scene_prototype.get_display_title())
 	_emit_log("进入部署阶段。请选择玩家单位并点击部署区。")
 	state_changed.emit()
+
+
+func _reset_runtime_state() -> void:
+	phase = Phase.DEPLOYMENT
+	units.clear()
+	player_units.clear()
+	enemy_units.clear()
+	turn_order.clear()
+	current_turn_index = -1
+	current_unit = null
+	class_resource_actions_used.clear()
+	action_resolution_lock_count = 0
+
+
+func _create_runtime_character_state(template: CharacterState) -> CharacterState:
+	if template == null:
+		return null
+
+	var state := template.duplicate(true) as CharacterState
+	if state == null:
+		return null
+
+	state.ensure_initialized()
+	state.reset_class_resources()
+	state.current_health = state.get_max_health()
+	return state
+
+
+func _create_runtime_enemy_state(template: EnemyState) -> EnemyState:
+	if template == null:
+		return null
+
+	var state := template.duplicate(true) as EnemyState
+	if state == null:
+		return null
+
+	if state.enemy_data != null:
+		var runtime_enemy_data := state.enemy_data.duplicate(true) as EnemyData
+		if runtime_enemy_data != null:
+			if runtime_enemy_data.behavior != null:
+				runtime_enemy_data.behavior = runtime_enemy_data.behavior.duplicate(true) as EnemyBehavior
+			state.enemy_data = runtime_enemy_data
+	return state
 
 
 func deploy_player_unit(unit: BattleUnitState, position: Vector2) -> bool:
@@ -338,29 +389,61 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 
 	if resolution_runner.effect_limit_reached:
 		_emit_log("%s 未加入结算：当前主要行动效果结算已达到上限。" % card.card_name)
-		return true
+		return false
 
+	var payment_snapshot := _snapshot_card_payment_state(user)
 	user.current_ap -= effective_ap_cost
-	if play_mode == CardEnums.CardPlayMode.NORMAL:
-		user.notify_card_ap_cost_paid(card, {
-			"controller": self,
-			"card": card,
-			"ap_cost": effective_ap_cost,
-		})
 	if not card.pay_special_conditions(condition_context, play_mode):
+		_restore_card_payment_state(user, payment_snapshot)
 		_emit_log("%s 的%s条件支付失败。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
 		return false
 
 	var discard_after_play := true
 	if play_mode == CardEnums.CardPlayMode.MOMENTUM:
 		if not user.banish_discard_card(card):
+			_restore_card_payment_state(user, payment_snapshot)
 			_emit_log("%s 不在弃牌堆，无法余势打出。" % card.card_name)
 			return false
 		discard_after_play = false
 		_emit_log("%s 放逐弃牌堆中的 %s。" % [user.get_display_name(), card.card_name])
 
+	if play_mode == CardEnums.CardPlayMode.NORMAL:
+		user.notify_card_ap_cost_paid(card, {
+			"controller": self,
+			"card": card,
+			"ap_cost": effective_ap_cost,
+		})
+
 	resolution_runner.push_card_frame(BattleCardFrame.create(user, card, targets, context, discard_after_play))
 	return true
+
+
+func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
+	if user == null:
+		return {}
+
+	return {
+		"current_ap": user.current_ap,
+		"current_health": user.get_current_health(),
+		"hand": user.hand.duplicate(),
+		"discard_pile": user.discard_pile.duplicate(),
+		"exiled_pile": user.exiled_pile.duplicate(),
+	}
+
+
+func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) -> void:
+	if user == null or snapshot.is_empty():
+		return
+
+	user.current_ap = int(snapshot.get("current_ap", user.current_ap))
+	user.set_current_health(int(snapshot.get("current_health", user.get_current_health())))
+
+	var hand_snapshot: Array = snapshot.get("hand", []) as Array
+	var discard_snapshot: Array = snapshot.get("discard_pile", []) as Array
+	var exile_snapshot: Array = snapshot.get("exiled_pile", []) as Array
+	user.hand.assign(hand_snapshot)
+	user.discard_pile.assign(discard_snapshot)
+	user.exiled_pile.assign(exile_snapshot)
 
 
 func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> bool:
