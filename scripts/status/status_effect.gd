@@ -22,5 +22,33 @@ func get_damage_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
 	return 0
 
 
+func get_strike_power_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
+	return 0
+
+
+func modify_card_ap_cost(_unit: BattleUnitState, _card: CardData, current_cost: int, _context: Dictionary = {}) -> int:
+	return current_cost
+
+
+func on_card_ap_cost_paid(_unit: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: float, _context: Dictionary = {}) -> float:
+	return current_distance
+
+
+func modify_move_ap_cost(_unit: BattleUnitState, current_cost: int, _context: Dictionary = {}) -> int:
+	return current_cost
+
+
+func on_move_ap_cost_paid(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_turn_end(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
 func should_remove() -> bool:
 	return stacks <= 0

@@ -11,6 +11,7 @@ description = "沉重的标准动作攻击。高 AP，高伤害。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1
+card_type = 0
 target_type = 1
 ap_cost = 3
 play_timing = 0

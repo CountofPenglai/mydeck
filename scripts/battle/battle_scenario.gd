@@ -5,8 +5,8 @@ class_name BattleScenario
 @export var scene_prototype: Resource
 @export var map_data: BattleMapData
 @export var seed: int = 1001
-@export var players: Array[CharacterState] = []
-@export var enemies: Array[EnemyState] = []
+@export var players: Array[Resource] = []
+@export var enemies: Array[Resource] = []
 
 func get_map_data() -> BattleMapData:
 	if scene_prototype != null and scene_prototype.map_data != null:
@@ -19,4 +19,18 @@ func get_enemy_states() -> Array[EnemyState]:
 	if scene_prototype != null:
 		return scene_prototype.create_enemy_states()
 
-	return enemies
+	var result: Array[EnemyState] = []
+	for enemy in enemies:
+		if enemy is EnemyState:
+			result.append(enemy)
+
+	return result
+
+
+func get_player_states() -> Array[CharacterState]:
+	var result: Array[CharacterState] = []
+	for player in players:
+		if player is CharacterState:
+			result.append(player)
+
+	return result

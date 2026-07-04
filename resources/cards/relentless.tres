@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/relentless_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/relentless_momentum_banish_condition.tres" id="4_banish"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "百折不饶"
+description = "从牌库中选择一张牌置入弃牌堆。余势：从弃牌堆放逐 3 张牌，进行一次打击，将你所有被放逐的牌洗回牌库，每洗回一张，本次打击获得 +1 威力。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 1
+card_type = 1
+target_type = 4
+ap_cost = 1
+play_timing = 0
+range_modifier = 0.0
+override_range = false
+card_range = 160.0
+effect = ExtResource("3_effect")
+has_momentum = true
+momentum_conditions = [ExtResource("4_banish")]
+has_combo = false
+combo_conditions = []

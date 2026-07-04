@@ -11,6 +11,7 @@ description = "附赠式轻击。对一个射程内敌人造成较低伤害，�
 artwork = ExtResource("2_scroll")
 rarity = 0
 card_class = 1
+card_type = 0
 target_type = 1
 ap_cost = 1
 play_timing = 1

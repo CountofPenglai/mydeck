@@ -56,17 +56,13 @@ func get_damage_bonus(_context: Dictionary = {}) -> int:
 	return 0
 
 
-func build_strike_profile(_weapon_slot: String = "", context: Dictionary = {}) -> Dictionary:
-	return build_strike_profile_object(_weapon_slot, context).to_dict()
-
-
-func build_strike_profile_object(_weapon_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
+func build_strike_profile_object(_equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
 	var profile := StrikeProfile.new()
 	profile.primary_slot = "innate"
-	profile.primary_weapon = null
-	profile.primary_weapon_type = WeaponData.WeaponType.MELEE
+	profile.primary_equipment = null
+	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.add_offhand = false
-	profile.offhand_weapon = null
+	profile.offhand_equipment = null
 	profile.offhand_power = 0
 	var power := 1
 	var attack_range := 80.0
@@ -87,10 +83,6 @@ func get_agility() -> int:
 	return enemy_data.base_agility
 
 
-func get_speed() -> int:
-	return get_agility()
-
-
 func get_collision_radius() -> float:
 	if enemy_data == null:
 		return 0.0
@@ -98,7 +90,7 @@ func get_collision_radius() -> float:
 	return enemy_data.collision_radius
 
 
-func get_attack_range(_weapon_slot: String = "") -> float:
+func get_attack_range(_equipment_slot: String = "") -> float:
 	if enemy_data == null:
 		return 0.0
 

@@ -11,6 +11,7 @@ description = "远程射击。使用独立射程，不依赖武器距离。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 3
+card_type = 0
 target_type = 1
 ap_cost = 2
 play_timing = 0

@@ -4,7 +4,7 @@ class_name CharacterClassDefaults
 static func get_resource_pools(character_class: int) -> Array[ResourcePoolData]:
 	match character_class:
 		CardEnums.CardClass.WARRIOR:
-			return [_pool("怒气", 100, 0)]
+			return [_pool("势", 3, 1)]
 		CardEnums.CardClass.MAGE:
 			return [_pool("火焰法力", 3, 1), _pool("冰霜法力", 3, 1), _pool("奥术法力", 3, 1)]
 		CardEnums.CardClass.RANGER:

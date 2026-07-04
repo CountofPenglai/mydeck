@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=12 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
@@ -11,13 +11,22 @@
 [ext_resource type="Resource" path="res://resources/cards/battle_charge_stack.tres" id="9_charge"]
 [ext_resource type="Resource" path="res://resources/cards/defensive_stance_stack.tres" id="10_defense"]
 [ext_resource type="Resource" path="res://resources/items/heavy_greatsword_stack.tres" id="11_greatsword_stack"]
+[ext_resource type="Resource" path="res://resources/cards/battle_master_stack.tres" id="12_master"]
+[ext_resource type="Resource" path="res://resources/cards/gather_momentum_whirlwind_stack.tres" id="13_whirlwind"]
+[ext_resource type="Resource" path="res://resources/cards/sentinel_strike_stack.tres" id="14_sentinel"]
+[ext_resource type="Resource" path="res://resources/cards/relentless_stack.tres" id="15_relentless"]
+[ext_resource type="Resource" path="res://resources/cards/stand_firm_stack.tres" id="16_stand_firm"]
+[ext_resource type="Resource" path="res://resources/cards/barbaric_brawl_stack.tres" id="17_brawl"]
+[ext_resource type="Resource" path="res://resources/cards/merciless_slaughter_stack.tres" id="18_slaughter"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 36
-deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense")]
-main_hand_weapon = ExtResource("4_main_hand")
-off_hand_weapon = ExtResource("5_off_hand")
+deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense"), ExtResource("12_master"), ExtResource("13_whirlwind"), ExtResource("14_sentinel"), ExtResource("15_relentless"), ExtResource("16_stand_firm"), ExtResource("17_brawl"), ExtResource("18_slaughter")]
+main_hand_equipment = ExtResource("4_main_hand")
+off_hand_equipment = ExtResource("5_off_hand")
+main_hand_face = 0
+off_hand_face = 0
 inventory = [ExtResource("11_greatsword_stack")]
 extra_ap_bonus = 0

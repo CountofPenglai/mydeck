@@ -18,8 +18,8 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		if target == null or not (target is BattleUnitState):
 			continue
 
-		controller.perform_strike(user, target, card, "打击", str(context.get("weapon_slot", "")))
-		if target.is_alive() and user.has_equipment_tag(shield_tag):
+		controller.perform_strike(user, target, card, "打击", str(context.get("equipment_slot", "")))
+		if target.is_alive() and user.has_equipment_subcategory(shield_tag):
 			var stun := StunStatus.new()
 			stun.stacks = stun_stacks
 			target.add_status(stun)

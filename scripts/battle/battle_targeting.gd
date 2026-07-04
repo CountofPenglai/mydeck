@@ -39,6 +39,19 @@ func get_units_in_swept_circle(source: BattleUnitState, start_position: Vector2,
 	return hits
 
 
+func get_units_in_range(source: BattleUnitState, range_distance: float, filter: int) -> Array[BattleUnitState]:
+	var query := BattleRangeTargetQuery.create_from_source(source, range_distance, filter)
+	return query.find_units(controller)
+
+
+func get_units_in_attack_range(source: BattleUnitState, range_bonus: float = 0.0, filter: int = BattleController.UnitFilter.OPPONENTS, equipment_slot: String = "") -> Array[BattleUnitState]:
+	if source == null:
+		return []
+
+	var range_distance := source.get_attack_range(equipment_slot) + range_bonus
+	return get_units_in_range(source, maxf(0.0, range_distance), filter)
+
+
 func is_unit_position_clear(unit: BattleUnitState, position: Vector2, write_log: bool = false) -> bool:
 	if controller == null:
 		return false
@@ -49,6 +62,38 @@ func is_unit_position_clear(unit: BattleUnitState, position: Vector2, write_log:
 			if write_log:
 				controller._emit_log("目标位置与 %s 重叠。" % other.get_display_name())
 			return false
+	return true
+
+
+func is_unit_inside_map_bounds(unit: BattleUnitState, position: Vector2, write_log: bool = false) -> bool:
+	if controller == null or controller.map_data == null or unit == null:
+		return false
+
+	if not controller.map_data.contains_map_position(position):
+		if write_log:
+			controller._emit_log("目标位置超出地图边界。")
+		return false
+
+	var radius := maxf(0.0, unit.radius)
+	if radius <= 0.001:
+		return true
+
+	if controller.map_data.boundary_points.size() >= 3:
+		var sample_count := 16
+		for index in range(sample_count):
+			var angle := TAU * float(index) / float(sample_count)
+			var sample_position := position + Vector2(cos(angle), sin(angle)) * radius
+			if not controller.map_data.contains_map_position(sample_position):
+				if write_log:
+					controller._emit_log("目标位置会使单位超出地图边界。")
+				return false
+		return true
+
+	var map_rect := Rect2(Vector2.ZERO, controller.map_data.map_size).grow(-radius)
+	if not map_rect.has_point(position):
+		if write_log:
+			controller._emit_log("目标位置会使单位超出地图边界。")
+		return false
 	return true
 
 
@@ -95,4 +140,3 @@ func path_progress(start_position: Vector2, end_position: Vector2, point: Vector
 	if length_squared <= 0.001:
 		return 0.0
 	return clampf((point - start_position).dot(segment) / length_squared, 0.0, 1.0)
-

@@ -12,7 +12,13 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 
 	var total_damage := damage_amount
 	if add_damage_bonus and user.has_method("get_damage_bonus"):
-		total_damage += user.get_damage_bonus()
+		total_damage += user.get_damage_bonus({
+			"source": self,
+			"card": context.get("card"),
+			"consume_one_shot_damage_bonus": true,
+		})
+		if user.has_method("remove_expired_statuses"):
+			user.remove_expired_statuses()
 
 	for target in targets:
 		if target != null and controller.has_method("apply_damage"):

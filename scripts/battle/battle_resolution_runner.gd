@@ -1,15 +1,16 @@
 extends RefCounted
 class_name BattleResolutionRunner
 
-const MAX_EFFECTS_PER_CARD := 32
+const MAX_EFFECTS_PER_ACTION := 32
+const MAX_EFFECTS_PER_CARD := MAX_EFFECTS_PER_ACTION
 
 var controller: BattleController
 var queue_scopes: Array = []
 var queue_sequence: int = 0
 var queue_depth: int = 0
-var card_stack: Array[BattleCardFrame] = []
-var card_resolution_depth: int = 0
-var current_card_effect_count: int = 0
+var action_stack: Array[BattleActionFrame] = []
+var action_resolution_depth: int = 0
+var current_action_effect_count: int = 0
 var effect_limit_reached: bool = false
 
 
@@ -22,9 +23,9 @@ func reset() -> void:
 	queue_scopes = [[]]
 	queue_sequence = 0
 	queue_depth = 0
-	card_stack.clear()
-	card_resolution_depth = 0
-	current_card_effect_count = 0
+	action_stack.clear()
+	action_resolution_depth = 0
+	current_action_effect_count = 0
 	effect_limit_reached = false
 
 
@@ -36,12 +37,33 @@ func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, la
 	_enqueue(callback, args, priority, label, context, true)
 
 
+func push_action_frame(frame: BattleActionFrame) -> void:
+	if frame == null or not frame.callback.is_valid():
+		return
+	if not _can_enqueue_resolution_item():
+		return
+
+	action_stack.append(frame)
+	if action_resolution_depth <= 0 and queue_depth <= 0:
+		resolve_action_stack()
+
+
 func push_card_frame(frame: BattleCardFrame) -> void:
 	if frame == null:
 		return
-	card_stack.append(frame)
-	if card_resolution_depth <= 0 and queue_depth <= 0:
-		resolve_card_stack()
+
+	var context_dict := {}
+	if frame.context != null:
+		context_dict = frame.context.to_dict()
+	push_action_frame(BattleActionFrame.create(
+		Callable(frame.card, "play"),
+		[context_dict, frame.targets],
+		_get_card_effect_priority(frame.card),
+		"%s 卡牌效果" % frame.card.card_name,
+		frame.context,
+		Callable(self, "_finish_card_frame"),
+		[frame]
+	))
 
 
 func resolve_effect_queue() -> void:
@@ -50,16 +72,29 @@ func resolve_effect_queue() -> void:
 	_drain_current_effect_queue()
 
 
+func resolve_action_stack() -> void:
+	if action_stack.is_empty():
+		return
+
+	if controller != null:
+		controller._begin_action_resolution()
+	while not action_stack.is_empty():
+		var frame: BattleActionFrame = action_stack.pop_back() as BattleActionFrame
+		action_resolution_depth += 1
+		current_action_effect_count = 0
+		effect_limit_reached = false
+		_resolve_action_frame(frame)
+		action_resolution_depth -= 1
+		current_action_effect_count = 0
+		effect_limit_reached = false
+		if frame != null and frame.after_callback.is_valid():
+			frame.after_callback.callv(frame.after_args)
+	if controller != null:
+		controller._end_action_resolution()
+
+
 func resolve_card_stack() -> void:
-	while not card_stack.is_empty():
-		var frame := card_stack.pop_back()
-		card_resolution_depth += 1
-		current_card_effect_count = 0
-		effect_limit_reached = false
-		_resolve_card_frame(frame)
-		card_resolution_depth -= 1
-		current_card_effect_count = 0
-		effect_limit_reached = false
+	resolve_action_stack()
 
 
 func _enqueue(callback: Callable, args: Array, priority: int, label: String, context, is_trigger: bool) -> void:
@@ -81,27 +116,32 @@ func _enqueue(callback: Callable, args: Array, priority: int, label: String, con
 	queue_sequence += 1
 
 
-func _resolve_card_frame(frame: BattleCardFrame) -> void:
-	if frame.user == null or frame.card == null:
+func _resolve_action_frame(frame: BattleActionFrame) -> void:
+	if frame == null or not frame.callback.is_valid():
 		return
 
 	_push_effect_queue_scope()
-	var context_dict := {}
-	if frame.context != null:
-		context_dict = frame.context.to_dict()
 	enqueue_effect(
-		Callable(frame.card, "play"),
-		[context_dict, frame.targets],
-		_get_card_effect_priority(frame.card),
-		"%s 卡牌效果" % frame.card.card_name,
+		frame.callback,
+		frame.args,
+		frame.priority,
+		frame.label,
 		frame.context
 	)
 	_drain_current_effect_queue()
 	_pop_effect_queue_scope()
 
-	frame.user.discard_card(frame.card)
+func _finish_card_frame(frame: BattleCardFrame) -> void:
+	if frame == null or frame.user == null or frame.card == null:
+		return
+
+	if frame.discard_after_play:
+		frame.user.discard_card(frame.card)
 	if controller != null:
-		controller._emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, frame.card.ap_cost])
+		var actual_ap_cost := frame.card.ap_cost
+		if frame.context != null:
+			actual_ap_cost = int(frame.context.extra.get("actual_ap_cost", frame.card.ap_cost))
+		controller._emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, actual_ap_cost])
 		controller.state_changed.emit()
 		controller._check_battle_end()
 
@@ -114,10 +154,10 @@ func _drain_current_effect_queue() -> void:
 			queue.clear()
 			break
 		queue.sort_custom(Callable(self, "_compare_effect_queue_entries"))
-		var entry: BattleResolutionEntry = queue.pop_front()
+		var entry: BattleResolutionEntry = queue.pop_front() as BattleResolutionEntry
 		_execute_effect_queue_entry(entry)
-		if not card_stack.is_empty():
-			resolve_card_stack()
+		if not action_stack.is_empty():
+			resolve_action_stack()
 	queue_depth -= 1
 
 
@@ -138,7 +178,7 @@ func _compare_effect_queue_entries(a: BattleResolutionEntry, b: BattleResolution
 func _get_current_effect_queue() -> Array:
 	if queue_scopes.is_empty():
 		queue_scopes.append([])
-	return queue_scopes[queue_scopes.size() - 1]
+	return queue_scopes[queue_scopes.size() - 1] as Array
 
 
 func _push_effect_queue_scope() -> void:
@@ -168,29 +208,28 @@ func _get_effect_priority(effect) -> int:
 
 
 func _can_enqueue_resolution_item() -> bool:
-	if card_resolution_depth <= 0:
+	if action_resolution_depth <= 0:
 		return true
 	if effect_limit_reached:
 		return false
-	if current_card_effect_count >= MAX_EFFECTS_PER_CARD:
+	if current_action_effect_count >= MAX_EFFECTS_PER_ACTION:
 		effect_limit_reached = true
 		if controller != null:
-			controller._emit_log("单张卡牌效果结算达到 %d 个，后续效果不再加入结算。" % MAX_EFFECTS_PER_CARD)
+			controller._emit_log("单个主要行动效果结算达到 %d 个，后续效果不再加入结算。" % MAX_EFFECTS_PER_ACTION)
 		return false
 	return true
 
 
 func _record_effect_resolution() -> bool:
-	if card_resolution_depth <= 0:
+	if action_resolution_depth <= 0:
 		return true
 	if effect_limit_reached:
 		return false
 
-	current_card_effect_count += 1
-	if current_card_effect_count > MAX_EFFECTS_PER_CARD:
+	current_action_effect_count += 1
+	if current_action_effect_count > MAX_EFFECTS_PER_ACTION:
 		effect_limit_reached = true
 		if controller != null:
-			controller._emit_log("单张卡牌效果结算达到 %d 个，停止结算后续效果。" % MAX_EFFECTS_PER_CARD)
+			controller._emit_log("单个主要行动效果结算达到 %d 个，停止结算后续效果。" % MAX_EFFECTS_PER_ACTION)
 		return false
 	return true
-

@@ -11,6 +11,7 @@ description = "移动至选定方向，最多移动相当于敏捷+3的距离。
 artwork = ExtResource("2_scroll")
 rarity = 0
 card_class = 1
+card_type = 0
 target_type = 3
 ap_cost = 2
 play_timing = 0

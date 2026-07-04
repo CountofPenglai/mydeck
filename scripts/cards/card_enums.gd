@@ -17,6 +17,11 @@ enum CardClass {
 	WARLOCK,
 }
 
+enum CardType {
+	ATTACK,
+	SKILL,
+}
+
 enum TargetType {
 	NONE,
 	SINGLE,
@@ -29,6 +34,12 @@ enum TargetType {
 enum PlayTiming {
 	NORMAL,
 	BONUS,
+}
+
+enum CardPlayMode {
+	NORMAL,
+	MOMENTUM,
+	COMBO,
 }
 
 static func rarity_label(value: int) -> String:
@@ -59,6 +70,16 @@ static func class_label(value: int) -> String:
 			return "德鲁伊"
 		CardClass.WARLOCK:
 			return "术士"
+		_:
+			return "未知"
+
+
+static func card_type_label(value: int) -> String:
+	match value:
+		CardType.ATTACK:
+			return "攻击"
+		CardType.SKILL:
+			return "技能"
 		_:
 			return "未知"
 
@@ -101,5 +122,17 @@ static func play_timing_label(value: int) -> String:
 			return "标准"
 		PlayTiming.BONUS:
 			return "附赠"
+		_:
+			return "未知"
+
+
+static func play_mode_label(value: int) -> String:
+	match value:
+		CardPlayMode.NORMAL:
+			return "普通"
+		CardPlayMode.MOMENTUM:
+			return "余势"
+		CardPlayMode.COMBO:
+			return "连击"
 		_:
 			return "未知"

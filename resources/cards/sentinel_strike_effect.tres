@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SentinelStrikeCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/sentinel_strike_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_priority = 0
+uses_strike = true
+inner_range_modifier = -1.0
+close_damage_multiplier = 1.5
+cripple_stacks = 2
+move_ap_discount = 1

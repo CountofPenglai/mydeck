@@ -9,21 +9,25 @@
 [ext_resource type="Texture2D" path="res://assets/art/ui/deck_button.png" id="7_deck"]
 
 [node name="BattleScene" type="Control"]
-custom_minimum_size = Vector2(1180, 720)
+custom_minimum_size = Vector2(960, 540)
 layout_mode = 3
-anchors_preset = 0
-offset_right = 1180.0
-offset_bottom = 720.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_scene")
 scenario = ExtResource("3_scenario")
 
 [node name="MapView" type="Control" parent="."]
 unique_name_in_owner = true
-layout_mode = 0
-offset_left = 90.0
-offset_top = 20.0
-offset_right = 990.0
-offset_bottom = 620.0
+clip_contents = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 0
 script = ExtResource("2_map_view")
 
@@ -31,8 +35,8 @@ script = ExtResource("2_map_view")
 layout_mode = 0
 offset_left = 16.0
 offset_top = 16.0
-offset_right = 376.0
-offset_bottom = 332.0
+offset_right = 360.0
+offset_bottom = 320.0
 
 [node name="Margin" type="MarginContainer" parent="TopOverlay"]
 layout_mode = 2
@@ -56,6 +60,16 @@ unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
 text = "当前单位：无"
+
+[node name="ClassResourceTitle" type="Label" parent="TopOverlay/Margin/TopStack"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "职业资源"
+
+[node name="ClassResourceList" type="VBoxContainer" parent="TopOverlay/Margin/TopStack"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 3
 
 [node name="DeployTitle" type="Label" parent="TopOverlay/Margin/TopStack"]
 layout_mode = 2
@@ -83,19 +97,34 @@ text = "结束回合"
 
 [node name="LogLabel" type="RichTextLabel" parent="TopOverlay/Margin/TopStack"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 120)
+custom_minimum_size = Vector2(0, 88)
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = false
 scroll_following = true
 
 [node name="BottomHud" type="Control" parent="."]
-layout_mode = 0
-offset_left = 90.0
-offset_top = 500.0
-offset_right = 1090.0
-offset_bottom = 700.0
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.08
+anchor_top = 1.0
+anchor_right = 0.92
+anchor_bottom = 1.0
+offset_top = -212.0
+offset_bottom = -8.0
 mouse_filter = 1
+
+[node name="DiscardButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -74.0
+offset_right = 104.0
+offset_bottom = -16.0
+text = "弃牌"
 
 [node name="HudTexture" type="TextureRect" parent="BottomHud"]
 layout_mode = 1
@@ -110,10 +139,13 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="ActionRow" type="HBoxContainer" parent="BottomHud"]
-layout_mode = 0
-offset_left = 270.0
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -230.0
 offset_top = 16.0
-offset_right = 730.0
+offset_right = 230.0
 offset_bottom = 72.0
 theme_override_constants/separation = 12
 alignment = 1
@@ -195,30 +227,31 @@ text = "攻击"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="HandFrame" type="Control" parent="BottomHud"]
-layout_mode = 0
+[node name="HandFrame" type="ScrollContainer" parent="BottomHud"]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
 offset_left = 28.0
 offset_top = 80.0
-offset_right = 880.0
+offset_right = -92.0
 offset_bottom = 186.0
 
 [node name="HandList" type="HBoxContainer" parent="BottomHud/HandFrame"]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 10
 alignment = 1
 
 [node name="DeckButton" type="TextureButton" parent="BottomHud"]
 unique_name_in_owner = true
-layout_mode = 0
-offset_left = 900.0
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -76.0
 offset_top = 118.0
-offset_right = 960.0
+offset_right = -16.0
 offset_bottom = 178.0
 tooltip_text = "查看牌库"
 texture_normal = ExtResource("7_deck")

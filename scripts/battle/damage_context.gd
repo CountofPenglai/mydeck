@@ -25,21 +25,9 @@ func prevent(by_effect = null) -> void:
 	prevented_by = by_effect
 
 
-func to_dict() -> Dictionary:
-	return {
-		"controller": controller,
-		"source": source,
-		"target": target,
-		"amount": amount,
-		"label": label,
-		"prevented": prevented,
-		"prevented_by": prevented_by,
-		"damage_context": self,
-	}
-
-
-func apply_dict(values: Dictionary) -> void:
-	amount = int(values.get("amount", amount))
-	prevented = bool(values.get("prevented", prevented))
-	prevented_by = values.get("prevented_by", prevented_by)
-
+func reduce_amount(value: int) -> int:
+	var reduction := mini(amount, maxi(0, value))
+	amount = maxi(0, amount - reduction)
+	if amount <= 0:
+		prevented = true
+	return reduction

@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/gather_momentum_whirlwind_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/gather_momentum_whirlwind_momentum_ap_condition.tres" id="4_momentum_ap"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "蓄势/回旋斩"
+description = "获得 3 层势。余势：支付 2 AP，对攻击范围 +1 内所有敌人依次进行一次打击，此打击获得势层数 * 2 的伤害加值。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 1
+card_type = 0
+target_type = 4
+ap_cost = 3
+play_timing = 0
+range_modifier = 0.0
+override_range = false
+card_range = 160.0
+effect = ExtResource("3_effect")
+has_momentum = true
+momentum_conditions = [ExtResource("4_momentum_ap")]
+has_combo = false
+combo_conditions = []

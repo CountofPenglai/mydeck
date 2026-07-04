@@ -24,7 +24,7 @@ func generate_deck(seed: int = -1) -> Array[CardStack]:
 			break
 
 		var index := rng.randi_range(0, pool.size() - 1)
-		var stack = pool[index]
+		var stack: CardStack = pool[index]
 		_add_stack(result, stack)
 		pool.remove_at(index)
 

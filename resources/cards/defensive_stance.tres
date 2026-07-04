@@ -11,6 +11,7 @@ description = "获得 1 层抵挡。本轮下次抵挡成功时，切换你的�
 artwork = ExtResource("2_scroll")
 rarity = 0
 card_class = 1
+card_type = 1
 target_type = 4
 ap_cost = 2
 play_timing = 0

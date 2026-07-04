@@ -7,6 +7,16 @@ class_name ChargeCardEffect
 func _init() -> void:
 	uses_strike = true
 
+
+func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:
+	var controller = context.get("controller")
+	var user = context.get("user")
+	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2):
+		return false
+
+	return controller.can_unit_reach_position_with_agility_modifier(user, targets[0], agility_modifier, write_log)
+
+
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller = context.get("controller")
 	var user = context.get("user")
@@ -15,7 +25,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		return
 
 	var requested_position: Vector2 = targets[0]
-	var movement = controller.apply_movement_effect(user, requested_position, agility_modifier, true)
+	var movement = controller.apply_movement_effect(user, requested_position, agility_modifier, false)
 	if not bool(movement.get("success", false)):
 		return
 
@@ -31,7 +41,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	for target in hits:
 		controller.enqueue_effect(
 			Callable(controller, "perform_strike_with_modifier"),
-			[user, target, card, strike_damage_modifier, "冲锋打击", str(context.get("weapon_slot", ""))],
+			[user, target, card, strike_damage_modifier, "冲锋打击", str(context.get("equipment_slot", ""))],
 			effect_priority,
 			"冲锋途经打击",
 			{

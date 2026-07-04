@@ -18,7 +18,9 @@ var current_ap: int = 0
 var draw_pile: Array[CardData] = []
 var hand: Array[CardData] = []
 var discard_pile: Array[CardData] = []
+var exiled_pile: Array[CardData] = []
 var statuses: Array[StatusEffect] = []
+var battle_action_flags := {}
 
 func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	unit_id = id
@@ -28,6 +30,7 @@ func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	enemy_state = null
 	radius = _resolve_collision_radius(unit_radius)
 	is_deployed = false
+	battle_action_flags.clear()
 
 
 func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position: Vector2) -> void:
@@ -39,6 +42,7 @@ func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position:
 	radius = _resolve_collision_radius(unit_radius)
 	position = start_position
 	is_deployed = true
+	battle_action_flags.clear()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
@@ -114,11 +118,75 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 	return 0
 
 
+func get_character_class() -> int:
+	if character_state != null and character_state.character_data != null:
+		return character_state.character_data.character_class
+
+	return CardEnums.CardClass.NEUTRAL
+
+
+func get_class_resource(resource_name: String) -> ResourcePoolState:
+	if character_state != null:
+		return character_state.get_class_resource(resource_name)
+
+	return null
+
+
+func get_class_resource_value(resource_name: String) -> int:
+	if character_state != null:
+		return character_state.get_class_resource_value(resource_name)
+
+	return 0
+
+
+func gain_class_resource(resource_name: String, amount: int) -> int:
+	if character_state != null:
+		return character_state.gain_class_resource(resource_name, amount)
+
+	return 0
+
+
+func consume_class_resource(resource_name: String, amount: int) -> bool:
+	if character_state != null:
+		return character_state.consume_class_resource(resource_name, amount)
+
+	return false
+
+
+func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
+	if card == null:
+		return 0
+
+	var cost := card.ap_cost
+	for status in statuses:
+		if status != null and status.has_method("modify_card_ap_cost"):
+			cost = status.modify_card_ap_cost(self, card, cost, context)
+
+	return maxi(0, cost)
+
+
+func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_card_ap_cost_paid"):
+			status.on_card_ap_cost_paid(self, card, context)
+
+	remove_expired_statuses()
+
+
 func get_status_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := 0
 	for status in statuses:
 		if status != null and status.has_method("get_damage_bonus"):
 			bonus += status.get_damage_bonus(self, context)
+
+	return bonus
+
+
+func get_status_strike_power_bonus(context: Dictionary = {}) -> int:
+	var bonus := 0
+	for status in statuses:
+		if status != null and status.has_method("get_strike_power_bonus"):
+			bonus += status.get_strike_power_bonus(self, context)
 
 	return bonus
 
@@ -132,39 +200,32 @@ func get_agility() -> int:
 	return 0
 
 
-func get_speed() -> int:
-	return get_agility()
-
-
-func get_attack_range(weapon_slot: String = "") -> float:
+func get_attack_range(equipment_slot: String = "") -> float:
 	if character_state != null:
-		return character_state.get_attack_range(weapon_slot)
+		return character_state.get_attack_range(equipment_slot)
 	if enemy_state != null:
-		return enemy_state.get_attack_range(weapon_slot)
+		return enemy_state.get_attack_range(equipment_slot)
 
 	return 0.0
 
 
-func build_strike_profile(weapon_slot: String = "") -> Dictionary:
-	return build_strike_profile_object(weapon_slot).to_dict()
-
-
-func build_strike_profile_object(weapon_slot: String = "") -> StrikeProfile:
-	var context := {"unit": self}
+func build_strike_profile_object(equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
+	var merged_context := context.duplicate()
+	merged_context["unit"] = self
 	if character_state != null:
-		return character_state.build_strike_profile_object(weapon_slot, context)
+		return character_state.build_strike_profile_object(equipment_slot, merged_context)
 	if enemy_state != null:
-		return enemy_state.build_strike_profile_object(weapon_slot, context)
+		return enemy_state.build_strike_profile_object(equipment_slot, merged_context)
 
 	var profile := StrikeProfile.new()
 	profile.primary_slot = "unarmed"
-	profile.primary_weapon = null
+	profile.primary_equipment = null
 	profile.primary_power = 1
 	profile.primary_range = 0.0
-	profile.primary_weapon_type = WeaponData.WeaponType.MELEE
+	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.damage_bonus = 0
 	profile.add_offhand = false
-	profile.offhand_weapon = null
+	profile.offhand_equipment = null
 	profile.offhand_power = 0
 	return profile
 
@@ -183,9 +244,9 @@ func get_attack_weapon_options() -> Array:
 	return []
 
 
-func has_equipment_tag(tag: String) -> bool:
+func has_equipment_subcategory(subcategory: String) -> bool:
 	if character_state != null:
-		return character_state.has_equipment_tag(tag)
+		return character_state.has_equipment_subcategory(subcategory)
 
 	return false
 
@@ -209,7 +270,38 @@ func get_max_ap(config: BattleConfig) -> int:
 
 
 func get_move_distance_per_ap(config: BattleConfig) -> float:
-	return config.move_distance_per_ap + float(get_agility()) * config.move_distance_per_agility
+	var distance := config.move_distance_per_ap + float(get_agility()) * config.move_distance_per_agility
+	var context := {
+		"config": config,
+	}
+	for status in statuses:
+		if status != null and status.has_method("modify_move_distance_per_ap"):
+			distance = status.modify_move_distance_per_ap(self, distance, context)
+
+	return maxf(1.0, distance)
+
+
+func get_move_ap_cost(distance: float, config: BattleConfig) -> int:
+	var move_per_ap := get_move_distance_per_ap(config)
+	var cost := ceili(distance / move_per_ap)
+	var context := {
+		"config": config,
+		"distance": distance,
+		"move_distance_per_ap": move_per_ap,
+	}
+	for status in statuses:
+		if status != null and status.has_method("modify_move_ap_cost"):
+			cost = status.modify_move_ap_cost(self, cost, context)
+
+	return maxi(0, cost)
+
+
+func notify_move_ap_cost_paid(context: Dictionary = {}) -> void:
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_move_ap_cost_paid"):
+			status.on_move_ap_cost_paid(self, context)
+
+	remove_expired_statuses()
 
 
 func distance_to(other: BattleUnitState) -> float:
@@ -227,10 +319,38 @@ func draw_cards(count: int, rng: RandomNumberGenerator) -> int:
 		if draw_pile.is_empty():
 			break
 
-		hand.append(draw_pile.pop_back())
+		var drawn_card: CardData = draw_pile.pop_back() as CardData
+		hand.append(drawn_card)
 		drawn += 1
 
 	return drawn
+
+
+func mill_cards(count: int) -> Array[CardData]:
+	var milled: Array[CardData] = []
+	for _i in range(maxi(0, count)):
+		if draw_pile.is_empty():
+			break
+
+		var card: CardData = draw_pile.pop_back() as CardData
+		if card == null:
+			continue
+		discard_pile.append(card)
+		milled.append(card)
+
+	return milled
+
+
+func preview_discard_after_mill(count: int) -> Array[CardData]:
+	var result: Array[CardData] = discard_pile.duplicate()
+	var available := mini(maxi(0, count), draw_pile.size())
+	for index in range(available):
+		var draw_index := draw_pile.size() - 1 - index
+		var card: CardData = draw_pile[draw_index]
+		if card != null:
+			result.append(card)
+
+	return result
 
 
 func discard_card(card: CardData) -> void:
@@ -238,6 +358,124 @@ func discard_card(card: CardData) -> void:
 	if index >= 0:
 		hand.remove_at(index)
 		discard_pile.append(card)
+
+
+func discard_all_hand() -> int:
+	var count := hand.size()
+	for card in hand:
+		if card != null:
+			discard_pile.append(card)
+	hand.clear()
+	return count
+
+
+func move_draw_card_to_discard(card: CardData) -> bool:
+	var index := draw_pile.find(card)
+	if index < 0:
+		return false
+
+	draw_pile.remove_at(index)
+	discard_pile.append(card)
+	return true
+
+
+func banish_discard_card(card: CardData) -> bool:
+	var index := discard_pile.find(card)
+	if index < 0:
+		return false
+
+	discard_pile.remove_at(index)
+	exiled_pile.append(card)
+	return true
+
+
+func move_exiled_card_to_discard(card: CardData) -> bool:
+	var index := exiled_pile.find(card)
+	if index < 0:
+		return false
+
+	exiled_pile.remove_at(index)
+	discard_pile.append(card)
+	return true
+
+
+func banish_discard_cards(count: int, excluded_card: CardData = null) -> Array[CardData]:
+	var banished: Array[CardData] = []
+	if count <= 0:
+		return banished
+
+	for card in discard_pile.duplicate():
+		if banished.size() >= count:
+			break
+		if card == null or card == excluded_card:
+			continue
+		if banish_discard_card(card):
+			banished.append(card)
+
+	return banished
+
+
+func count_discard_cards_excluding(excluded_card: CardData = null) -> int:
+	var count := 0
+	for card in discard_pile:
+		if card != null and card != excluded_card:
+			count += 1
+
+	return count
+
+
+func shuffle_exiled_into_draw_pile(rng: RandomNumberGenerator) -> int:
+	if exiled_pile.is_empty():
+		return 0
+
+	var returned_count := exiled_pile.size()
+	for card in exiled_pile:
+		if card != null:
+			draw_pile.append(card)
+	exiled_pile.clear()
+	_shuffle_cards(draw_pile, rng)
+	return returned_count
+
+
+func move_discard_cards_to_draw_top(cards_in_top_order: Array[CardData], max_count: int = 3) -> Array[CardData]:
+	var moved: Array[CardData] = []
+	for card in cards_in_top_order:
+		if moved.size() >= max_count:
+			break
+		if card == null:
+			continue
+		var index := discard_pile.find(card)
+		if index < 0:
+			continue
+		discard_pile.remove_at(index)
+		moved.append(card)
+
+	for i in range(moved.size() - 1, -1, -1):
+		draw_pile.append(moved[i])
+
+	return moved
+
+
+func has_card_in_hand(card: CardData) -> bool:
+	return hand.find(card) >= 0
+
+
+func has_card_in_discard(card: CardData) -> bool:
+	return discard_pile.find(card) >= 0
+
+
+func has_card_in_exile(card: CardData) -> bool:
+	return exiled_pile.find(card) >= 0
+
+
+func has_used_battle_action(action_id: String) -> bool:
+	return bool(battle_action_flags.get(action_id, false))
+
+
+func mark_battle_action_used(action_id: String) -> void:
+	if action_id.is_empty():
+		return
+	battle_action_flags[action_id] = true
 
 
 func add_status(status: StatusEffect) -> void:
@@ -266,14 +504,14 @@ func has_status(status_id: String) -> bool:
 
 func remove_status(status_id: String) -> void:
 	for i in range(statuses.size() - 1, -1, -1):
-		var status := statuses[i]
+		var status: StatusEffect = statuses[i]
 		if status != null and status.status_id == status_id:
 			statuses.remove_at(i)
 
 
 func remove_expired_statuses() -> void:
 	for i in range(statuses.size() - 1, -1, -1):
-		var status := statuses[i]
+		var status: StatusEffect = statuses[i]
 		if status == null or status.should_remove():
 			statuses.remove_at(i)
 
@@ -298,7 +536,7 @@ func _shuffle_cards(cards: Array[CardData], rng: RandomNumberGenerator) -> void:
 
 	for i in range(cards.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
-		var temp := cards[i]
+		var temp: CardData = cards[i]
 		cards[i] = cards[j]
 		cards[j] = temp
 

@@ -8,26 +8,45 @@ func setup(new_controller: BattleController) -> void:
 	controller = new_controller
 
 
-func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击", weapon_slot: String = "") -> int:
-	return perform_strike_with_modifier(attacker, target, source, 0, label, weapon_slot)
+func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击", equipment_slot: String = "") -> int:
+	return perform_strike_with_modifier(attacker, target, source, 0, label, equipment_slot)
 
 
-func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, label: String = "打击", weapon_slot: String = "") -> int:
+func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, label: String = "打击", equipment_slot: String = "") -> int:
+	return perform_strike_with_modifier_and_multiplier(attacker, target, source, damage_modifier, 1.0, label, equipment_slot)
+
+
+func perform_strike_with_multiplier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "") -> int:
+	return perform_strike_with_modifier_and_multiplier(attacker, target, source, 0, damage_multiplier, label, equipment_slot)
+
+
+func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "", options: Dictionary = {}) -> int:
 	if controller == null or attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
 		return 0
 
-	var profile := attacker.build_strike_profile_object(weapon_slot)
-	var primary_damage := maxi(0, profile.primary_power + profile.damage_bonus + damage_modifier)
+	var profile_context := options.duplicate()
+	profile_context["source"] = source
+	profile_context["target"] = target
+	profile_context["label"] = label
+	profile_context["consume_one_shot_damage_bonus"] = true
+	profile_context["consume_one_shot_power_bonus"] = true
+	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
+	var power_modifier := attacker.get_status_strike_power_bonus(profile_context)
+	if power_modifier != 0:
+		profile.primary_power = maxi(0, profile.primary_power + power_modifier)
+	attacker.remove_expired_statuses()
+	var primary_base_damage := maxi(0, profile.primary_power + profile.damage_bonus + damage_modifier)
+	var primary_damage := _apply_damage_multiplier(primary_base_damage, damage_multiplier)
 	var actual_damage := controller.apply_damage(attacker, target, primary_damage, label)
 	var hit_results: Array[StrikeHitResult] = [
-		StrikeHitResult.create(profile.primary_slot, profile.primary_weapon, primary_damage, actual_damage)
+		StrikeHitResult.create(profile.primary_slot, profile.primary_equipment, primary_damage, actual_damage)
 	]
 
 	if profile.add_offhand and target.is_alive():
-		var offhand_damage := maxi(0, profile.offhand_power)
+		var offhand_damage := _apply_damage_multiplier(maxi(0, profile.offhand_power), damage_multiplier)
 		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label)
 		actual_damage += offhand_actual
-		hit_results.append(StrikeHitResult.create("off", profile.offhand_weapon, offhand_damage, offhand_actual))
+		hit_results.append(StrikeHitResult.create("off", profile.offhand_equipment, offhand_damage, offhand_actual))
 
 	var attack_results := []
 	for result in hit_results:
@@ -39,6 +58,10 @@ func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitS
 		"target": target,
 		"source": source,
 		"damage_amount": primary_damage,
+		"base_damage_amount": primary_base_damage,
+		"damage_modifier": damage_modifier,
+		"power_modifier": power_modifier,
+		"damage_multiplier": damage_multiplier,
 		"actual_damage": actual_damage,
 		"label": label,
 		"strike_profile": profile.to_dict(),
@@ -48,3 +71,10 @@ func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitS
 	}
 	controller.enqueue_trigger(Callable(controller, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
 	return actual_damage
+
+
+func _apply_damage_multiplier(amount: int, multiplier: float) -> int:
+	if amount <= 0:
+		return 0
+
+	return maxi(0, ceili(float(amount) * multiplier))

@@ -11,6 +11,7 @@ description = "对一个敌人进行一次打击。如果装备了盾牌，给�
 artwork = ExtResource("2_scroll")
 rarity = 0
 card_class = 1
+card_type = 0
 target_type = 1
 ap_cost = 2
 play_timing = 0

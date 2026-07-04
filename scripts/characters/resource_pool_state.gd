@@ -25,5 +25,23 @@ func get_max_value() -> int:
 	return pool_data.max_value
 
 
+func gain(amount: int) -> int:
+	var old_value := current_value
+	current_value = clampi(current_value + maxi(0, amount), 0, get_max_value())
+	return current_value - old_value
+
+
+func can_consume(amount: int) -> bool:
+	return amount > 0 and current_value >= amount
+
+
+func consume(amount: int) -> bool:
+	if not can_consume(amount):
+		return false
+
+	current_value = maxi(0, current_value - amount)
+	return true
+
+
 func get_display_text() -> String:
 	return "%s：%d/%d" % [get_resource_name(), current_value, get_max_value()]

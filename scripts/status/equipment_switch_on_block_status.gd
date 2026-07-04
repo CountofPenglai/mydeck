@@ -1,8 +1,8 @@
 extends StatusEffect
-class_name WeaponSwitchOnBlockStatus
+class_name EquipmentSwitchOnBlockStatus
 
 func _init() -> void:
-	status_id = "weapon_switch_on_block"
+	status_id = "equipment_switch_on_block"
 	display_name = "防御架势"
 
 
@@ -15,7 +15,7 @@ func on_block_spent(unit: BattleUnitState, context = null) -> void:
 		controller = context.controller
 	elif context is Dictionary:
 		controller = context.get("controller")
-	if controller != null and controller.has_method("switch_weapon_from_inventory"):
-		controller.switch_weapon_from_inventory(unit)
+	if controller != null and controller.has_method("switch_equipment_from_inventory"):
+		controller.switch_equipment_from_inventory(unit)
 
 	stacks = 0

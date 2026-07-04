@@ -13,7 +13,7 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 	block.stacks = block_stacks
 	user.add_status(block)
 
-	var switch_on_block := WeaponSwitchOnBlockStatus.new()
+	var switch_on_block := EquipmentSwitchOnBlockStatus.new()
 	switch_on_block.stacks = 1
 	user.add_status(switch_on_block)
 

@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/barbaric_brawl_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/barbaric_brawl_momentum_ap_condition.tres" id="4_momentum_ap"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "野蛮斗殴"
+description = "对主手武器范围内所有敌人只用主手武器进行一次打击。余势：支付 2 AP，范围 +2。放逐区：每场战斗限一次，弃置所有手牌，将此牌移回弃牌堆，本回合下一次打击 +2 威力。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 1
+card_type = 0
+target_type = 5
+ap_cost = 2
+play_timing = 0
+range_modifier = 0.0
+override_range = false
+card_range = 160.0
+effect = ExtResource("3_effect")
+has_momentum = true
+momentum_conditions = [ExtResource("4_momentum_ap")]
+has_combo = false
+combo_conditions = []

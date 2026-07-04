@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="PayAPCondition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/conditions/pay_ap_condition.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")
+condition_name = "支付 AP"
+amount = 2

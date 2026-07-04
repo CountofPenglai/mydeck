@@ -4,9 +4,11 @@ class_name BattleController
 signal log_message(message: String)
 signal state_changed
 signal basic_attack_triggered(context: Dictionary)
-signal weapon_switch_started(context: Dictionary)
-signal weapon_switched_out(context: Dictionary)
-signal weapon_switched_in(context: Dictionary)
+signal equipment_switch_started(context: Dictionary)
+signal equipment_switched_out(context: Dictionary)
+signal equipment_switched_in(context: Dictionary)
+
+const WARRIOR_MOMENTUM_RESOURCE := "势"
 
 enum Phase {
 	DEPLOYMENT,
@@ -32,6 +34,8 @@ var enemy_units: Array[BattleUnitState] = []
 var turn_order: Array[BattleUnitState] = []
 var current_turn_index: int = -1
 var current_unit: BattleUnitState
+var class_resource_actions_used := {}
+var action_resolution_lock_count: int = 0
 var resolution_runner := BattleResolutionRunner.new()
 var targeting := BattleTargeting.new()
 var strike_resolver := BattleStrikeResolver.new()
@@ -40,7 +44,8 @@ func setup(new_scenario: BattleScenario) -> void:
 	scenario = new_scenario
 	config = scenario.battle_config
 	scene_prototype = scenario.scene_prototype
-	map_data = scenario.get_map_data()
+	var source_map_data := scenario.get_map_data()
+	map_data = source_map_data.duplicate(true) if source_map_data != null else BattleMapData.new()
 	if scene_prototype != null and scene_prototype.scene_texture != null:
 		map_data.background_texture = scene_prototype.scene_texture
 	rng.seed = scenario.seed
@@ -51,12 +56,14 @@ func setup(new_scenario: BattleScenario) -> void:
 	turn_order.clear()
 	current_turn_index = -1
 	current_unit = null
+	class_resource_actions_used.clear()
+	action_resolution_lock_count = 0
 	resolution_runner.setup(self)
 	targeting.setup(self)
 	strike_resolver.setup(self)
 
 	var id := 0
-	for character_state in scenario.players:
+	for character_state in scenario.get_player_states():
 		if character_state == null:
 			continue
 		character_state.ensure_initialized()
@@ -89,6 +96,8 @@ func setup(new_scenario: BattleScenario) -> void:
 
 
 func deploy_player_unit(unit: BattleUnitState, position: Vector2) -> bool:
+	if is_resolving_actions():
+		return false
 	if phase != Phase.DEPLOYMENT:
 		_emit_log("当前不是部署阶段。")
 		return false
@@ -108,6 +117,9 @@ func deploy_player_unit(unit: BattleUnitState, position: Vector2) -> bool:
 
 
 func can_start_battle() -> bool:
+	if is_resolving_actions():
+		return false
+
 	for unit in player_units:
 		if not unit.is_deployed:
 			return false
@@ -116,6 +128,8 @@ func can_start_battle() -> bool:
 
 
 func start_battle() -> bool:
+	if is_resolving_actions():
+		return false
 	if phase != Phase.DEPLOYMENT:
 		return false
 
@@ -148,15 +162,15 @@ func advance_turn() -> void:
 		current_turn_index = (current_turn_index + 1) % turn_order.size()
 		current_unit = turn_order[current_turn_index]
 		if current_unit.is_alive():
-			current_unit.start_turn(config)
-			_queue_unit_status_effects("on_turn_start", current_unit)
-			_queue_global_effects("on_turn_start", current_unit)
-			resolve_effect_queue()
-			current_unit.remove_expired_statuses()
-			_emit_log("轮到 %s，AP：%d。" % [current_unit.get_display_name(), current_unit.current_ap])
-			state_changed.emit()
-			if current_unit.faction == BattleUnitState.Faction.ENEMY:
-				_run_enemy_turn(current_unit)
+			push_action_frame(BattleActionFrame.create(
+				Callable(self, "_resolve_turn_start_action"),
+				[current_unit],
+				0,
+				"%s 回合开始" % current_unit.get_display_name(),
+				{"unit": current_unit, "phase": "turn_start"},
+				Callable(self, "_finish_turn_start_action"),
+				[current_unit]
+			))
 			return
 
 	_check_battle_end()
@@ -166,18 +180,59 @@ func end_current_turn() -> void:
 	if phase != Phase.BATTLE or current_unit == null:
 		return
 
+	var unit := current_unit
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_turn_end_action"),
+		[unit],
+		0,
+		"%s 回合结束" % unit.get_display_name(),
+		{"unit": unit, "phase": "turn_end"},
+		Callable(self, "_finish_turn_end_action"),
+		[unit]
+	))
+
+
+func _resolve_turn_start_action(unit: BattleUnitState) -> void:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return
+
+	unit.start_turn(config)
+	class_resource_actions_used.erase(unit.unit_id)
+	_queue_unit_status_effects("on_turn_start", unit)
+	_queue_global_effects("on_turn_start", unit)
+
+
+func _finish_turn_start_action(unit: BattleUnitState) -> void:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return
+
+	unit.remove_expired_statuses()
+	_emit_log("轮到 %s，AP：%d。" % [unit.get_display_name(), unit.current_ap])
+	state_changed.emit()
+	if current_unit == unit and unit.faction == BattleUnitState.Faction.ENEMY:
+		_run_enemy_turn(unit)
+
+
+func _resolve_turn_end_action(unit: BattleUnitState) -> void:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+		return
+
 	var draw_count := 0
 	if config.ap_per_end_turn_draw > 0:
-		draw_count = floori(float(current_unit.current_ap) / float(config.ap_per_end_turn_draw))
+		draw_count = floori(float(unit.current_ap) / float(config.ap_per_end_turn_draw))
 
 	if draw_count > 0:
-		var drawn := current_unit.draw_cards(draw_count, rng)
-		_emit_log("%s 保留 %d AP，抽取 %d 张牌。" % [current_unit.get_display_name(), current_unit.current_ap, drawn])
+		var drawn := unit.draw_cards(draw_count, rng)
+		_emit_log("%s 保留 %d AP，抽取 %d 张牌。" % [unit.get_display_name(), unit.current_ap, drawn])
 
-	current_unit.current_ap = 0
-	_queue_global_effects("on_turn_end", current_unit)
-	resolve_effect_queue()
-	advance_turn()
+	unit.current_ap = 0
+	_queue_unit_status_effects("on_turn_end", unit)
+	_queue_global_effects("on_turn_end", unit)
+
+
+func _finish_turn_end_action(unit: BattleUnitState) -> void:
+	if phase == Phase.BATTLE and current_unit == unit:
+		advance_turn()
 
 
 func move_current_unit_to(position: Vector2) -> bool:
@@ -197,23 +252,52 @@ func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
 		return false
 
 	var distance := unit.position.distance_to(position)
-	var move_per_ap := unit.get_move_distance_per_ap(config)
-	var ap_cost := ceili(distance / move_per_ap)
-	if ap_cost <= 0:
+	var ap_cost := unit.get_move_ap_cost(distance, config)
+	if distance <= 0.001:
 		return true
 
 	if unit.current_ap < ap_cost:
 		_emit_log("%s AP不足，移动需要 %d AP。" % [unit.get_display_name(), ap_cost])
 		return false
 
-	unit.current_ap -= ap_cost
-	unit.position = position
-	_emit_log("%s 移动到 (%.0f, %.0f)，消耗 %d AP。" % [unit.get_display_name(), position.x, position.y, ap_cost])
-	state_changed.emit()
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_direct_move_action"),
+		[unit, position],
+		0,
+		"%s 直接移动" % unit.get_display_name(),
+		{"unit": unit, "position": position, "ap_cost": ap_cost}
+	))
 	return true
 
 
-func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}) -> bool:
+func _resolve_direct_move_action(unit: BattleUnitState, position: Vector2) -> void:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return
+	if not _is_position_valid_for_unit(unit, position, false):
+		return
+
+	var distance := unit.position.distance_to(position)
+	if distance <= 0.001:
+		return
+
+	var ap_cost := unit.get_move_ap_cost(distance, config)
+	if unit.current_ap < ap_cost:
+		_emit_log("%s AP不足，移动需要 %d AP。" % [unit.get_display_name(), ap_cost])
+		return
+
+	unit.current_ap -= ap_cost
+	unit.notify_move_ap_cost_paid({
+		"controller": self,
+		"position": position,
+		"distance": distance,
+		"ap_cost": ap_cost,
+	})
+	unit.position = position
+	_emit_log("%s 移动到 (%.0f, %.0f)，消耗 %d AP。" % [unit.get_display_name(), position.x, position.y, ap_cost])
+	state_changed.emit()
+
+
+func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}, play_mode: int = CardEnums.CardPlayMode.NORMAL) -> bool:
 	if phase != Phase.BATTLE:
 		_emit_log("战斗尚未开始。")
 		return false
@@ -222,32 +306,64 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 		_emit_log("没有可打出的卡牌。")
 		return false
 
-	if user.current_ap < card.ap_cost:
-		_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, card.ap_cost])
+	if not _card_source_is_valid(user, card, play_mode, true):
+		return false
+	if not card.supports_play_mode(play_mode):
+		_emit_log("%s 不能以%s方式打出。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
 		return false
 
-	var weapon_slot := str(strike_context.get("weapon_slot", ""))
-	if not _targets_are_valid(user, card, targets, true, weapon_slot):
+	var condition_context := _build_special_play_condition_context(user, card, play_mode)
+	if not card.can_pay_special_conditions(condition_context, play_mode):
+		_emit_log("%s 的%s条件不足：%s。" % [card.card_name, CardEnums.play_mode_label(play_mode), card.get_special_condition_text(play_mode)])
+		return false
+
+	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode)
+	if user.current_ap < effective_ap_cost:
+		_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, effective_ap_cost])
+		return false
+
+	var equipment_slot := str(strike_context.get("equipment_slot", ""))
+	if not _targets_are_valid(user, card, targets, true, equipment_slot, play_mode, strike_context):
 		return false
 
 	var extra_context := strike_context.duplicate()
-	extra_context.erase("weapon_slot")
-	var context := CardPlayContext.create(self, user, card, weapon_slot, extra_context)
+	extra_context.erase("equipment_slot")
+	extra_context["actual_ap_cost"] = effective_ap_cost
+	extra_context["play_mode"] = play_mode
+	var context := CardPlayContext.create(self, user, card, equipment_slot, extra_context, play_mode)
 	var context_dict := context.to_dict()
 	if not card.can_play(context_dict):
 		_emit_log("%s 当前不能打出。" % card.card_name)
 		return false
 
 	if resolution_runner.effect_limit_reached:
-		_emit_log("%s 未加入结算：单张卡牌效果结算已达到上限。" % card.card_name)
+		_emit_log("%s 未加入结算：当前主要行动效果结算已达到上限。" % card.card_name)
 		return true
 
-	user.current_ap -= card.ap_cost
-	resolution_runner.push_card_frame(BattleCardFrame.create(user, card, targets, context))
+	user.current_ap -= effective_ap_cost
+	if play_mode == CardEnums.CardPlayMode.NORMAL:
+		user.notify_card_ap_cost_paid(card, {
+			"controller": self,
+			"card": card,
+			"ap_cost": effective_ap_cost,
+		})
+	if not card.pay_special_conditions(condition_context, play_mode):
+		_emit_log("%s 的%s条件支付失败。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
+		return false
+
+	var discard_after_play := true
+	if play_mode == CardEnums.CardPlayMode.MOMENTUM:
+		if not user.banish_discard_card(card):
+			_emit_log("%s 不在弃牌堆，无法余势打出。" % card.card_name)
+			return false
+		discard_after_play = false
+		_emit_log("%s 放逐弃牌堆中的 %s。" % [user.get_display_name(), card.card_name])
+
+	resolution_runner.push_card_frame(BattleCardFrame.create(user, card, targets, context, discard_after_play))
 	return true
 
 
-func basic_attack(attacker: BattleUnitState, target: BattleUnitState, weapon_slot: String = "") -> bool:
+func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> bool:
 	if phase != Phase.BATTLE:
 		return false
 
@@ -259,26 +375,236 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState, weapon_slo
 		_emit_log("%s AP不足，普通攻击需要 %d AP。" % [attacker.get_display_name(), config.basic_attack_ap_cost])
 		return false
 
-	var attack_range := attacker.get_attack_range(weapon_slot)
+	var attack_range := attacker.get_attack_range(equipment_slot)
 	var distance := attacker.distance_to(target)
 	if distance > attack_range:
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return false
 
-	attacker.current_ap -= config.basic_attack_ap_cost
-	perform_strike(attacker, target, null, "普通攻击", weapon_slot)
-	resolve_effect_queue()
-	state_changed.emit()
-	_check_battle_end()
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_basic_attack_action"),
+		[attacker, target, equipment_slot],
+		0,
+		"%s 普通攻击" % attacker.get_display_name(),
+		{"attacker": attacker, "target": target, "equipment_slot": equipment_slot}
+	))
 	return true
 
 
-func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击", weapon_slot: String = "") -> int:
-	return strike_resolver.perform_strike(attacker, target, source, label, weapon_slot)
+func _resolve_basic_attack_action(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> void:
+	if phase != Phase.BATTLE:
+		return
+	if attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
+		_emit_log("攻击目标无效。")
+		return
+	if attacker.current_ap < config.basic_attack_ap_cost:
+		_emit_log("%s AP不足，普通攻击需要 %d AP。" % [attacker.get_display_name(), config.basic_attack_ap_cost])
+		return
+
+	var attack_range := attacker.get_attack_range(equipment_slot)
+	var distance := attacker.distance_to(target)
+	if distance > attack_range:
+		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
+		return
+
+	attacker.current_ap -= config.basic_attack_ap_cost
+	perform_strike(attacker, target, null, "普通攻击", equipment_slot)
+	state_changed.emit()
+	_check_battle_end()
 
 
-func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, label: String = "打击", weapon_slot: String = "") -> int:
-	return strike_resolver.perform_strike_with_modifier(attacker, target, source, damage_modifier, label, weapon_slot)
+func perform_strike(attacker: BattleUnitState, target: BattleUnitState, source = null, label: String = "打击", equipment_slot: String = "") -> int:
+	return strike_resolver.perform_strike(attacker, target, source, label, equipment_slot)
+
+
+func perform_strike_with_modifier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, label: String = "打击", equipment_slot: String = "") -> int:
+	return strike_resolver.perform_strike_with_modifier(attacker, target, source, damage_modifier, label, equipment_slot)
+
+
+func perform_strike_with_multiplier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "") -> int:
+	return strike_resolver.perform_strike_with_multiplier(attacker, target, source, damage_multiplier, label, equipment_slot)
+
+
+func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "") -> int:
+	return strike_resolver.perform_strike_with_modifier_and_multiplier(attacker, target, source, damage_modifier, damage_multiplier, label, equipment_slot)
+
+
+func perform_strike_with_options(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "", options: Dictionary = {}) -> int:
+	return strike_resolver.perform_strike_with_modifier_and_multiplier(attacker, target, source, damage_modifier, damage_multiplier, label, equipment_slot, options)
+
+
+func get_card_ap_cost(user: BattleUnitState, card: CardData) -> int:
+	if user == null or card == null:
+		return 0
+
+	return user.get_card_ap_cost(card, {"controller": self, "card": card})
+
+
+func get_card_ap_cost_for_mode(user: BattleUnitState, card: CardData, play_mode: int) -> int:
+	if play_mode == CardEnums.CardPlayMode.NORMAL:
+		return get_card_ap_cost(user, card)
+
+	return 0
+
+
+func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: int) -> bool:
+	if phase != Phase.BATTLE or user == null or card == null or not user.is_alive():
+		return false
+	if not _card_source_is_valid(user, card, play_mode, false):
+		return false
+	if not card.supports_play_mode(play_mode):
+		return false
+	if user.current_ap < get_card_ap_cost_for_mode(user, card, play_mode):
+		return false
+
+	return card.can_pay_special_conditions(_build_special_play_condition_context(user, card, play_mode), play_mode)
+
+
+func can_preview_card_targets(user: BattleUnitState, card: CardData, targets: Array, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
+	if phase != Phase.BATTLE or user == null or card == null or not user.is_alive():
+		return false
+
+	return _targets_are_valid(user, card, targets, false, equipment_slot, play_mode, extra_context)
+
+
+func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
+	if phase != Phase.BATTLE or is_resolving_actions():
+		return false
+	if user == null or card == null or not user.is_alive():
+		return false
+	if current_unit != user or user.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if not user.has_card_in_exile(card):
+		return false
+
+	return card.can_activate_from_exile(_build_exiled_card_action_context(user, card))
+
+
+func activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
+	if not can_activate_exiled_card(user, card):
+		_emit_log("当前无法发动这张放逐区卡牌。")
+		return false
+
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_exiled_card_action"),
+		[user, card],
+		0,
+		"%s 发动放逐区卡牌" % user.get_display_name(),
+		_build_exiled_card_action_context(user, card)
+	))
+	return true
+
+
+func _resolve_exiled_card_action(user: BattleUnitState, card: CardData) -> void:
+	if user == null or card == null or not user.is_alive():
+		return
+	if not user.has_card_in_exile(card):
+		return
+
+	var context := _build_exiled_card_action_context(user, card)
+	if not card.can_activate_from_exile(context):
+		return
+
+	card.activate_from_exile(context)
+	state_changed.emit()
+
+
+func _build_exiled_card_action_context(user: BattleUnitState, card: CardData) -> Dictionary:
+	return {
+		"controller": self,
+		"user": user,
+		"card": card,
+	}
+
+
+func _build_special_play_condition_context(user: BattleUnitState, card: CardData, play_mode: int) -> Dictionary:
+	return {
+		"controller": self,
+		"user": user,
+		"card": card,
+		"play_mode": play_mode,
+		"play_mode_label": CardEnums.play_mode_label(play_mode),
+	}
+
+
+func _card_source_is_valid(user: BattleUnitState, card: CardData, play_mode: int, write_log: bool) -> bool:
+	match play_mode:
+		CardEnums.CardPlayMode.NORMAL, CardEnums.CardPlayMode.COMBO:
+			if user.has_card_in_hand(card):
+				return true
+			if write_log:
+				_emit_log("%s 不在手牌中。" % card.card_name)
+			return false
+		CardEnums.CardPlayMode.MOMENTUM:
+			if user.has_card_in_discard(card):
+				return true
+			if write_log:
+				_emit_log("%s 不在弃牌堆中。" % card.card_name)
+			return false
+		_:
+			return false
+
+
+func can_unit_reach_position_with_ap(unit: BattleUnitState, position: Vector2, max_ap: int = 1, write_log: bool = false) -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+	if not _is_position_valid_for_unit(unit, position, false, write_log):
+		return false
+
+	var distance := unit.position.distance_to(position)
+	var ap_cost := unit.get_move_ap_cost(distance, config)
+	if ap_cost > max_ap:
+		if write_log:
+			_emit_log("%s 无法以 %d AP 移动到目标位置。" % [unit.get_display_name(), max_ap])
+		return false
+
+	return true
+
+
+func can_unit_reach_position_with_agility_modifier(unit: BattleUnitState, position: Vector2, agility_modifier: int = 0, write_log: bool = false) -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+
+	var max_distance := get_agility_movement_distance(unit, agility_modifier)
+	return can_unit_reach_position_with_distance(unit, position, max_distance, write_log)
+
+
+func can_unit_reach_position_with_distance(unit: BattleUnitState, position: Vector2, max_distance: float, write_log: bool = false) -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+	if not _is_position_valid_for_unit(unit, position, false, write_log):
+		return false
+
+	var distance := unit.position.distance_to(position)
+	if distance > max_distance + 0.001:
+		if write_log:
+			_emit_log("%s 无法移动到目标位置，距离 %.0f 超出可移动距离 %.0f。" % [
+				unit.get_display_name(),
+				distance,
+				max_distance,
+			])
+		return false
+
+	return true
+
+
+func get_agility_movement_distance(unit: BattleUnitState, agility_modifier: int = 0) -> float:
+	if unit == null:
+		return 0.0
+
+	return maxf(0.0, float(unit.get_agility() + agility_modifier) * config.move_distance_per_agility)
+
+
+func apply_card_movement_to(unit: BattleUnitState, position: Vector2, label: String = "卡牌移动") -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+	if not _is_position_valid_for_unit(unit, position, false):
+		return false
+
+	unit.position = position
+	_emit_log("%s 移动到 (%.0f, %.0f)（%s）。" % [unit.get_display_name(), position.x, position.y, label])
+	state_changed.emit()
+	return true
 
 
 func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agility_modifier: int = 0, truncate_to_range: bool = true) -> Dictionary:
@@ -296,12 +622,16 @@ func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agil
 	var end_position := target_position
 	result["start_position"] = start_position
 
-	if not map_data.contains_map_position(end_position):
+	if not targeting.is_unit_inside_map_bounds(unit, end_position, false):
+		if not truncate_to_range:
+			return result
 		end_position = clamp_to_map(end_position)
 
-	var max_distance := maxf(0.0, float(unit.get_agility() + agility_modifier) * config.move_distance_per_agility)
+	var max_distance := get_agility_movement_distance(unit, agility_modifier)
 	result["max_distance"] = max_distance
 	var direction := end_position - start_position
+	if not truncate_to_range and direction.length() > max_distance + 0.001:
+		return result
 	if truncate_to_range and direction.length() > max_distance:
 		if direction.length() <= 0.001:
 			end_position = start_position
@@ -310,7 +640,7 @@ func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agil
 			end_position = clamp_to_map(end_position)
 
 	end_position = targeting.find_clear_endpoint_along_segment(unit, start_position, end_position)
-	if not map_data.contains_map_position(end_position) or not targeting.is_unit_position_clear(unit, end_position, true):
+	if not targeting.is_unit_inside_map_bounds(unit, end_position, true) or not targeting.is_unit_position_clear(unit, end_position, true):
 		return result
 
 	unit.position = end_position
@@ -329,7 +659,15 @@ func get_units_in_swept_circle(source: BattleUnitState, start_position: Vector2,
 	return targeting.get_units_in_swept_circle(source, start_position, end_position, sweep_radius, filter)
 
 
-func switch_weapon_from_inventory(unit: BattleUnitState, preferred_weapon: WeaponData = null) -> Dictionary:
+func get_units_in_range(source: BattleUnitState, range_distance: float, filter: int) -> Array[BattleUnitState]:
+	return targeting.get_units_in_range(source, range_distance, filter)
+
+
+func get_units_in_attack_range(source: BattleUnitState, range_bonus: float = 0.0, filter: int = UnitFilter.OPPONENTS, equipment_slot: String = "") -> Array[BattleUnitState]:
+	return targeting.get_units_in_attack_range(source, range_bonus, filter, equipment_slot)
+
+
+func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment: EquipmentData = null) -> Dictionary:
 	var result := {"success": false}
 	if unit == null or unit.character_state == null:
 		return result
@@ -337,31 +675,103 @@ func switch_weapon_from_inventory(unit: BattleUnitState, preferred_weapon: Weapo
 	var before_context := {
 		"controller": self,
 		"unit": unit,
-		"preferred_weapon": preferred_weapon,
+		"preferred_equipment": preferred_equipment,
 	}
-	enqueue_trigger(Callable(self, "_emit_weapon_switch_started"), [before_context], 0, "切换武器时", before_context)
+	enqueue_trigger(Callable(self, "_emit_equipment_switch_started"), [before_context], 0, "切换装备时", before_context)
 
-	result = unit.character_state.switch_weapon_from_inventory(preferred_weapon)
+	result = unit.character_state.switch_equipment_from_inventory(preferred_equipment)
 	result["controller"] = self
 	result["unit"] = unit
 	if not bool(result.get("success", false)):
 		_emit_log("%s 没有可切换的背包武器。" % unit.get_display_name())
 		return result
 
-	var old_weapon = result.get("old_weapon")
-	var new_weapon = result.get("new_weapon")
-	if old_weapon != null:
-		enqueue_trigger(Callable(self, "_emit_weapon_switched_out"), [result], 0, "切换掉当前武器", result)
-	if new_weapon != null:
-		enqueue_trigger(Callable(self, "_emit_weapon_switched_in"), [result], 0, "切换出新的武器", result)
+	var old_equipment = result.get("old_equipment")
+	var new_equipment = result.get("new_equipment")
+	if old_equipment != null:
+		enqueue_trigger(Callable(self, "_emit_equipment_switched_out"), [result], 0, "切换掉当前装备", result)
+	if new_equipment != null:
+		enqueue_trigger(Callable(self, "_emit_equipment_switched_in"), [result], 0, "切换出新的装备", result)
 
-	_emit_log("%s 切换武器：%s 装备到%s。" % [
+	_emit_log("%s 切换装备：%s 装备到%s。" % [
 		unit.get_display_name(),
-		new_weapon.item_name,
+		new_equipment.item_name,
 		"主手" if str(result.get("slot", "")) == "main" else "副手",
 	])
 	state_changed.emit()
 	return result
+
+
+func can_use_warrior_momentum(unit: BattleUnitState) -> bool:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+		return false
+	if unit.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if unit.get_character_class() != CardEnums.CardClass.WARRIOR:
+		return false
+	if bool(class_resource_actions_used.get(unit.unit_id, false)):
+		return false
+
+	return unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) > 0
+
+
+func use_warrior_momentum(unit: BattleUnitState) -> bool:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+		return false
+	if unit.get_character_class() != CardEnums.CardClass.WARRIOR:
+		_emit_log("只有战士可以使用势。")
+		return false
+	if bool(class_resource_actions_used.get(unit.unit_id, false)):
+		_emit_log("%s 本回合已经使用过势。" % unit.get_display_name())
+		return false
+	if unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) <= 0:
+		_emit_log("%s 没有可消耗的势。" % unit.get_display_name())
+		return false
+
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_warrior_momentum_action"),
+		[unit],
+		0,
+		"%s 使用势" % unit.get_display_name(),
+		{"unit": unit, "resource": WARRIOR_MOMENTUM_RESOURCE}
+	))
+	return true
+
+
+func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
+	if not can_use_warrior_momentum(unit):
+		return
+	if not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, 1):
+		return
+
+	var status := OneShotDamageBonusStatus.new()
+	status.stacks = 1
+	status.bonus_amount = 2
+	unit.add_status(status)
+	class_resource_actions_used[unit.unit_id] = true
+	_emit_log("%s 消耗 1 点势，获得本次一次性的 +2 伤害加值。" % unit.get_display_name())
+	state_changed.emit()
+
+
+func gain_class_resource(unit: BattleUnitState, resource_name: String, amount: int) -> void:
+	if unit == null or resource_name.is_empty() or amount <= 0:
+		return
+
+	var gained := unit.gain_class_resource(resource_name, amount)
+	if gained > 0:
+		_emit_log("%s 获得 %d 点%s。" % [unit.get_display_name(), gained, resource_name])
+	state_changed.emit()
+
+
+func grant_next_attack_card_free(unit: BattleUnitState, stacks: int = 1) -> void:
+	if unit == null or stacks <= 0:
+		return
+
+	var status := NextAttackCardFreeStatus.new()
+	status.stacks = stacks
+	unit.add_status(status)
+	_emit_log("%s 的下一张攻击牌消耗变为 0。" % unit.get_display_name())
+	state_changed.emit()
 
 
 func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害") -> int:
@@ -418,7 +828,7 @@ func find_playable_card_against(user: BattleUnitState, target: BattleUnitState) 
 	for card in user.hand:
 		if card == null:
 			continue
-		if user.current_ap < card.ap_cost:
+		if user.current_ap < get_card_ap_cost(user, card):
 			continue
 		if _targets_are_valid(user, card, [target], false):
 			return card
@@ -471,11 +881,12 @@ func _run_enemy_turn(unit: BattleUnitState) -> void:
 		end_current_turn()
 
 
-func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, weapon_slot: String = "") -> bool:
-	if card.target_type == CardEnums.TargetType.NONE:
-		return true
+func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
+	var target_type := _get_card_target_type(user, card, equipment_slot, play_mode)
+	if target_type == CardEnums.TargetType.NONE:
+		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
-	if card.target_type == CardEnums.TargetType.AREA:
+	if target_type == CardEnums.TargetType.AREA:
 		if targets.size() != 1 or not (targets[0] is Vector2):
 			if write_log:
 				_emit_log("%s 需要一个位置目标。" % card.card_name)
@@ -484,16 +895,19 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 			if write_log:
 				_emit_log("目标位置超出地图边界。")
 			return false
-		return true
+		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
-	if card.target_type == CardEnums.TargetType.SELF:
+	if target_type == CardEnums.TargetType.SELF:
 		if targets.size() != 1 or targets[0] != user:
 			if write_log:
 				_emit_log("%s 目标必须是自己。" % card.card_name)
 			return false
-		return true
+		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
-	if card.target_type == CardEnums.TargetType.SINGLE and targets.size() != 1:
+	if target_type == CardEnums.TargetType.ALL:
+		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
+
+	if target_type == CardEnums.TargetType.SINGLE and targets.size() != 1:
 		if write_log:
 			_emit_log("%s 需要一个目标。" % card.card_name)
 		return false
@@ -505,25 +919,51 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 			return false
 
 		var distance := user.distance_to(target)
-		var card_range := card.get_effective_range(user, weapon_slot)
+		var card_range := card.get_effective_range(user, equipment_slot)
 		if distance > card_range:
 			if write_log:
 				_emit_log("%s 距离 %.0f，超出 %s 射程 %.0f。" % [target.get_display_name(), distance, card.card_name, card_range])
 			return false
 
-	return true
+	return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
 
-func _is_position_valid_for_unit(unit: BattleUnitState, position: Vector2, deployment_only: bool) -> bool:
-	if not map_data.contains_map_position(position):
-		_emit_log("目标位置超出地图边界。")
+func _card_effect_targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool, equipment_slot: String, play_mode: int, extra_context: Dictionary = {}) -> bool:
+	if card == null:
+		return false
+
+	var context := extra_context.duplicate()
+	context["controller"] = self
+	context["user"] = user
+	context["card"] = card
+	context["equipment_slot"] = equipment_slot
+	context["play_mode"] = play_mode
+	return card.are_targets_valid(context, targets, write_log)
+
+
+func _get_card_target_type(user: BattleUnitState, card: CardData, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL) -> int:
+	if card == null:
+		return CardEnums.TargetType.NONE
+
+	return card.get_target_type_for_mode(play_mode, {
+		"controller": self,
+		"user": user,
+		"card": card,
+		"equipment_slot": equipment_slot,
+		"play_mode": play_mode,
+	})
+
+
+func _is_position_valid_for_unit(unit: BattleUnitState, position: Vector2, deployment_only: bool, write_log: bool = true) -> bool:
+	if not targeting.is_unit_inside_map_bounds(unit, position, write_log):
 		return false
 
 	if deployment_only and not map_data.contains_deployment_position(position):
-		_emit_log("目标位置不在玩家部署区内。")
+		if write_log:
+			_emit_log("目标位置不在玩家部署区内。")
 		return false
 
-	return targeting.is_unit_position_clear(unit, position, true)
+	return targeting.is_unit_position_clear(unit, position, write_log)
 
 
 func _find_enemy_spawn_position(enemy_state: EnemyState) -> Vector2:
@@ -607,6 +1047,26 @@ func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, la
 	resolution_runner.enqueue_trigger(callback, args, priority, label, context)
 
 
+func push_action_frame(frame: BattleActionFrame) -> void:
+	resolution_runner.push_action_frame(frame)
+
+
+func is_resolving_actions() -> bool:
+	return action_resolution_lock_count > 0
+
+
+func _begin_action_resolution() -> void:
+	action_resolution_lock_count += 1
+	if action_resolution_lock_count == 1:
+		state_changed.emit()
+
+
+func _end_action_resolution() -> void:
+	action_resolution_lock_count = maxi(0, action_resolution_lock_count - 1)
+	if action_resolution_lock_count == 0:
+		state_changed.emit()
+
+
 func resolve_effect_queue() -> void:
 	resolution_runner.resolve_effect_queue()
 
@@ -615,16 +1075,16 @@ func _emit_basic_attack_trigger(context: Dictionary) -> void:
 	basic_attack_triggered.emit(context)
 
 
-func _emit_weapon_switch_started(context: Dictionary) -> void:
-	weapon_switch_started.emit(context)
+func _emit_equipment_switch_started(context: Dictionary) -> void:
+	equipment_switch_started.emit(context)
 
 
-func _emit_weapon_switched_out(context: Dictionary) -> void:
-	weapon_switched_out.emit(context)
+func _emit_equipment_switched_out(context: Dictionary) -> void:
+	equipment_switched_out.emit(context)
 
 
-func _emit_weapon_switched_in(context: Dictionary) -> void:
-	weapon_switched_in.emit(context)
+func _emit_equipment_switched_in(context: Dictionary) -> void:
+	equipment_switched_in.emit(context)
 
 
 func _queue_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
@@ -728,8 +1188,6 @@ func _apply_global_effects(callback_name: String, unit: BattleUnitState = null) 
 	resolve_effect_queue()
 
 
-func _is_unit_position_clear(unit: BattleUnitState, position: Vector2, write_log: bool = false) -> bool:
-	return targeting.is_unit_position_clear(unit, position, write_log)
 
 
 func _closest_boundary_point(position: Vector2) -> Vector2:
@@ -737,8 +1195,8 @@ func _closest_boundary_point(position: Vector2) -> Vector2:
 	var closest_distance := INF
 	var point_count := map_data.boundary_points.size()
 	for index in range(point_count):
-		var start := map_data.boundary_points[index]
-		var end := map_data.boundary_points[(index + 1) % point_count]
+		var start: Vector2 = map_data.boundary_points[index]
+		var end: Vector2 = map_data.boundary_points[(index + 1) % point_count]
 		var candidate := Geometry2D.get_closest_point_to_segment(position, start, end)
 		var distance := position.distance_to(candidate)
 		if distance < closest_distance:

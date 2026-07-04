@@ -5,33 +5,35 @@ class_name CharacterEquipmentModel
 static func refresh_enabled(state: CharacterState) -> void:
 	if state == null:
 		return
-	state.main_hand_enabled = state.main_hand_weapon != null
-	state.off_hand_enabled = state.off_hand_weapon != null
-	if state.main_hand_weapon != null and state.main_hand_weapon.is_two_handed():
+	state.main_hand_enabled = state.main_hand_equipment != null
+	state.off_hand_enabled = state.off_hand_equipment != null
+	if state.main_hand_equipment != null and state.main_hand_equipment.is_two_handed():
 		state.off_hand_enabled = false
 
 
-static func switch_weapon_from_inventory(state: CharacterState, preferred_weapon: WeaponData = null) -> Dictionary:
+static func switch_equipment_from_inventory(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
 	if state == null:
 		return {"success": false}
 
-	var found := _find_inventory_weapon(state, preferred_weapon)
-	var weapon: WeaponData = found.get("weapon")
+	var found := _find_inventory_equipment(state, preferred_equipment)
+	var equipment: EquipmentData = found.get("equipment")
 	var stack_index := int(found.get("stack_index", -1))
-	if weapon == null or stack_index < 0:
+	if equipment == null or stack_index < 0:
 		return {"success": false}
 
-	var slot := choose_switch_slot(state, weapon)
+	var slot := choose_switch_slot(state, equipment)
 	if slot.is_empty():
 		return {"success": false}
 
-	var previous: WeaponData = null
+	var previous: EquipmentData = null
 	if slot == "main":
-		previous = state.main_hand_weapon
-		state.main_hand_weapon = weapon
+		previous = state.main_hand_equipment
+		state.main_hand_equipment = equipment
+		state.main_hand_face = 0
 	elif slot == "off":
-		previous = state.off_hand_weapon
-		state.off_hand_weapon = weapon
+		previous = state.off_hand_equipment
+		state.off_hand_equipment = equipment
+		state.off_hand_face = 0
 	else:
 		return {"success": false}
 
@@ -43,27 +45,27 @@ static func switch_weapon_from_inventory(state: CharacterState, preferred_weapon
 	return {
 		"success": true,
 		"slot": slot,
-		"old_weapon": previous,
-		"new_weapon": weapon,
+		"old_equipment": previous,
+		"new_equipment": equipment,
 		"main_hand_enabled": state.main_hand_enabled,
 		"off_hand_enabled": state.off_hand_enabled,
 	}
 
 
-static func choose_switch_slot(state: CharacterState, weapon: WeaponData) -> String:
-	if state == null or weapon == null:
+static func choose_switch_slot(state: CharacterState, equipment: EquipmentData) -> String:
+	if state == null or equipment == null:
 		return ""
-	if weapon.grip_type == WeaponData.GripType.TWO_HAND or weapon.grip_type == WeaponData.GripType.MAIN_HAND:
+	if equipment.equip_category == EquipmentData.EquipCategory.TWO_HAND:
 		return "main"
-	if weapon.grip_type == WeaponData.GripType.OFF_HAND:
+	if equipment.equip_category == EquipmentData.EquipCategory.OFF_HAND:
 		return "off"
-	if state.main_hand_weapon == null and weapon.can_equip_main_hand():
+	if state.main_hand_equipment == null and equipment.can_equip_main_hand():
 		return "main"
-	if state.off_hand_weapon == null and weapon.can_equip_off_hand():
+	if state.off_hand_equipment == null and equipment.can_equip_off_hand():
 		return "off"
-	if weapon.can_equip_main_hand():
+	if equipment.can_equip_main_hand():
 		return "main"
-	if weapon.can_equip_off_hand():
+	if equipment.can_equip_off_hand():
 		return "off"
 	return ""
 
@@ -71,7 +73,7 @@ static func choose_switch_slot(state: CharacterState, weapon: WeaponData) -> Str
 static func remove_inventory_item_at(state: CharacterState, index: int) -> void:
 	if state == null or index < 0 or index >= state.inventory.size():
 		return
-	var stack := state.inventory[index]
+	var stack: InventoryStack = state.inventory[index]
 	if stack == null:
 		return
 
@@ -95,19 +97,18 @@ static func add_inventory_item(state: CharacterState, item: ItemData) -> void:
 	state.inventory.append(new_stack)
 
 
-static func _find_inventory_weapon(state: CharacterState, preferred_weapon: WeaponData = null) -> Dictionary:
+static func _find_inventory_equipment(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
 	for i in range(state.inventory.size()):
-		var stack := state.inventory[i]
-		if stack == null or not (stack.item_data is WeaponData) or stack.count <= 0:
+		var stack: InventoryStack = state.inventory[i]
+		if stack == null or not (stack.item_data is EquipmentData) or stack.count <= 0:
 			continue
-		if preferred_weapon == null or stack.item_data == preferred_weapon:
+		if preferred_equipment == null or stack.item_data == preferred_equipment:
 			return {
-				"weapon": stack.item_data,
+				"equipment": stack.item_data,
 				"stack_index": i,
 			}
 
 	return {
-		"weapon": null,
+		"equipment": null,
 		"stack_index": -1,
 	}
-

@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="BattleMasterCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/battle_master_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+move_ap_limit = 1
+momentum_gain = 1
+free_attack_card_stacks = 1

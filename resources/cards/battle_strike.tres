@@ -12,6 +12,7 @@ description = "对射程内一个敌方单位造成基础伤害，并叠加使�
 artwork = ExtResource("4_scroll")
 rarity = 0
 card_class = 1
+card_type = 0
 target_type = 1
 ap_cost = 2
 play_timing = 0
