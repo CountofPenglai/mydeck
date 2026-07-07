@@ -12,6 +12,7 @@ artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 3
 card_type = 0
+damage_type = 1
 target_type = 1
 ap_cost = 2
 play_timing = 0

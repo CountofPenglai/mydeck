@@ -5,10 +5,8 @@ class_name CharacterEquipmentModel
 static func refresh_enabled(state: CharacterState) -> void:
 	if state == null:
 		return
-	state.main_hand_enabled = state.main_hand_equipment != null
-	state.off_hand_enabled = state.off_hand_equipment != null
-	if state.main_hand_equipment != null and state.main_hand_equipment.is_two_handed():
-		state.off_hand_enabled = false
+	state.main_hand_enabled = state.weapon_equipment != null
+	state.off_hand_enabled = state.weapon_equipment != null and state.weapon_equipment.has_back_face()
 
 
 static func switch_equipment_from_inventory(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
@@ -26,14 +24,19 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 		return {"success": false}
 
 	var previous: EquipmentData = null
-	if slot == "main":
-		previous = state.main_hand_equipment
-		state.main_hand_equipment = equipment
-		state.main_hand_face = 0
-	elif slot == "off":
-		previous = state.off_hand_equipment
-		state.off_hand_equipment = equipment
-		state.off_hand_face = 0
+	if slot == "weapon":
+		previous = state.weapon_equipment
+		state.weapon_equipment = equipment
+		state.weapon_face = 0
+	elif slot == "armor":
+		previous = state.armor_equipment
+		state.armor_equipment = equipment
+	elif slot == "accessory_1":
+		previous = state.accessory_equipment_1
+		state.accessory_equipment_1 = equipment
+	elif slot == "accessory_2":
+		previous = state.accessory_equipment_2
+		state.accessory_equipment_2 = equipment
 	else:
 		return {"success": false}
 
@@ -55,18 +58,16 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 static func choose_switch_slot(state: CharacterState, equipment: EquipmentData) -> String:
 	if state == null or equipment == null:
 		return ""
-	if equipment.equip_category == EquipmentData.EquipCategory.TWO_HAND:
-		return "main"
-	if equipment.equip_category == EquipmentData.EquipCategory.OFF_HAND:
-		return "off"
-	if state.main_hand_equipment == null and equipment.can_equip_main_hand():
-		return "main"
-	if state.off_hand_equipment == null and equipment.can_equip_off_hand():
-		return "off"
-	if equipment.can_equip_main_hand():
-		return "main"
-	if equipment.can_equip_off_hand():
-		return "off"
+	if equipment.is_weapon():
+		return "weapon"
+	if equipment.is_armor():
+		return "armor"
+	if equipment.is_accessory():
+		if state.accessory_equipment_1 == null:
+			return "accessory_1"
+		if state.accessory_equipment_2 == null:
+			return "accessory_2"
+		return "accessory_1"
 	return ""
 
 
@@ -94,7 +95,8 @@ static func add_inventory_item(state: CharacterState, item: ItemData) -> void:
 	var new_stack := InventoryStack.new()
 	new_stack.item_data = item
 	new_stack.count = 1
-	state.inventory.append(new_stack)
+	if state.inventory.size() < CharacterState.INVENTORY_LIMIT:
+		state.inventory.append(new_stack)
 
 
 static func _find_inventory_equipment(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:

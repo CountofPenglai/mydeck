@@ -7,11 +7,13 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "无情屠杀"
-description = "使用主手武器进行一次打击。然后若目标生命值不大于你主手武器威力的 2 倍，则将其消灭。切换你的武器。给予自身眩晕 2。"
+description = "使用当前武器进行一次打击。然后若目标生命值不大于你武器威力的 2 倍，则将其消灭。切换你的武器。给予自身眩晕 2。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1
 card_type = 0
+card_tags = 1
+damage_type = 3
 target_type = 1
 ap_cost = 3
 play_timing = 0

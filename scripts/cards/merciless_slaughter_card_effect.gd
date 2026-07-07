@@ -17,11 +17,11 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 			controller._emit_log("请选择一个敌方目标。")
 		return false
 
-	var main_range := user.get_attack_range("main")
+	var main_range := user.get_attack_range("weapon")
 	var distance := user.distance_to(target)
 	if distance > main_range + 0.001:
 		if write_log:
-			controller._emit_log("%s 距离 %.0f，超出主手射程 %.0f。" % [target.get_display_name(), distance, main_range])
+			controller._emit_log("%s 距离 %.0f，超出武器射程 %.0f。" % [target.get_display_name(), distance, main_range])
 		return false
 
 	return true
@@ -37,9 +37,9 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var target: BattleUnitState = targets[0] as BattleUnitState
 	controller.enqueue_effect(
 		Callable(controller, "perform_strike_with_options"),
-		[user, target, card, 0, 1.0, "无情屠杀", "main", {"disable_offhand": true}],
+		[user, target, card, 0, 1.0, "无情屠杀", "weapon", {}],
 		effect_priority,
-		"无情屠杀：主手打击",
+		"无情屠杀：武器打击",
 		context
 	)
 	controller.enqueue_effect(
@@ -56,11 +56,11 @@ func _resolve_followup(controller: BattleController, user: BattleUnitState, targ
 		return
 
 	if target != null and target.is_alive():
-		var profile := user.build_strike_profile_object("main", {"disable_offhand": true})
+		var profile := user.build_strike_profile_object("weapon", {})
 		var execution_threshold := profile.primary_power * execution_power_multiplier
 		if target.get_current_health() <= execution_threshold:
 			target.set_current_health(0)
-			controller._emit_log("%s 的生命值不大于主手威力的 %d 倍，被无情屠杀消灭。" % [
+			controller._emit_log("%s 的生命值不大于武器威力的 %d 倍，被无情屠杀消灭。" % [
 				target.get_display_name(),
 				execution_power_multiplier,
 			])

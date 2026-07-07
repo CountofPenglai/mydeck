@@ -13,5 +13,6 @@ battle_sprite = ExtResource("3_battle")
 base_max_health = 28
 base_strength = 0
 base_agility = 8
+base_intelligence = 2
 base_attack_range = 180.0
 collision_radius = 24.0

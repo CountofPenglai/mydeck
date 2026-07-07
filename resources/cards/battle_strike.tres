@@ -13,6 +13,7 @@ artwork = ExtResource("4_scroll")
 rarity = 0
 card_class = 1
 card_type = 0
+card_tags = 1
 target_type = 1
 ap_cost = 2
 play_timing = 0

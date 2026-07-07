@@ -43,7 +43,8 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	]
 
 	if profile.add_offhand and target.is_alive():
-		var offhand_damage := _apply_damage_multiplier(maxi(0, profile.offhand_power), damage_multiplier)
+		var offhand_base_damage := maxi(0, profile.offhand_power + profile.damage_bonus + damage_modifier)
+		var offhand_damage := _apply_damage_multiplier(offhand_base_damage, damage_multiplier)
 		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label)
 		actual_damage += offhand_actual
 		hit_results.append(StrikeHitResult.create("off", profile.offhand_equipment, offhand_damage, offhand_actual))

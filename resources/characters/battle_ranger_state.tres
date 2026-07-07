@@ -1,13 +1,16 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_ranger_data.tres" id="2_character_data"]
 [ext_resource type="Resource" path="res://resources/cards/battle_strike_stack.tres" id="3_card_stack"]
 [ext_resource type="Resource" path="res://resources/cards/piercing_shot_stack.tres" id="4_shot"]
+[ext_resource type="Resource" path="res://resources/items/training_bow.tres" id="5_weapon"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 28
 deck = [ExtResource("3_card_stack"), ExtResource("4_shot")]
+weapon_equipment = ExtResource("5_weapon")
+weapon_face = 0
 extra_ap_bonus = 0

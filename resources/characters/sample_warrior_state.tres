@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=8 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
@@ -7,14 +7,13 @@
 [ext_resource type="Resource" path="res://resources/items/guard_dagger.tres" id="5_off_hand"]
 [ext_resource type="Resource" path="res://resources/items/healing_potion_stack.tres" id="6_potion_stack"]
 [ext_resource type="Resource" path="res://resources/items/heavy_greatsword_stack.tres" id="7_greatsword_stack"]
+[ext_resource type="Resource" path="res://resources/items/guard_dagger_stack.tres" id="8_dagger_stack"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 36
 deck = [ExtResource("3_card_stack")]
-main_hand_equipment = ExtResource("4_main_hand")
-off_hand_equipment = ExtResource("5_off_hand")
-main_hand_face = 0
-off_hand_face = 0
-inventory = [ExtResource("6_potion_stack"), ExtResource("7_greatsword_stack")]
+weapon_equipment = ExtResource("4_main_hand")
+weapon_face = 0
+inventory = [ExtResource("6_potion_stack"), ExtResource("7_greatsword_stack"), ExtResource("8_dagger_stack")]

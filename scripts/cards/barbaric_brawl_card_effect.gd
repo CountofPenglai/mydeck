@@ -20,7 +20,7 @@ func are_targets_valid(context: Dictionary = {}, _targets: Array = [], write_log
 	var targets := _get_targets(context, controller, user)
 	if targets.is_empty():
 		if write_log:
-			controller._emit_log("%s 主手范围内没有敌人。" % user.get_display_name())
+			controller._emit_log("%s 武器范围内没有敌人。" % user.get_display_name())
 		return false
 
 	return true
@@ -37,15 +37,15 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 	for target in targets:
 		controller.enqueue_effect(
 			Callable(controller, "perform_strike_with_options"),
-			[user, target, card, 0, 1.0, "野蛮斗殴", "main", {"disable_offhand": true}],
+			[user, target, card, 0, 1.0, "野蛮斗殴", "weapon", {}],
 			effect_priority,
-			"野蛮斗殴：主手打击",
+			"野蛮斗殴：武器打击",
 			{
 				"controller": controller,
 				"user": user,
 				"target": target,
 				"card": card,
-				"main_hand_only": true,
+				"weapon_only": true,
 			}
 		)
 
@@ -97,5 +97,5 @@ func _get_targets(context: Dictionary, controller: BattleController, user: Battl
 		user,
 		range_bonus,
 		BattleController.UnitFilter.OPPONENTS,
-		"main"
+		"weapon"
 	)

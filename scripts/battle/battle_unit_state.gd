@@ -48,10 +48,10 @@ func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position:
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
 	if character_state != null:
 		character_state.ensure_initialized()
-		_prepare_deck(character_state.deck, rng, config.starting_hand_size)
+		_prepare_deck(character_state.deck, rng, get_starting_hand_size(config))
 	elif enemy_state != null:
 		enemy_state.ensure_initialized()
-		_prepare_deck(enemy_state.deck, rng, config.starting_hand_size)
+		_prepare_deck(enemy_state.deck, rng, get_starting_hand_size(config))
 
 
 func start_turn(config: BattleConfig) -> void:
@@ -108,14 +108,25 @@ func get_attack() -> int:
 
 
 func get_damage_bonus(context: Dictionary = {}) -> int:
+	var merged_context := context.duplicate()
+	merged_context["unit"] = self
 	if character_state != null:
-		var merged_context := context.duplicate()
-		merged_context["unit"] = self
 		return character_state.get_damage_bonus(merged_context)
 	if enemy_state != null:
-		return enemy_state.get_damage_bonus(context)
+		return enemy_state.get_damage_bonus(merged_context)
 
 	return 0
+
+
+func get_damage_reduction(context: Dictionary = {}) -> int:
+	var merged_context := context.duplicate()
+	merged_context["unit"] = self
+	if character_state != null:
+		return character_state.get_damage_reduction() + get_status_damage_reduction(merged_context)
+	if enemy_state != null:
+		return enemy_state.get_damage_reduction() + get_status_damage_reduction(merged_context)
+
+	return get_status_damage_reduction(merged_context)
 
 
 func get_character_class() -> int:
@@ -182,6 +193,15 @@ func get_status_damage_bonus(context: Dictionary = {}) -> int:
 	return bonus
 
 
+func get_status_damage_reduction(context: Dictionary = {}) -> int:
+	var reduction := 0
+	for status in statuses:
+		if status != null and status.has_method("get_damage_reduction"):
+			reduction += status.get_damage_reduction(self, context)
+
+	return reduction
+
+
 func get_status_strike_power_bonus(context: Dictionary = {}) -> int:
 	var bonus := 0
 	for status in statuses:
@@ -198,6 +218,35 @@ func get_agility() -> int:
 		return enemy_state.get_agility()
 
 	return 0
+
+
+func get_strength() -> int:
+	if character_state != null:
+		return character_state.get_strength()
+	if enemy_state != null:
+		return enemy_state.get_strength()
+
+	return 0
+
+
+func get_intelligence() -> int:
+	if character_state != null:
+		return character_state.get_intelligence()
+	if enemy_state != null:
+		return enemy_state.get_intelligence()
+
+	return 0
+
+
+func get_starting_hand_size(config: BattleConfig) -> int:
+	if config == null:
+		return 0
+
+	var hand_size := config.starting_hand_size
+	if config.intelligence_per_starting_hand_card > 0:
+		hand_size += floori(float(get_intelligence()) / float(config.intelligence_per_starting_hand_card))
+
+	return maxi(0, hand_size)
 
 
 func get_attack_range(equipment_slot: String = "") -> float:
@@ -223,6 +272,7 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	profile.primary_power = 1
 	profile.primary_range = 0.0
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
+	profile.primary_damage_type = CardEnums.DamageType.STRENGTH
 	profile.damage_bonus = 0
 	profile.add_offhand = false
 	profile.offhand_equipment = null

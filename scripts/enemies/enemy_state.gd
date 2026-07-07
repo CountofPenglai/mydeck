@@ -3,8 +3,17 @@ class_name EnemyState
 
 @export var enemy_data: EnemyData
 @export var current_health: int = -1
+@export_range(1, 99, 1) var level: int = 1
 @export var deck: Array[CardStack] = []
 @export var extra_ap_bonus: int = 0
+@export var strength_bonus: int = 0
+@export var agility_bonus: int = 0
+@export var intelligence_bonus: int = 0
+@export var flat_damage_bonus: int = 0
+@export var damage_reduction: int = 0
+const MAX_HEALTH_PER_STRENGTH := 3
+const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
+const DAMAGE_PER_ATTRIBUTE := 1
 
 func ensure_initialized(seed: int = -1) -> void:
 	if enemy_data == null:
@@ -44,7 +53,8 @@ func get_max_health() -> int:
 	if enemy_data == null:
 		return 0
 
-	return enemy_data.base_max_health
+	var level_growth := maxi(0, level - 1) * get_strength() * HEALTH_GROWTH_PER_STRENGTH_LEVEL
+	return enemy_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth
 
 
 func get_attack() -> int:
@@ -52,8 +62,21 @@ func get_attack() -> int:
 	return profile.primary_power + profile.damage_bonus
 
 
-func get_damage_bonus(_context: Dictionary = {}) -> int:
-	return 0
+func get_damage_bonus(context: Dictionary = {}) -> int:
+	var bonus := flat_damage_bonus
+	match _resolve_damage_type(context):
+		CardEnums.DamageType.AGILITY:
+			bonus += get_agility() * DAMAGE_PER_ATTRIBUTE
+		CardEnums.DamageType.INTELLIGENCE:
+			bonus += get_intelligence() * DAMAGE_PER_ATTRIBUTE
+		_:
+			bonus += get_strength() * DAMAGE_PER_ATTRIBUTE
+
+	return bonus
+
+
+func get_damage_reduction() -> int:
+	return maxi(0, damage_reduction)
 
 
 func build_strike_profile_object(_equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
@@ -61,6 +84,7 @@ func build_strike_profile_object(_equipment_slot: String = "", context: Dictiona
 	profile.primary_slot = "innate"
 	profile.primary_equipment = null
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
+	profile.primary_damage_type = _resolve_damage_type(context)
 	profile.add_offhand = false
 	profile.offhand_equipment = null
 	profile.offhand_power = 0
@@ -72,7 +96,9 @@ func build_strike_profile_object(_equipment_slot: String = "", context: Dictiona
 
 	profile.primary_power = power
 	profile.primary_range = attack_range
-	profile.damage_bonus = get_damage_bonus(context)
+	var damage_context := context.duplicate()
+	damage_context["resolved_damage_type"] = profile.primary_damage_type
+	profile.damage_bonus = get_damage_bonus(damage_context)
 	return profile
 
 
@@ -80,7 +106,21 @@ func get_agility() -> int:
 	if enemy_data == null:
 		return 0
 
-	return enemy_data.base_agility
+	return enemy_data.base_agility + agility_bonus
+
+
+func get_strength() -> int:
+	if enemy_data == null:
+		return 0
+
+	return enemy_data.base_strength + strength_bonus
+
+
+func get_intelligence() -> int:
+	if enemy_data == null:
+		return 0
+
+	return enemy_data.base_intelligence + intelligence_bonus
 
 
 func get_collision_radius() -> float:
@@ -119,3 +159,28 @@ func get_behavior_label() -> String:
 		return "未配置"
 
 	return enemy_data.get_behavior_label()
+
+
+func _get_context_card(context: Dictionary = {}) -> CardData:
+	var card = context.get("card")
+	if card is CardData:
+		return card as CardData
+
+	var source = context.get("source")
+	if source is CardData:
+		return source as CardData
+
+	return null
+
+
+func _resolve_damage_type(context: Dictionary = {}) -> int:
+	if context.has("resolved_damage_type"):
+		return int(context.get("resolved_damage_type"))
+
+	var card := _get_context_card(context)
+	if card != null and card.damage_type != CardEnums.DamageType.WEAPON:
+		return card.damage_type
+	if enemy_data != null:
+		return enemy_data.innate_damage_type
+
+	return CardEnums.DamageType.STRENGTH

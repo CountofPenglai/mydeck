@@ -10,7 +10,10 @@ class_name EnemyData
 @export_group("Base Stats")
 @export var base_max_health: int = 20
 @export var innate_power: int = 3
+@export_enum("力量", "敏捷", "智力") var innate_damage_type: int = CardEnums.DamageType.STRENGTH
+@export var base_strength: int = 0
 @export var base_agility: int = 4
+@export var base_intelligence: int = 0
 @export var base_attack_range: float = 80.0
 @export var collision_radius: float = 24.0
 

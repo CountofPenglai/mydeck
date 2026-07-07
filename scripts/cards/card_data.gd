@@ -10,6 +10,8 @@ class_name CardData
 @export_enum("普通", "稀有", "史诗", "传说") var rarity: int = CardEnums.Rarity.COMMON
 @export_enum("中立", "战士", "法师", "游侠", "德鲁伊", "术士") var card_class: int = CardEnums.CardClass.NEUTRAL
 @export_enum("攻击", "技能") var card_type: int = CardEnums.CardType.SKILL
+@export_flags("Physical", "Magical") var card_tags: int = 0
+@export_enum("力量", "敏捷", "智力", "武器") var damage_type: int = CardEnums.DamageType.STRENGTH
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var target_type: int = CardEnums.TargetType.NONE
 @export_range(0, 99, 1) var ap_cost: int = 2
 @export_enum("标准", "附赠") var play_timing: int = CardEnums.PlayTiming.NORMAL
@@ -126,6 +128,18 @@ func is_attack_card() -> bool:
 	return card_type == CardEnums.CardType.ATTACK
 
 
+func has_card_tag(tag: int) -> bool:
+	return (card_tags & tag) != 0
+
+
+func is_physical_attack() -> bool:
+	return is_attack_card() and has_card_tag(CardEnums.CardTag.PHYSICAL)
+
+
+func is_magical_attack() -> bool:
+	return is_attack_card() and has_card_tag(CardEnums.CardTag.MAGICAL)
+
+
 func supports_play_mode(play_mode: int) -> bool:
 	match play_mode:
 		CardEnums.CardPlayMode.NORMAL:
@@ -192,6 +206,10 @@ func get_class_label() -> String:
 
 func get_card_type_label() -> String:
 	return CardEnums.card_type_label(card_type)
+
+
+func get_damage_type_label() -> String:
+	return CardEnums.damage_type_label(damage_type)
 
 
 func get_target_label() -> String:

@@ -779,7 +779,7 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 	_emit_log("%s 切换装备：%s 装备到%s。" % [
 		unit.get_display_name(),
 		new_equipment.item_name,
-		"主手" if str(result.get("slot", "")) == "main" else "副手",
+		_equipment_slot_label(str(result.get("slot", ""))),
 	])
 	state_changed.emit()
 	return result
@@ -832,7 +832,7 @@ func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
 	status.bonus_amount = 2
 	unit.add_status(status)
 	class_resource_actions_used[unit.unit_id] = true
-	_emit_log("%s 消耗 1 点势，获得本次一次性的 +2 伤害加值。" % unit.get_display_name())
+	_emit_log("%s 消耗 1 点势，本回合每段伤害获得 +2 伤害加值。" % unit.get_display_name())
 	state_changed.emit()
 
 
@@ -867,6 +867,17 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	_process_before_damage(target, damage_context)
 	if damage_context.prevented:
 		return 0
+	if target.has_method("get_damage_reduction"):
+		var reduction := target.get_damage_reduction({
+			"controller": self,
+			"source": source,
+			"target": target,
+			"label": label,
+			"amount": damage_context.amount,
+		})
+		damage_context.reduce_amount(reduction)
+		if damage_context.prevented:
+			return 0
 
 	var actual := target.apply_damage(damage_context.amount)
 	var source_name := "效果"
@@ -1120,6 +1131,20 @@ func _check_battle_end() -> bool:
 
 func _emit_log(message: String) -> void:
 	log_message.emit(message)
+
+
+func _equipment_slot_label(slot: String) -> String:
+	match slot:
+		"weapon", "main":
+			return "武器"
+		"armor", "off":
+			return "防具"
+		"accessory_1":
+			return "饰品1"
+		"accessory_2":
+			return "饰品2"
+		_:
+			return "装备栏"
 
 
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:

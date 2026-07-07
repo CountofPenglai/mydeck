@@ -2,7 +2,11 @@ extends Control
 class_name BattleScene
 
 const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
+const AP_ORB_FULL_TEXTURE := preload("res://assets/art/ui/ap_orb_full.png")
 const DEFAULT_SCENARIO := preload("res://resources/battle/sample_battle_scenario.tres")
+const AP_ORB_SLOT_X := [0.158, 0.384, 0.614, 0.842]
+const AP_ORB_SLOT_Y := 0.49
+const AP_ORB_SIZE_RATIO := 0.66
 
 enum InputMode {
 	NONE,
@@ -43,6 +47,7 @@ var _ordered_discard_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _ordered_discard_extra_context: Dictionary = {}
 var _ordered_discard_selected_cards: Array[CardData] = []
 var _ordered_discard_max_count: int = 0
+var _ap_orb_layer: Control
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -55,7 +60,8 @@ var _ordered_discard_max_count: int = 0
 @onready var move_button: TextureButton = %MoveButton
 @onready var attack_button: TextureButton = %AttackButton
 @onready var deck_button: TextureButton = %DeckButton
-@onready var discard_button: Button = %DiscardButton
+@onready var discard_button: TextureButton = %DiscardButton
+@onready var discard_label: Label = %DiscardLabel
 @onready var ap_label: Label = %APLabel
 @onready var log_label: RichTextLabel = %LogLabel
 
@@ -70,6 +76,7 @@ func _ready() -> void:
 	attack_button.pressed.connect(_on_attack_pressed)
 	deck_button.pressed.connect(_on_deck_pressed)
 	discard_button.pressed.connect(_on_discard_pressed)
+	_create_ap_orb_layer()
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
 	_create_discard_popup()
@@ -372,6 +379,52 @@ func _hide_action_popups() -> void:
 		_ordered_discard_popup.hide()
 
 
+func _create_ap_orb_layer() -> void:
+	var ap_slot := ap_label.get_parent() as Control
+	if ap_slot == null:
+		return
+
+	ap_label.visible = false
+	_ap_orb_layer = Control.new()
+	_ap_orb_layer.name = "APOrbLayer"
+	_ap_orb_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ap_slot.add_child(_ap_orb_layer)
+	_ap_orb_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
+func _refresh_ap_orbs(current_ap: int, max_ap: int) -> void:
+	if _ap_orb_layer == null:
+		return
+
+	_clear_children(_ap_orb_layer)
+	var slot_count := mini(maxi(max_ap, 0), AP_ORB_SLOT_X.size())
+	if slot_count <= 0:
+		return
+
+	var layer_size := _ap_orb_layer.size
+	if layer_size.x <= 0.0 or layer_size.y <= 0.0:
+		var ap_slot := _ap_orb_layer.get_parent() as Control
+		if ap_slot != null:
+			layer_size = ap_slot.size
+	if layer_size.x <= 0.0 or layer_size.y <= 0.0:
+		return
+
+	var filled_count := mini(maxi(current_ap, 0), slot_count)
+	var orb_size := minf(layer_size.y * AP_ORB_SIZE_RATIO, layer_size.x * 0.18)
+	for index in range(filled_count):
+		var orb := TextureRect.new()
+		orb.texture = AP_ORB_FULL_TEXTURE
+		orb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		orb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		orb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		orb.custom_minimum_size = Vector2(orb_size, orb_size)
+		orb.size = Vector2(orb_size, orb_size)
+		orb.tooltip_text = "AP %d/%d" % [current_ap, max_ap]
+		var center := Vector2(layer_size.x * float(AP_ORB_SLOT_X[index]), layer_size.y * AP_ORB_SLOT_Y)
+		orb.position = center - Vector2(orb_size, orb_size) * 0.5
+		_ap_orb_layer.add_child(orb)
+
+
 func _refresh() -> void:
 	if not is_inside_tree():
 		return
@@ -386,6 +439,7 @@ func _refresh() -> void:
 	if controller.current_unit == null:
 		current_label.text = "当前单位：无"
 		ap_label.text = "AP -"
+		_refresh_ap_orbs(0, controller.config.base_ap)
 	else:
 		current_label.text = "当前单位：%s | 生命 %d/%d | 敏捷 %d%s" % [
 			controller.current_unit.get_display_name(),
@@ -398,6 +452,7 @@ func _refresh() -> void:
 			controller.current_unit.current_ap,
 			controller.current_unit.get_max_ap(controller.config),
 		]
+		_refresh_ap_orbs(controller.current_unit.current_ap, controller.current_unit.get_max_ap(controller.config))
 
 	var actions_locked := _actions_locked()
 	start_button.disabled = actions_locked or controller.phase != BattleController.Phase.DEPLOYMENT or not controller.can_start_battle()
@@ -511,7 +566,7 @@ func _refresh_discard_button() -> void:
 	if unit != null:
 		discard_count = unit.discard_pile.size()
 		exile_count = unit.exiled_pile.size()
-	discard_button.text = "弃牌\n%d | 放逐 %d" % [discard_count, exile_count]
+	discard_label.text = "弃牌 %d\n放逐 %d" % [discard_count, exile_count]
 
 
 func _refresh_discard_popup() -> void:
@@ -724,12 +779,12 @@ func _build_card_tooltip(card: CardData) -> String:
 
 func _strike_preview_text(unit: BattleUnitState) -> String:
 	var profile := unit.build_strike_profile_object(pending_equipment_slot)
-	var text := "力量 %d / 武器威力 %d" % [
-		unit.get_damage_bonus(),
+	var text := "伤害加值 %d / 武器威力 %d" % [
+		profile.damage_bonus,
 		profile.primary_power,
 	]
 	if profile.add_offhand:
-		text += " / 副手威力 %d" % profile.offhand_power
+		text += " / 额外段威力 %d" % profile.offhand_power
 	return text
 
 

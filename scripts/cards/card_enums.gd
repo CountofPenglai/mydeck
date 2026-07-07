@@ -22,6 +22,18 @@ enum CardType {
 	SKILL,
 }
 
+enum CardTag {
+	PHYSICAL = 1,
+	MAGICAL = 2,
+}
+
+enum DamageType {
+	STRENGTH,
+	AGILITY,
+	INTELLIGENCE,
+	WEAPON,
+}
+
 enum TargetType {
 	NONE,
 	SINGLE,
@@ -80,6 +92,20 @@ static func card_type_label(value: int) -> String:
 			return "攻击"
 		CardType.SKILL:
 			return "技能"
+		_:
+			return "未知"
+
+
+static func damage_type_label(value: int) -> String:
+	match value:
+		DamageType.STRENGTH:
+			return "力量"
+		DamageType.AGILITY:
+			return "敏捷"
+		DamageType.INTELLIGENCE:
+			return "智力"
+		DamageType.WEAPON:
+			return "武器"
 		_:
 			return "未知"
 

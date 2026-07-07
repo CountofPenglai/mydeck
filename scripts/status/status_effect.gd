@@ -22,6 +22,10 @@ func get_damage_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
 	return 0
 
 
+func get_damage_reduction(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
+	return 0
+
+
 func get_strike_power_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
 	return 0
 

@@ -28,6 +28,10 @@ See `non_project_docs/art_style_guide.md` for the durable style rules.
   - 1024x1024 semi-top-down battle unit image of the melee marauder.
 - `battle_units/ranged_cultist_battle.png`
   - 1024x1024 semi-top-down battle unit image of the ranged cultist; regenerated once to correct bowstring anatomy.
+- `ui/discard_button.png`
+  - 256x256 discard pile UI button matching the existing stone, leather, parchment, and brass-trim battle HUD style.
+- `ui/ap_orb_full.png`
+  - 128x128 transparent green AP orb used to mark available AP inside the existing empty AP slot frame.
 
 Raw generated sources for the normalized portrait/battle assets are kept beside the final files with `_raw` suffix.
 

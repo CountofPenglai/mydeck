@@ -6,12 +6,13 @@
 [resource]
 script = ExtResource("1_equipment")
 item_name = "沉重巨剑"
-description = "双手武器。装备后会占用副手。"
+description = "沉重的双手武器，可装备到武器栏。"
 icon = ExtResource("2_icon")
 max_stack = 1
 power = 8
 attack_range = 110.0
 range_type = 0
+equip_slot = 0
 equip_category = 1
 allowed_classes = PackedInt32Array(1)
 rarity = 0
