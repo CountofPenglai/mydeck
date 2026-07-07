@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tools/diagnostics/diagnose_battle_load.gd" id="1_diag"]
+
+[node name="DiagnoseBattleLoad" type="Node"]
+script = ExtResource("1_diag")
