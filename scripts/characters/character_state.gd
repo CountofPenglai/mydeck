@@ -443,6 +443,15 @@ func _get_attribute_damage_bonus(context: Dictionary = {}) -> int:
 	var equipment_value = context.get("equipment")
 	if equipment_value is EquipmentData:
 		equipment = equipment_value as EquipmentData
+	var unit = context.get("unit")
+	if unit != null and unit.has_method("get_strength") and unit.has_method("get_agility") and unit.has_method("get_intelligence"):
+		match _resolve_damage_type(context, equipment):
+			CardEnums.DamageType.AGILITY:
+				return _attribute_to_damage_bonus(int(unit.get_agility()))
+			CardEnums.DamageType.INTELLIGENCE:
+				return _attribute_to_damage_bonus(int(unit.get_intelligence()))
+			_:
+				return _attribute_to_damage_bonus(int(unit.get_strength()))
 	match _resolve_damage_type(context, equipment):
 		CardEnums.DamageType.AGILITY:
 			return get_agility_damage_bonus()
@@ -467,6 +476,10 @@ func _resolve_damage_type(context: Dictionary = {}, equipment: EquipmentData = n
 		return CardEnums.DamageType.STRENGTH
 
 	return card_damage_type
+
+
+func _attribute_to_damage_bonus(attribute_value: int) -> int:
+	return attribute_value * DAMAGE_PER_ATTRIBUTE
 
 
 func _get_equipment_damage_bonus() -> int:

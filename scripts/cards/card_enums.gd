@@ -54,6 +54,11 @@ enum CardPlayMode {
 	COMBO,
 }
 
+enum DruidOrientation {
+	UPRIGHT,
+	INVERTED,
+}
+
 static func rarity_label(value: int) -> String:
 	match value:
 		Rarity.COMMON:
@@ -160,5 +165,15 @@ static func play_mode_label(value: int) -> String:
 			return "余势"
 		CardPlayMode.COMBO:
 			return "连击"
+		_:
+			return "未知"
+
+
+static func druid_orientation_label(value: int) -> String:
+	match value:
+		DruidOrientation.UPRIGHT:
+			return "正位"
+		DruidOrientation.INVERTED:
+			return "逆位"
 		_:
 			return "未知"

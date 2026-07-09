@@ -26,6 +26,21 @@ class_name CardData
 @export var has_combo: bool = false
 @export var combo_conditions: Array[Resource] = []
 
+@export_group("Druid")
+@export var is_druid_dual_card: bool = false
+@export var allow_upright_play: bool = true
+@export var allow_inverted_play: bool = true
+@export var inverted_name: String = ""
+@export_multiline var inverted_description: String = ""
+@export_range(0, 99, 1) var inverted_ap_cost: int = 2
+@export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var inverted_target_type: int = CardEnums.TargetType.NONE
+@export var inverted_override_range: bool = false
+@export var inverted_card_range: float = 160.0
+@export var inverted_range_modifier: float = 0.0
+@export_range(0, 99, 1) var resonance_cost: int = 0
+@export var auto_pay_resonance: bool = true
+@export var is_twin_spell: bool = false
+
 func can_play(context: Dictionary = {}) -> bool:
 	if effect == null:
 		return true
@@ -41,6 +56,8 @@ func get_valid_targets(context: Dictionary = {}) -> Array:
 
 
 func get_target_type_for_mode(play_mode: int = CardEnums.CardPlayMode.NORMAL, context: Dictionary = {}) -> int:
+	if _is_inverted_context(context):
+		return inverted_target_type
 	if effect == null:
 		return target_type
 
@@ -225,6 +242,15 @@ func get_play_timing_label() -> String:
 
 
 func get_effective_range(user = null, equipment_slot: String = "") -> float:
+	var orientation := _resolve_druid_orientation(user, {})
+	if orientation == CardEnums.DruidOrientation.INVERTED:
+		if inverted_override_range:
+			return inverted_card_range
+		var inverted_base_range := 0.0
+		if user != null and user.has_method("get_attack_range"):
+			inverted_base_range = user.get_attack_range(equipment_slot)
+		return maxf(0.0, inverted_base_range + inverted_range_modifier)
+
 	if override_range:
 		return card_range
 
@@ -233,3 +259,41 @@ func get_effective_range(user = null, equipment_slot: String = "") -> float:
 		base_range = user.get_attack_range(equipment_slot)
 
 	return maxf(0.0, base_range + range_modifier)
+
+
+func get_ap_cost_for_context(context: Dictionary = {}) -> int:
+	if _is_inverted_context(context):
+		return inverted_ap_cost
+
+	return ap_cost
+
+
+func get_display_name_for_context(context: Dictionary = {}) -> String:
+	if _is_inverted_context(context) and not inverted_name.is_empty():
+		return inverted_name
+
+	return card_name
+
+
+func get_description_for_context(context: Dictionary = {}) -> String:
+	if _is_inverted_context(context) and not inverted_description.is_empty():
+		return inverted_description
+
+	return description
+
+
+func get_druid_orientation_label(context: Dictionary = {}) -> String:
+	return CardEnums.druid_orientation_label(_resolve_druid_orientation(context.get("user"), context))
+
+
+func _is_inverted_context(context: Dictionary = {}) -> bool:
+	return _resolve_druid_orientation(context.get("user"), context) == CardEnums.DruidOrientation.INVERTED
+
+
+func _resolve_druid_orientation(user = null, context: Dictionary = {}) -> int:
+	if context.has("druid_orientation"):
+		return int(context.get("druid_orientation"))
+	if is_druid_dual_card and user != null and user.has_method("get_druid_card_orientation"):
+		return int(user.get_druid_card_orientation(self))
+
+	return CardEnums.DruidOrientation.UPRIGHT

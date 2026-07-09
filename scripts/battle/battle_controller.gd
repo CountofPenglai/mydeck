@@ -8,6 +8,8 @@ signal equipment_switch_started(context: Dictionary)
 signal equipment_switched_out(context: Dictionary)
 signal equipment_switched_in(context: Dictionary)
 
+const DRUID_PREPARE_TRANSFORM_ACTION := "druid_prepare_transform"
+const DRUID_PREPARE_UNTRANSFORM_ACTION := "druid_prepare_untransform"
 const WARRIOR_MOMENTUM_RESOURCE := "势"
 
 enum Phase {
@@ -362,25 +364,40 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 	if not card.supports_play_mode(play_mode):
 		_emit_log("%s 不能以%s方式打出。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
 		return false
+	if not _is_druid_card_play_state_valid(user, card, true):
+		return false
+
+	var druid_orientation := _get_druid_orientation_for_card(user, card)
+	var card_context_seed := {
+		"controller": self,
+		"user": user,
+		"card": card,
+		"play_mode": play_mode,
+		"druid_orientation": druid_orientation,
+	}
 
 	var condition_context := _build_special_play_condition_context(user, card, play_mode)
+	condition_context["druid_orientation"] = druid_orientation
 	if not card.can_pay_special_conditions(condition_context, play_mode):
 		_emit_log("%s 的%s条件不足：%s。" % [card.card_name, CardEnums.play_mode_label(play_mode), card.get_special_condition_text(play_mode)])
 		return false
 
-	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode)
+	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode, card_context_seed)
 	if user.current_ap < effective_ap_cost:
 		_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, effective_ap_cost])
 		return false
 
 	var equipment_slot := str(strike_context.get("equipment_slot", ""))
-	if not _targets_are_valid(user, card, targets, true, equipment_slot, play_mode, strike_context):
+	var target_context := strike_context.duplicate()
+	target_context["druid_orientation"] = druid_orientation
+	if not _targets_are_valid(user, card, targets, true, equipment_slot, play_mode, target_context):
 		return false
 
 	var extra_context := strike_context.duplicate()
 	extra_context.erase("equipment_slot")
 	extra_context["actual_ap_cost"] = effective_ap_cost
 	extra_context["play_mode"] = play_mode
+	extra_context["druid_orientation"] = druid_orientation
 	var context := CardPlayContext.create(self, user, card, equipment_slot, extra_context, play_mode)
 	var context_dict := context.to_dict()
 	if not card.can_play(context_dict):
@@ -393,6 +410,9 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 
 	var payment_snapshot := _snapshot_card_payment_state(user)
 	user.current_ap -= effective_ap_cost
+	if not _try_pay_druid_resonance(user, card, context):
+		_restore_card_payment_state(user, payment_snapshot)
+		return false
 	if not card.pay_special_conditions(condition_context, play_mode):
 		_restore_card_payment_state(user, payment_snapshot)
 		_emit_log("%s 的%s条件支付失败。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
@@ -412,6 +432,7 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 			"controller": self,
 			"card": card,
 			"ap_cost": effective_ap_cost,
+			"druid_orientation": druid_orientation,
 		})
 
 	resolution_runner.push_card_frame(BattleCardFrame.create(user, card, targets, context, discard_after_play))
@@ -428,6 +449,12 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"hand": user.hand.duplicate(),
 		"discard_pile": user.discard_pile.duplicate(),
 		"exiled_pile": user.exiled_pile.duplicate(),
+		"mana_zone": user.mana_zone.duplicate(),
+		"enchant_zone": user.enchant_zone.duplicate(),
+		"curse_zone": user.curse_zone.duplicate(),
+		"druid_transformed": user.druid_transformed,
+		"druid_prepare_used": user.druid_prepare_used,
+		"druid_temporary_mana": user.druid_temporary_mana,
 	}
 
 
@@ -441,9 +468,18 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	var hand_snapshot: Array = snapshot.get("hand", []) as Array
 	var discard_snapshot: Array = snapshot.get("discard_pile", []) as Array
 	var exile_snapshot: Array = snapshot.get("exiled_pile", []) as Array
+	var mana_snapshot: Array = snapshot.get("mana_zone", []) as Array
+	var enchant_snapshot: Array = snapshot.get("enchant_zone", []) as Array
+	var curse_snapshot: Array = snapshot.get("curse_zone", []) as Array
 	user.hand.assign(hand_snapshot)
 	user.discard_pile.assign(discard_snapshot)
 	user.exiled_pile.assign(exile_snapshot)
+	user.mana_zone.assign(mana_snapshot)
+	user.enchant_zone.assign(enchant_snapshot)
+	user.curse_zone.assign(curse_snapshot)
+	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
+	user.druid_prepare_used = bool(snapshot.get("druid_prepare_used", user.druid_prepare_used))
+	user.druid_temporary_mana = int(snapshot.get("druid_temporary_mana", user.druid_temporary_mana))
 
 
 func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> bool:
@@ -516,16 +552,22 @@ func perform_strike_with_options(attacker: BattleUnitState, target: BattleUnitSt
 	return strike_resolver.perform_strike_with_modifier_and_multiplier(attacker, target, source, damage_modifier, damage_multiplier, label, equipment_slot, options)
 
 
-func get_card_ap_cost(user: BattleUnitState, card: CardData) -> int:
+func get_card_ap_cost(user: BattleUnitState, card: CardData, context: Dictionary = {}) -> int:
 	if user == null or card == null:
 		return 0
 
-	return user.get_card_ap_cost(card, {"controller": self, "card": card})
+	var cost_context := context.duplicate()
+	cost_context["controller"] = self
+	cost_context["user"] = user
+	cost_context["card"] = card
+	if not cost_context.has("druid_orientation"):
+		cost_context["druid_orientation"] = _get_druid_orientation_for_card(user, card)
+	return user.get_card_ap_cost(card, cost_context)
 
 
-func get_card_ap_cost_for_mode(user: BattleUnitState, card: CardData, play_mode: int) -> int:
+func get_card_ap_cost_for_mode(user: BattleUnitState, card: CardData, play_mode: int, context: Dictionary = {}) -> int:
 	if play_mode == CardEnums.CardPlayMode.NORMAL:
-		return get_card_ap_cost(user, card)
+		return get_card_ap_cost(user, card, context)
 
 	return 0
 
@@ -537,7 +579,16 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 		return false
 	if not card.supports_play_mode(play_mode):
 		return false
-	if user.current_ap < get_card_ap_cost_for_mode(user, card, play_mode):
+	if not _is_druid_card_play_state_valid(user, card, false):
+		return false
+	var context := {
+		"controller": self,
+		"user": user,
+		"card": card,
+		"play_mode": play_mode,
+		"druid_orientation": _get_druid_orientation_for_card(user, card),
+	}
+	if user.current_ap < get_card_ap_cost_for_mode(user, card, play_mode, context):
 		return false
 
 	return card.can_pay_special_conditions(_build_special_play_condition_context(user, card, play_mode), play_mode)
@@ -607,6 +658,7 @@ func _build_special_play_condition_context(user: BattleUnitState, card: CardData
 		"card": card,
 		"play_mode": play_mode,
 		"play_mode_label": CardEnums.play_mode_label(play_mode),
+		"druid_orientation": _get_druid_orientation_for_card(user, card),
 	}
 
 
@@ -836,6 +888,168 @@ func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
 	state_changed.emit()
 
 
+func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+		return false
+	if unit.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if not unit.is_druid() or unit.druid_transformed or unit.druid_prepare_used:
+		return false
+	if unit.hand.is_empty():
+		return false
+
+	return true
+
+
+func use_druid_prepare_transform(unit: BattleUnitState) -> bool:
+	if is_resolving_actions():
+		return false
+	if not can_use_druid_prepare_transform(unit):
+		return false
+
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_druid_prepare_transform"),
+		[unit],
+		0,
+		"%s 准备变身" % unit.get_display_name(),
+		{"unit": unit}
+	))
+	return true
+
+
+func _resolve_druid_prepare_transform(unit: BattleUnitState) -> void:
+	if not can_use_druid_prepare_transform(unit):
+		return
+
+	var card: CardData = unit.hand[0] as CardData
+	if card == null or not unit.move_hand_card_to_mana(card):
+		return
+	unit.set_druid_transformed(true)
+	unit.druid_prepare_used = true
+	_emit_log("%s 将 %s 逆置置入法力区，并进入变身状态。" % [unit.get_display_name(), card.card_name])
+	state_changed.emit()
+
+
+func can_use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+		return false
+	if unit.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if not unit.is_druid() or not unit.druid_transformed or unit.druid_prepare_used:
+		return false
+	if not unit.can_pay_mana(1):
+		return false
+
+	return true
+
+
+func use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
+	if is_resolving_actions():
+		return false
+	if not can_use_druid_prepare_untransform(unit):
+		return false
+
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_druid_prepare_untransform"),
+		[unit],
+		0,
+		"%s 解除变身" % unit.get_display_name(),
+		{"unit": unit}
+	))
+	return true
+
+
+func _resolve_druid_prepare_untransform(unit: BattleUnitState) -> void:
+	if not can_use_druid_prepare_untransform(unit):
+		return
+	if not unit.pay_mana(1):
+		return
+
+	unit.set_druid_transformed(false)
+	unit.druid_prepare_used = true
+	_emit_log("%s 支付 1 点法力，解除变身状态。" % unit.get_display_name())
+	state_changed.emit()
+
+
+func should_card_enter_mana_after_play(frame: BattleCardFrame) -> bool:
+	if frame == null or frame.user == null or frame.card == null:
+		return false
+	if not frame.user.is_druid() or not frame.card.is_druid_dual_card:
+		return false
+	if frame.context != null and bool(frame.context.extra.get("druid_send_to_mana_after_play", false)):
+		return true
+	if frame.context != null:
+		var orientation := int(frame.context.extra.get("druid_orientation", _get_druid_orientation_for_card(frame.user, frame.card)))
+		return orientation == CardEnums.DruidOrientation.INVERTED
+
+	return frame.user.get_druid_card_orientation(frame.card) == CardEnums.DruidOrientation.INVERTED
+
+
+func finish_druid_card_to_mana(frame: BattleCardFrame) -> void:
+	if frame == null or frame.user == null or frame.card == null:
+		return
+	if not frame.user.move_hand_card_to_mana(frame.card):
+		frame.user.add_card_to_mana_zone(frame.card)
+	_emit_log("%s 逆位打出的 %s 进入法力区。" % [frame.user.get_display_name(), frame.card.card_name])
+
+
+func mark_played_card_to_mana(context: Dictionary = {}) -> void:
+	var card_context: CardPlayContext = context.get("card_context") as CardPlayContext
+	if card_context != null:
+		card_context.extra["druid_send_to_mana_after_play"] = true
+
+
+func _get_druid_orientation_for_card(user: BattleUnitState, card: CardData) -> int:
+	if user != null and user.has_method("get_druid_card_orientation"):
+		return int(user.get_druid_card_orientation(card))
+
+	return CardEnums.DruidOrientation.UPRIGHT
+
+
+func _is_druid_card_play_state_valid(user: BattleUnitState, card: CardData, write_log: bool) -> bool:
+	if user == null or card == null or not card.is_druid_dual_card:
+		return true
+	if not user.is_druid():
+		return true
+
+	var orientation := _get_druid_orientation_for_card(user, card)
+	if orientation == CardEnums.DruidOrientation.INVERTED:
+		if card.is_twin_spell:
+			if write_log:
+				_emit_log("%s 是双生法术，不能以逆位打出。" % card.card_name)
+			return false
+		if not card.allow_inverted_play:
+			if write_log:
+				_emit_log("%s 当前不能逆位打出。" % card.card_name)
+			return false
+	else:
+		if not card.allow_upright_play:
+			if write_log:
+				_emit_log("%s 当前不能正位打出。" % card.card_name)
+			return false
+
+	return true
+
+
+func _try_pay_druid_resonance(user: BattleUnitState, card: CardData, context: CardPlayContext) -> bool:
+	if user == null or card == null or context == null:
+		return true
+	if card.resonance_cost <= 0 or not card.auto_pay_resonance:
+		return true
+	if not user.is_druid():
+		return true
+	if not user.can_pay_mana(card.resonance_cost):
+		context.extra["druid_resonance_paid"] = false
+		return true
+	if not user.pay_mana(card.resonance_cost):
+		_emit_log("%s 共鸣支付失败。" % card.card_name)
+		return false
+
+	context.extra["druid_resonance_paid"] = true
+	_emit_log("%s 支付 %d 点法力触发共鸣。" % [user.get_display_name(), card.resonance_cost])
+	return true
+
+
 func gain_class_resource(unit: BattleUnitState, resource_name: String, amount: int) -> void:
 	if unit == null or resource_name.is_empty() or amount <= 0:
 		return
@@ -884,6 +1098,23 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	if source != null:
 		source_name = source.get_display_name()
 	_emit_log("%s 对 %s 造成 %d 点%s。" % [source_name, target.get_display_name(), actual, label])
+	return actual
+
+
+func heal_unit(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "治疗") -> int:
+	if target == null or not target.is_alive() or amount <= 0:
+		return 0
+
+	var before := target.get_current_health()
+	target.set_current_health(before + amount)
+	var actual := target.get_current_health() - before
+	if actual <= 0:
+		return 0
+
+	var source_name := "效果"
+	if source != null:
+		source_name = source.get_display_name()
+	_emit_log("%s 为 %s 恢复 %d 点%s。" % [source_name, target.get_display_name(), actual, label])
 	return actual
 
 
@@ -976,7 +1207,7 @@ func _run_enemy_turn(unit: BattleUnitState) -> void:
 
 
 func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
-	var target_type := _get_card_target_type(user, card, equipment_slot, play_mode)
+	var target_type := _get_card_target_type(user, card, equipment_slot, play_mode, extra_context)
 	if target_type == CardEnums.TargetType.NONE:
 		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
@@ -1035,17 +1266,19 @@ func _card_effect_targets_are_valid(user: BattleUnitState, card: CardData, targe
 	return card.are_targets_valid(context, targets, write_log)
 
 
-func _get_card_target_type(user: BattleUnitState, card: CardData, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL) -> int:
+func _get_card_target_type(user: BattleUnitState, card: CardData, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> int:
 	if card == null:
 		return CardEnums.TargetType.NONE
 
-	return card.get_target_type_for_mode(play_mode, {
-		"controller": self,
-		"user": user,
-		"card": card,
-		"equipment_slot": equipment_slot,
-		"play_mode": play_mode,
-	})
+	var context := extra_context.duplicate()
+	context["controller"] = self
+	context["user"] = user
+	context["card"] = card
+	context["equipment_slot"] = equipment_slot
+	context["play_mode"] = play_mode
+	if not context.has("druid_orientation"):
+		context["druid_orientation"] = _get_druid_orientation_for_card(user, card)
+	return card.get_target_type_for_mode(play_mode, context)
 
 
 func _is_position_valid_for_unit(unit: BattleUnitState, position: Vector2, deployment_only: bool, write_log: bool = true) -> bool:

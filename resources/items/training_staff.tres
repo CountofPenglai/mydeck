@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "训练法杖"
+description = "给德鲁伊练习法术与变形用的木杖。"
+icon = ExtResource("2_icon")
+max_stack = 1
+power = 3
+attack_range = 150.0
+range_type = 1
+damage_type = 2
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(4)
+rarity = 0
+subcategories = PackedStringArray("法杖", "武器")
+

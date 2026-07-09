@@ -136,7 +136,10 @@ func _finish_card_frame(frame: BattleCardFrame) -> void:
 		return
 
 	if frame.discard_after_play:
-		frame.user.discard_card(frame.card)
+		if controller != null and controller.has_method("should_card_enter_mana_after_play") and controller.should_card_enter_mana_after_play(frame):
+			controller.finish_druid_card_to_mana(frame)
+		else:
+			frame.user.discard_card(frame.card)
 	if controller != null:
 		var actual_ap_cost := frame.card.ap_cost
 		if frame.context != null:

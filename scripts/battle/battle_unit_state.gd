@@ -19,8 +19,14 @@ var draw_pile: Array[CardData] = []
 var hand: Array[CardData] = []
 var discard_pile: Array[CardData] = []
 var exiled_pile: Array[CardData] = []
+var mana_zone: Array[CardData] = []
+var enchant_zone: Array[CardData] = []
+var curse_zone: Array[CardData] = []
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
+var druid_transformed: bool = false
+var druid_prepare_used: bool = false
+var druid_temporary_mana: int = 0
 
 func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	unit_id = id
@@ -31,6 +37,7 @@ func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	radius = _resolve_collision_radius(unit_radius)
 	is_deployed = false
 	battle_action_flags.clear()
+	_reset_druid_state()
 
 
 func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position: Vector2) -> void:
@@ -43,6 +50,7 @@ func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position:
 	position = start_position
 	is_deployed = true
 	battle_action_flags.clear()
+	_reset_druid_state()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
@@ -56,6 +64,8 @@ func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> voi
 
 func start_turn(config: BattleConfig) -> void:
 	current_ap = get_max_ap(config)
+	druid_prepare_used = false
+	druid_temporary_mana = 0
 
 
 func get_display_name() -> String:
@@ -168,10 +178,16 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 	if card == null:
 		return 0
 
-	var cost := card.ap_cost
+	var merged_context := context.duplicate()
+	merged_context["user"] = self
+	merged_context["unit"] = self
+	merged_context["card"] = card
+	if not merged_context.has("druid_orientation"):
+		merged_context["druid_orientation"] = get_druid_card_orientation(card)
+	var cost := card.get_ap_cost_for_context(merged_context)
 	for status in statuses:
 		if status != null and status.has_method("modify_card_ap_cost"):
-			cost = status.modify_card_ap_cost(self, card, cost, context)
+			cost = status.modify_card_ap_cost(self, card, cost, merged_context)
 
 	return maxi(0, cost)
 
@@ -221,6 +237,11 @@ func get_agility() -> int:
 
 
 func get_strength() -> int:
+	if is_druid() and druid_transformed:
+		if character_state != null:
+			return character_state.get_intelligence()
+		if enemy_state != null:
+			return enemy_state.get_intelligence()
 	if character_state != null:
 		return character_state.get_strength()
 	if enemy_state != null:
@@ -230,6 +251,11 @@ func get_strength() -> int:
 
 
 func get_intelligence() -> int:
+	if is_druid() and druid_transformed:
+		if character_state != null:
+			return character_state.get_strength()
+		if enemy_state != null:
+			return enemy_state.get_strength()
 	if character_state != null:
 		return character_state.get_intelligence()
 	if enemy_state != null:
@@ -410,6 +436,99 @@ func discard_card(card: CardData) -> void:
 		discard_pile.append(card)
 
 
+func add_card_to_mana_zone(card: CardData) -> void:
+	if card != null:
+		mana_zone.append(card)
+
+
+func add_card_to_enchant_zone(card: CardData) -> void:
+	if card != null:
+		enchant_zone.append(card)
+
+
+func add_card_to_curse_zone(card: CardData) -> void:
+	if card != null:
+		curse_zone.append(card)
+
+
+func move_hand_card_to_mana(card: CardData) -> bool:
+	var index := hand.find(card)
+	if index < 0:
+		return false
+
+	hand.remove_at(index)
+	add_card_to_mana_zone(card)
+	return true
+
+
+func move_hand_card_to_enchant(card: CardData) -> bool:
+	var index := hand.find(card)
+	if index < 0:
+		return false
+
+	hand.remove_at(index)
+	add_card_to_enchant_zone(card)
+	return true
+
+
+func move_hand_card_to_curse(card: CardData) -> bool:
+	var index := hand.find(card)
+	if index < 0:
+		return false
+
+	hand.remove_at(index)
+	add_card_to_curse_zone(card)
+	return true
+
+
+func get_available_mana() -> int:
+	return mana_zone.size() + maxi(0, druid_temporary_mana)
+
+
+func can_pay_mana(amount: int) -> bool:
+	return amount <= 0 or get_available_mana() >= amount
+
+
+func pay_mana(amount: int) -> bool:
+	if amount <= 0:
+		return true
+	if not can_pay_mana(amount):
+		return false
+
+	var remaining := amount
+	var temporary_paid := mini(druid_temporary_mana, remaining)
+	druid_temporary_mana -= temporary_paid
+	remaining -= temporary_paid
+	while remaining > 0 and not mana_zone.is_empty():
+		mana_zone.pop_back()
+		remaining -= 1
+
+	return remaining <= 0
+
+
+func gain_temporary_mana(amount: int) -> void:
+	druid_temporary_mana = maxi(0, druid_temporary_mana + amount)
+
+
+func is_druid() -> bool:
+	return get_character_class() == CardEnums.CardClass.DRUID
+
+
+func is_druid_transformed() -> bool:
+	return is_druid() and druid_transformed
+
+
+func set_druid_transformed(value: bool) -> void:
+	druid_transformed = value if is_druid() else false
+
+
+func get_druid_card_orientation(card: CardData) -> int:
+	if is_druid_transformed() and card != null and card.is_druid_dual_card:
+		return CardEnums.DruidOrientation.INVERTED
+
+	return CardEnums.DruidOrientation.UPRIGHT
+
+
 func discard_all_hand() -> int:
 	var count := hand.size()
 	for card in hand:
@@ -526,6 +645,15 @@ func mark_battle_action_used(action_id: String) -> void:
 	if action_id.is_empty():
 		return
 	battle_action_flags[action_id] = true
+
+
+func _reset_druid_state() -> void:
+	mana_zone.clear()
+	enchant_zone.clear()
+	curse_zone.clear()
+	druid_transformed = false
+	druid_prepare_used = false
+	druid_temporary_mana = 0
 
 
 func add_status(status: StatusEffect) -> void:

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CharacterState" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
+[ext_resource type="Resource" path="res://resources/characters/sample_druid_data.tres" id="2_character_data"]
+[ext_resource type="Resource" path="res://resources/cards/druid_verdant_strike_stack.tres" id="3_strike"]
+[ext_resource type="Resource" path="res://resources/cards/druid_moonlit_mend_stack.tres" id="4_moon"]
+[ext_resource type="Resource" path="res://resources/cards/druid_wild_shape_stack.tres" id="5_shape"]
+[ext_resource type="Resource" path="res://resources/cards/druid_rooted_insight_stack.tres" id="6_insight"]
+[ext_resource type="Resource" path="res://resources/items/training_staff.tres" id="7_staff"]
+
+[resource]
+script = ExtResource("1_character_state")
+character_data = ExtResource("2_character_data")
+current_health = 34
+deck = [ExtResource("3_strike"), ExtResource("4_moon"), ExtResource("5_shape"), ExtResource("6_insight")]
+weapon_equipment = ExtResource("7_staff")
+weapon_face = 0
+extra_ap_bonus = 0
+

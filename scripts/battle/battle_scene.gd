@@ -271,6 +271,24 @@ func _on_class_resource_pressed(unit: BattleUnitState, resource_name: String) ->
 	_refresh()
 
 
+func _on_druid_prepare_transform_pressed(unit: BattleUnitState) -> void:
+	if _actions_locked():
+		return
+
+	_clear_input()
+	controller.use_druid_prepare_transform(unit)
+	_refresh()
+
+
+func _on_druid_prepare_untransform_pressed(unit: BattleUnitState) -> void:
+	if _actions_locked():
+		return
+
+	_clear_input()
+	controller.use_druid_prepare_untransform(unit)
+	_refresh()
+
+
 func _select_discard_card(card: CardData) -> void:
 	if _actions_locked():
 		return
@@ -488,6 +506,31 @@ func _refresh_class_resource_list() -> void:
 		if unit == null or unit.character_state == null:
 			continue
 
+		if unit.is_druid():
+			has_resources = true
+			var druid_label := Label.new()
+			druid_label.text = "%s：法力 %d | 附魔 %d | 诅咒 %d | %s" % [
+				unit.get_display_name(),
+				unit.get_available_mana(),
+				unit.enchant_zone.size(),
+				unit.curse_zone.size(),
+				"变身" if unit.druid_transformed else "正位",
+			]
+			class_resource_list.add_child(druid_label)
+
+			if controller.can_use_druid_prepare_transform(unit) or controller.can_use_druid_prepare_untransform(unit):
+				var druid_button := Button.new()
+				if controller.can_use_druid_prepare_transform(unit):
+					druid_button.text = "准备：逆置首张手牌并变身"
+					druid_button.tooltip_text = "每回合限一次。将最左侧手牌逆置置入法力区，然后进入变身状态。"
+					druid_button.pressed.connect(_on_druid_prepare_transform_pressed.bind(unit))
+				else:
+					druid_button.text = "准备：支付1法力解除变身"
+					druid_button.tooltip_text = "每回合限一次。支付 1 点法力，解除变身状态。"
+					druid_button.pressed.connect(_on_druid_prepare_untransform_pressed.bind(unit))
+				druid_button.disabled = _actions_locked()
+				class_resource_list.add_child(druid_button)
+
 		for pool_state in unit.character_state.class_resources:
 			if pool_state == null:
 				continue
@@ -524,7 +567,12 @@ func _refresh_hand_list(is_player_turn: bool) -> void:
 		return
 
 	for card in controller.current_unit.hand:
-		var display_ap_cost := controller.get_card_ap_cost(controller.current_unit, card)
+		var context := {
+			"controller": controller,
+			"user": controller.current_unit,
+			"card": card,
+		}
+		var display_ap_cost := controller.get_card_ap_cost(controller.current_unit, card, context)
 		var button := TextureButton.new()
 		button.texture_normal = HAND_CARD_SLOT_TEXTURE
 		button.ignore_texture_size = true
@@ -536,7 +584,7 @@ func _refresh_hand_list(is_player_turn: bool) -> void:
 
 		var label := Label.new()
 		label.text = "%s\n%dAP\n射程 %.0f" % [
-			card.card_name,
+			card.get_display_name_for_context(context),
 			display_ap_cost,
 			card.get_effective_range(controller.current_unit, pending_equipment_slot),
 		]
@@ -673,13 +721,16 @@ func _get_card_target_type(card: CardData, play_mode: int) -> int:
 	if card == null:
 		return CardEnums.TargetType.NONE
 
-	return card.get_target_type_for_mode(play_mode, {
+	var context := {
 		"controller": controller,
 		"user": controller.current_unit,
 		"card": card,
 		"equipment_slot": pending_equipment_slot,
 		"play_mode": play_mode,
-	})
+	}
+	if controller.current_unit != null and controller.current_unit.has_method("get_druid_card_orientation"):
+		context["druid_orientation"] = controller.current_unit.get_druid_card_orientation(card)
+	return card.get_target_type_for_mode(play_mode, context)
 
 
 func _get_pending_card_target_type() -> int:
@@ -760,11 +811,20 @@ func _current_unit_weapon_summary(unit: BattleUnitState) -> String:
 
 func _build_card_tooltip(card: CardData) -> String:
 	var parts := PackedStringArray()
-	parts.append(card.card_name)
+	var context := {
+		"controller": controller,
+		"user": controller.current_unit,
+		"card": card,
+	}
+	if controller.current_unit != null and controller.current_unit.has_method("get_druid_card_orientation"):
+		context["druid_orientation"] = controller.current_unit.get_druid_card_orientation(card)
+	parts.append(card.get_display_name_for_context(context))
 	if controller.current_unit != null:
-		parts.append("%dAP" % controller.get_card_ap_cost(controller.current_unit, card))
+		parts.append("%dAP" % controller.get_card_ap_cost(controller.current_unit, card, context))
 	else:
 		parts.append("%dAP" % card.ap_cost)
+	if card.is_druid_dual_card:
+		parts.append(card.get_druid_orientation_label(context))
 	parts.append(card.get_card_type_label())
 	parts.append(card.get_play_timing_label())
 	if card.has_momentum:
@@ -772,7 +832,10 @@ func _build_card_tooltip(card: CardData) -> String:
 	if card.has_combo:
 		parts.append("连击：%s" % card.get_special_condition_text(CardEnums.CardPlayMode.COMBO))
 	parts.append("射程 %.0f" % card.get_effective_range(controller.current_unit, pending_equipment_slot))
-	if controller.current_unit != null and card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card}):
+	var description := card.get_description_for_context(context)
+	if not description.is_empty():
+		parts.append(description)
+	if controller.current_unit != null and card.requires_weapon_choice(context):
 		parts.append(_strike_preview_text(controller.current_unit))
 	return " | ".join(parts)
 

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CardStack" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_stack.gd" id="1_card_stack"]
+[ext_resource type="Resource" path="res://resources/cards/druid_verdant_strike.tres" id="2_card"]
+
+[resource]
+script = ExtResource("1_card_stack")
+card_data = ExtResource("2_card")
+count = 4
+

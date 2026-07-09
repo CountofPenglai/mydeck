@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="BattleScenario" load_steps=9 format=3]
+[gd_resource type="Resource" script_class="BattleScenario" load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_scenario.gd" id="1_scenario"]
 [ext_resource type="Resource" path="res://resources/battle/sample_battle_config.tres" id="2_config"]
@@ -8,6 +8,7 @@
 [ext_resource type="Resource" path="res://resources/enemies/battle_melee_enemy_state.tres" id="6_melee"]
 [ext_resource type="Resource" path="res://resources/enemies/battle_ranged_enemy_state.tres" id="7_ranged"]
 [ext_resource type="Resource" path="res://resources/battle/prototypes/scene_001_ruined_keep.tres" id="8_prototype"]
+[ext_resource type="Resource" path="res://resources/characters/battle_druid_state.tres" id="9_druid"]
 
 [resource]
 script = ExtResource("1_scenario")
@@ -15,5 +16,5 @@ battle_config = ExtResource("2_config")
 scene_prototype = ExtResource("8_prototype")
 map_data = ExtResource("3_map")
 seed = 1001
-players = [ExtResource("4_warrior"), ExtResource("5_ranger")]
+players = [ExtResource("4_warrior"), ExtResource("5_ranger"), ExtResource("9_druid")]
 enemies = [ExtResource("6_melee"), ExtResource("7_ranged")]

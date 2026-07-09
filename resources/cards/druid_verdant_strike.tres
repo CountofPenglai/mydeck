@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_verdant_strike_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "苍翠打击"
+description = "正位：对射程内一个敌方单位进行武器打击；随后按手牌数获得护甲。"
+artwork = ExtResource("2_scroll")
+rarity = 0
+card_class = 4
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 2
+range_modifier = 30.0
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "根须回击"
+inverted_description = "逆位：对射程内一个敌方单位进行武器打击；随后按当前法力获得护甲。打出后进入法力区。"
+inverted_ap_cost = 1
+inverted_target_type = 1
+inverted_range_modifier = 10.0
+
