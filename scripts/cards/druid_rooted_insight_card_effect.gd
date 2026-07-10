@@ -16,9 +16,8 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 	if orientation == CardEnums.DruidOrientation.INVERTED:
 		draw_count = inverted_draw_count
 
-	var drawn := user.draw_cards(draw_count, controller.rng)
+	var drawn := user.draw_cards(draw_count, controller.rng, context)
 	controller._emit_log("%s 抽取 %d 张牌。" % [user.get_display_name(), drawn])
 	if orientation == CardEnums.DruidOrientation.INVERTED or bool(context.get("druid_resonance_paid", false)):
-		user.gain_temporary_mana(1)
+		user.gain_temporary_mana(1, context)
 		controller._emit_log("%s 获得 1 点本回合临时法力。" % user.get_display_name())
-

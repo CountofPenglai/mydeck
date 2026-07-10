@@ -19,7 +19,6 @@ func on_card_ap_cost_paid(unit: BattleUnitState, card: CardData, context: Dictio
 	if mana_cost > 0 and not unit.pay_mana(mana_cost):
 		return
 
-	var drawn := unit.draw_cards(draw_count, controller.rng)
+	var drawn := unit.draw_cards(draw_count, controller.rng, context)
 	controller._emit_log("%s 触发观兆，抽取 %d 张牌。" % [unit.get_display_name(), drawn])
 	stacks = 0
-

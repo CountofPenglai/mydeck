@@ -26,7 +26,7 @@ func pay(context: Dictionary = {}) -> bool:
 	var available := _available_cards(context)
 	var count := available.size() if discard_all else discard_count
 	for i in range(mini(count, available.size())):
-		user.discard_card(available[i])
+		user.discard_card(available[i], context)
 
 	if controller != null:
 		controller._emit_log("%s 弃置 %d 张手牌。" % [user.get_display_name(), mini(count, available.size())])

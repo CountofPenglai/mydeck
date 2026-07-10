@@ -2,6 +2,7 @@ extends CardEffect
 class_name ChargeCardEffect
 
 @export var agility_modifier: int = 3
+@export var move_ap_budget: int = 2
 @export var strike_damage_modifier: int = -2
 
 func _init() -> void:
@@ -14,7 +15,7 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2):
 		return false
 
-	return controller.can_unit_reach_position_with_agility_modifier(user, targets[0], agility_modifier, write_log)
+	return controller.can_unit_reach_position_with_ap_and_agility_modifier(user, targets[0], move_ap_budget, agility_modifier, write_log)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
@@ -25,7 +26,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		return
 
 	var requested_position: Vector2 = targets[0]
-	var movement = controller.apply_movement_effect(user, requested_position, agility_modifier, false)
+	var movement = controller.apply_movement_effect(user, requested_position, agility_modifier, false, move_ap_budget)
 	if not bool(movement.get("success", false)):
 		return
 

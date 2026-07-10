@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="DruidBindingEnchantmentCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/druid_binding_enchantment_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+hand_armor_multiplier = 1
+draw_count = 2
+mana_cost = 1
+

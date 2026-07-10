@@ -48,6 +48,7 @@ var _ordered_discard_extra_context: Dictionary = {}
 var _ordered_discard_selected_cards: Array[CardData] = []
 var _ordered_discard_max_count: int = 0
 var _ap_orb_layer: Control
+var _druid_prepare_hand_choice_active: bool = false
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -276,7 +277,12 @@ func _on_druid_prepare_transform_pressed(unit: BattleUnitState) -> void:
 		return
 
 	_clear_input()
-	controller.use_druid_prepare_transform(unit)
+	if unit == null or unit != controller.current_unit:
+		return
+	if not controller.can_use_druid_prepare_transform(unit):
+		return
+	_druid_prepare_hand_choice_active = true
+	_append_log("选择一张手牌逆置置入法力区。")
 	_refresh()
 
 
@@ -324,6 +330,10 @@ func _select_discard_card(card: CardData) -> void:
 
 func _select_card(card: CardData) -> void:
 	if _actions_locked():
+		return
+
+	if _druid_prepare_hand_choice_active:
+		_select_druid_prepare_card(card)
 		return
 
 	_clear_input()
@@ -380,6 +390,21 @@ func _clear_input() -> void:
 	pending_play_mode = CardEnums.CardPlayMode.NORMAL
 	pending_equipment_slot = ""
 	pending_extra_context.clear()
+	_druid_prepare_hand_choice_active = false
+
+
+func _select_druid_prepare_card(card: CardData) -> void:
+	var unit := controller.current_unit
+	if unit == null or card == null:
+		_clear_input()
+		_refresh()
+		return
+	if not controller.use_druid_prepare_transform(unit, card):
+		_append_log("%s 无法作为准备动作置入法力区。" % card.card_name)
+		return
+
+	_clear_input()
+	_refresh()
 
 
 func _actions_locked() -> bool:
@@ -583,11 +608,14 @@ func _refresh_hand_list(is_player_turn: bool) -> void:
 		button.pressed.connect(_select_card.bind(card))
 
 		var label := Label.new()
-		label.text = "%s\n%dAP\n射程 %.0f" % [
-			card.get_display_name_for_context(context),
-			display_ap_cost,
-			card.get_effective_range(controller.current_unit, pending_equipment_slot),
-		]
+		if _druid_prepare_hand_choice_active:
+			label.text = "%s\n置入法力区" % card.get_display_name_for_context(context)
+		else:
+			label.text = "%s\n%dAP\n射程 %.0f" % [
+				card.get_display_name_for_context(context),
+				display_ap_cost,
+				card.get_effective_range(controller.current_unit, pending_equipment_slot),
+			]
 		label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

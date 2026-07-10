@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_channeling_claws_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "灵脉爪击"
+description = "正位：抽 1 张牌，然后将抽到的牌逆位置入法力区；若如此做，再抽 1 张牌。若没有抽到牌，本牌结算后进入法力区。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 4
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 0
+ap_cost = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "汲生爪击"
+inverted_description = "逆位：吸血。对射程内一个敌方单位进行武器打击。本牌以逆位打出并进入法力区时，本回合额外获得 1 点可用法力。"
+inverted_ap_cost = 2
+inverted_target_type = 1
+inverted_range_modifier = 30.0
+

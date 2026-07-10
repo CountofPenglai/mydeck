@@ -73,7 +73,7 @@ func activate_from_exile(context: Dictionary = {}) -> void:
 	if not can_activate_from_exile(context):
 		return
 
-	var discarded_count := user.discard_all_hand()
+	var discarded_count := user.discard_all_hand(context)
 	if not user.move_exiled_card_to_discard(card):
 		return
 

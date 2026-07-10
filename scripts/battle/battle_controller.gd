@@ -275,7 +275,10 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 		draw_count = floori(float(unit.current_ap) / float(config.ap_per_end_turn_draw))
 
 	if draw_count > 0:
-		var drawn := unit.draw_cards(draw_count, rng)
+		var drawn := unit.draw_cards(draw_count, rng, {
+			"controller": self,
+			"reason": "end_turn_ap",
+		})
 		_emit_log("%s 保留 %d AP，抽取 %d 张牌。" % [unit.get_display_name(), unit.current_ap, drawn])
 
 	unit.current_ap = 0
@@ -696,6 +699,14 @@ func can_unit_reach_position_with_ap(unit: BattleUnitState, position: Vector2, m
 	return true
 
 
+func can_unit_reach_position_with_ap_and_agility_modifier(unit: BattleUnitState, position: Vector2, max_ap: int = 1, agility_modifier: int = 0, write_log: bool = false) -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+
+	var max_distance := get_ap_movement_distance(unit, max_ap, agility_modifier)
+	return can_unit_reach_position_with_distance(unit, position, max_distance, write_log)
+
+
 func can_unit_reach_position_with_agility_modifier(unit: BattleUnitState, position: Vector2, agility_modifier: int = 0, write_log: bool = false) -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
@@ -730,6 +741,13 @@ func get_agility_movement_distance(unit: BattleUnitState, agility_modifier: int 
 	return maxf(0.0, float(unit.get_agility() + agility_modifier) * config.move_distance_per_agility)
 
 
+func get_ap_movement_distance(unit: BattleUnitState, ap_budget: int, agility_modifier: int = 0) -> float:
+	if unit == null:
+		return 0.0
+
+	return float(maxi(0, ap_budget)) * unit.get_move_distance_per_ap(config, agility_modifier)
+
+
 func apply_card_movement_to(unit: BattleUnitState, position: Vector2, label: String = "卡牌移动") -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
@@ -742,7 +760,7 @@ func apply_card_movement_to(unit: BattleUnitState, position: Vector2, label: Str
 	return true
 
 
-func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agility_modifier: int = 0, truncate_to_range: bool = true) -> Dictionary:
+func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agility_modifier: int = 0, truncate_to_range: bool = true, ap_budget: int = -1) -> Dictionary:
 	var result := {
 		"success": false,
 		"start_position": Vector2.ZERO,
@@ -763,6 +781,8 @@ func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agil
 		end_position = clamp_to_map(end_position)
 
 	var max_distance := get_agility_movement_distance(unit, agility_modifier)
+	if ap_budget >= 0:
+		max_distance = get_ap_movement_distance(unit, ap_budget, agility_modifier)
 	result["max_distance"] = max_distance
 	var direction := end_position - start_position
 	if not truncate_to_range and direction.length() > max_distance + 0.001:
@@ -901,28 +921,41 @@ func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
 	return true
 
 
-func use_druid_prepare_transform(unit: BattleUnitState) -> bool:
+func use_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData = null) -> bool:
 	if is_resolving_actions():
 		return false
 	if not can_use_druid_prepare_transform(unit):
 		return false
+	if selected_card != null and not unit.has_card_in_hand(selected_card):
+		_emit_log("%s 不在手牌中，无法逆置置入法力区。" % selected_card.card_name)
+		return false
 
 	push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_druid_prepare_transform"),
-		[unit],
+		[unit, selected_card],
 		0,
 		"%s 准备变身" % unit.get_display_name(),
-		{"unit": unit}
+		{"unit": unit, "selected_card": selected_card}
 	))
 	return true
 
 
-func _resolve_druid_prepare_transform(unit: BattleUnitState) -> void:
+func _resolve_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData = null) -> void:
 	if not can_use_druid_prepare_transform(unit):
 		return
 
-	var card: CardData = unit.hand[0] as CardData
-	if card == null or not unit.move_hand_card_to_mana(card):
+	var card := selected_card
+	if card == null and not unit.hand.is_empty():
+		card = unit.hand[0] as CardData
+	if card != null and not unit.has_card_in_hand(card):
+		_emit_log("%s 不在手牌中，无法逆置置入法力区。" % card.card_name)
+		return
+	if card == null or not unit.move_hand_card_to_mana(card, {
+		"controller": self,
+		"reason": "druid_prepare_transform",
+		"source": unit,
+		"source_card": card,
+	}):
 		return
 	unit.set_druid_transformed(true)
 	unit.druid_prepare_used = true
@@ -988,8 +1021,17 @@ func should_card_enter_mana_after_play(frame: BattleCardFrame) -> bool:
 func finish_druid_card_to_mana(frame: BattleCardFrame) -> void:
 	if frame == null or frame.user == null or frame.card == null:
 		return
-	if not frame.user.move_hand_card_to_mana(frame.card):
-		frame.user.add_card_to_mana_zone(frame.card)
+	var context := {
+		"controller": self,
+		"reason": "druid_inverted_card_played",
+		"source": frame.user,
+		"source_card": frame.card,
+		"card_context": frame.context,
+	}
+	if frame.context != null:
+		context["druid_orientation"] = int(frame.context.extra.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
+	if not frame.user.move_hand_card_to_mana(frame.card, context):
+		frame.user.add_card_to_mana_zone(frame.card, context)
 	_emit_log("%s 逆位打出的 %s 进入法力区。" % [frame.user.get_display_name(), frame.card.card_name])
 
 
@@ -1098,6 +1140,19 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	if source != null:
 		source_name = source.get_display_name()
 	_emit_log("%s 对 %s 造成 %d 点%s。" % [source_name, target.get_display_name(), actual, label])
+	var event_context := {
+		"controller": self,
+		"source": source,
+		"target": target,
+		"amount": actual,
+		"requested_amount": amount,
+		"label": label,
+		"damage_context": damage_context,
+	}
+	if source != null and actual > 0:
+		source.notify_after_damage_dealt(event_context)
+	if actual > 0:
+		target.notify_after_damage_taken(event_context)
 	return actual
 
 
@@ -1115,6 +1170,17 @@ func heal_unit(source: BattleUnitState, target: BattleUnitState, amount: int, la
 	if source != null:
 		source_name = source.get_display_name()
 	_emit_log("%s 为 %s 恢复 %d 点%s。" % [source_name, target.get_display_name(), actual, label])
+	var event_context := {
+		"controller": self,
+		"source": source,
+		"target": target,
+		"amount": actual,
+		"requested_amount": amount,
+		"label": label,
+	}
+	if source != null:
+		source.notify_after_heal_given(event_context)
+	target.notify_after_heal_received(event_context)
 	return actual
 
 

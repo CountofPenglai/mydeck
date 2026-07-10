@@ -7,4 +7,5 @@ script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = true
 agility_modifier = 3
+move_ap_budget = 2
 strike_damage_modifier = -2

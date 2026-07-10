@@ -38,6 +38,42 @@ func on_card_ap_cost_paid(_unit: BattleUnitState, _card: CardData, _context: Dic
 	pass
 
 
+func on_card_drawn(_unit: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_card_discarded(_unit: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_card_entered_special_zone(_unit: BattleUnitState, _card: CardData, _zone_name: String, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_damage_dealt(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_damage_taken(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_heal_given(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_heal_received(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_strike(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_mana_gained(_unit: BattleUnitState, _amount: int, _context: Dictionary = {}) -> void:
+	pass
+
+
 func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: float, _context: Dictionary = {}) -> float:
 	return current_distance
 

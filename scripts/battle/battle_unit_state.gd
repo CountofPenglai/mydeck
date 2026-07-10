@@ -193,10 +193,12 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 
 
 func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
 	for status in statuses.duplicate():
 		if status != null and status.has_method("on_card_ap_cost_paid"):
-			status.on_card_ap_cost_paid(self, card, context)
+			status.on_card_ap_cost_paid(self, card, event_context)
 
+	_notify_zone_card_effects("on_zone_owner_card_ap_cost_paid", [card], event_context)
 	remove_expired_statuses()
 
 
@@ -345,10 +347,13 @@ func get_max_ap(config: BattleConfig) -> int:
 	return config.base_ap
 
 
-func get_move_distance_per_ap(config: BattleConfig) -> float:
-	var distance := config.move_distance_per_ap + float(get_agility()) * config.move_distance_per_agility
+func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -> float:
+	var effective_agility := maxi(0, get_agility() + agility_modifier)
+	var distance := config.move_distance_per_ap + float(effective_agility) * config.move_distance_per_agility
 	var context := {
 		"config": config,
+		"agility_modifier": agility_modifier,
+		"effective_agility": effective_agility,
 	}
 	for status in statuses:
 		if status != null and status.has_method("modify_move_distance_per_ap"):
@@ -384,8 +389,12 @@ func distance_to(other: BattleUnitState) -> float:
 	return maxf(0.0, position.distance_to(other.position) - radius - other.radius)
 
 
-func draw_cards(count: int, rng: RandomNumberGenerator) -> int:
-	var drawn := 0
+func draw_cards(count: int, rng: RandomNumberGenerator, context: Dictionary = {}) -> int:
+	return draw_cards_detailed(count, rng, context).size()
+
+
+func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictionary = {}) -> Array[CardData]:
+	var drawn_cards: Array[CardData] = []
 	for _i in range(maxi(0, count)):
 		if draw_pile.is_empty() and not discard_pile.is_empty():
 			draw_pile = discard_pile.duplicate()
@@ -397,9 +406,10 @@ func draw_cards(count: int, rng: RandomNumberGenerator) -> int:
 
 		var drawn_card: CardData = draw_pile.pop_back() as CardData
 		hand.append(drawn_card)
-		drawn += 1
+		drawn_cards.append(drawn_card)
+		_notify_card_drawn(drawn_card, context)
 
-	return drawn
+	return drawn_cards
 
 
 func mill_cards(count: int) -> Array[CardData]:
@@ -429,55 +439,69 @@ func preview_discard_after_mill(count: int) -> Array[CardData]:
 	return result
 
 
-func discard_card(card: CardData) -> void:
-	var index := hand.find(card)
-	if index >= 0:
-		hand.remove_at(index)
-		discard_pile.append(card)
-
-
-func add_card_to_mana_zone(card: CardData) -> void:
-	if card != null:
-		mana_zone.append(card)
-
-
-func add_card_to_enchant_zone(card: CardData) -> void:
-	if card != null:
-		enchant_zone.append(card)
-
-
-func add_card_to_curse_zone(card: CardData) -> void:
-	if card != null:
-		curse_zone.append(card)
-
-
-func move_hand_card_to_mana(card: CardData) -> bool:
+func discard_card(card: CardData, context: Dictionary = {}) -> bool:
 	var index := hand.find(card)
 	if index < 0:
 		return false
 
 	hand.remove_at(index)
-	add_card_to_mana_zone(card)
+	discard_pile.append(card)
+	_notify_card_discarded(card, context)
 	return true
 
 
-func move_hand_card_to_enchant(card: CardData) -> bool:
+func add_card_to_mana_zone(card: CardData, context: Dictionary = {}) -> void:
+	if card == null:
+		return
+
+	mana_zone.append(card)
+	_notify_card_entered_special_zone(card, "mana", context)
+	_notify_mana_gained(1, context)
+
+
+func add_card_to_enchant_zone(card: CardData, context: Dictionary = {}) -> void:
+	if card == null:
+		return
+
+	enchant_zone.append(card)
+	_notify_card_entered_special_zone(card, "enchant", context)
+
+
+func add_card_to_curse_zone(card: CardData, context: Dictionary = {}) -> void:
+	if card == null:
+		return
+
+	curse_zone.append(card)
+	_notify_card_entered_special_zone(card, "curse", context)
+
+
+func move_hand_card_to_mana(card: CardData, context: Dictionary = {}) -> bool:
 	var index := hand.find(card)
 	if index < 0:
 		return false
 
 	hand.remove_at(index)
-	add_card_to_enchant_zone(card)
+	add_card_to_mana_zone(card, context)
 	return true
 
 
-func move_hand_card_to_curse(card: CardData) -> bool:
+func move_hand_card_to_enchant(card: CardData, context: Dictionary = {}) -> bool:
 	var index := hand.find(card)
 	if index < 0:
 		return false
 
 	hand.remove_at(index)
-	add_card_to_curse_zone(card)
+	add_card_to_enchant_zone(card, context)
+	return true
+
+
+func move_hand_card_to_curse(card: CardData, context: Dictionary = {}) -> bool:
+	var index := hand.find(card)
+	if index < 0:
+		return false
+
+	hand.remove_at(index)
+	add_card_to_curse_zone(card, context)
 	return true
 
 
@@ -487,6 +511,16 @@ func get_available_mana() -> int:
 
 func can_pay_mana(amount: int) -> bool:
 	return amount <= 0 or get_available_mana() >= amount
+
+
+func can_pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
+	if amount <= 0:
+		return true
+
+	var available := get_available_mana()
+	if excluded_card != null and mana_zone.find(excluded_card) >= 0:
+		available -= 1
+	return available >= amount
 
 
 func pay_mana(amount: int) -> bool:
@@ -506,8 +540,35 @@ func pay_mana(amount: int) -> bool:
 	return remaining <= 0
 
 
-func gain_temporary_mana(amount: int) -> void:
-	druid_temporary_mana = maxi(0, druid_temporary_mana + amount)
+func pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
+	if amount <= 0:
+		return true
+	if not can_pay_mana_excluding_card(amount, excluded_card):
+		return false
+
+	var remaining := amount
+	var temporary_paid := mini(druid_temporary_mana, remaining)
+	druid_temporary_mana -= temporary_paid
+	remaining -= temporary_paid
+	for i in range(mana_zone.size() - 1, -1, -1):
+		if remaining <= 0:
+			break
+		var mana_card: CardData = mana_zone[i]
+		if mana_card == excluded_card:
+			continue
+		mana_zone.remove_at(i)
+		remaining -= 1
+
+	return remaining <= 0
+
+
+func gain_temporary_mana(amount: int, context: Dictionary = {}) -> void:
+	var actual := maxi(0, amount)
+	if actual <= 0:
+		return
+
+	druid_temporary_mana = maxi(0, druid_temporary_mana + actual)
+	_notify_mana_gained(actual, context)
 
 
 func is_druid() -> bool:
@@ -529,11 +590,12 @@ func get_druid_card_orientation(card: CardData) -> int:
 	return CardEnums.DruidOrientation.UPRIGHT
 
 
-func discard_all_hand() -> int:
+func discard_all_hand(context: Dictionary = {}) -> int:
 	var count := hand.size()
 	for card in hand:
 		if card != null:
 			discard_pile.append(card)
+			_notify_card_discarded(card, context)
 	hand.clear()
 	return count
 
@@ -647,6 +709,56 @@ func mark_battle_action_used(action_id: String) -> void:
 	battle_action_flags[action_id] = true
 
 
+func notify_after_damage_dealt(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_after_damage_dealt"):
+			status.on_after_damage_dealt(self, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_after_damage_dealt", [], event_context)
+	remove_expired_statuses()
+
+
+func notify_after_damage_taken(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_after_damage_taken"):
+			status.on_after_damage_taken(self, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_after_damage_taken", [], event_context)
+	remove_expired_statuses()
+
+
+func notify_after_heal_given(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_after_heal_given"):
+			status.on_after_heal_given(self, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_after_heal_given", [], event_context)
+	remove_expired_statuses()
+
+
+func notify_after_heal_received(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_after_heal_received"):
+			status.on_after_heal_received(self, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_after_heal_received", [], event_context)
+	remove_expired_statuses()
+
+
+func notify_after_strike(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_after_strike"):
+			status.on_after_strike(self, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_after_strike", [], event_context)
+	remove_expired_statuses()
+
+
 func _reset_druid_state() -> void:
 	mana_zone.clear()
 	enchant_zone.clear()
@@ -692,6 +804,83 @@ func remove_expired_statuses() -> void:
 		var status: StatusEffect = statuses[i]
 		if status == null or status.should_remove():
 			statuses.remove_at(i)
+
+
+func _notify_card_drawn(card: CardData, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	event_context["drawn_card"] = card
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_card_drawn"):
+			status.on_card_drawn(self, card, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_card_drawn", [card], event_context)
+	remove_expired_statuses()
+
+
+func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	event_context["discarded_card"] = card
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_card_discarded"):
+			status.on_card_discarded(self, card, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_card_discarded", [card], event_context)
+	remove_expired_statuses()
+
+
+func _notify_card_entered_special_zone(card: CardData, zone_name: String, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	event_context["entered_card"] = card
+	event_context["zone_name"] = zone_name
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_card_entered_special_zone"):
+			status.on_card_entered_special_zone(self, card, zone_name, event_context)
+
+	_notify_zone_card_effects("on_zone_card_entered_special_zone", [card, zone_name], event_context)
+	remove_expired_statuses()
+
+
+func _notify_mana_gained(amount: int, context: Dictionary = {}) -> void:
+	var actual := maxi(0, amount)
+	if actual <= 0:
+		return
+
+	var event_context := _with_unit_context(context)
+	event_context["mana_gained"] = actual
+	for status in statuses.duplicate():
+		if status != null and status.has_method("on_mana_gained"):
+			status.on_mana_gained(self, actual, event_context)
+
+	_notify_zone_card_effects("on_zone_owner_mana_gained", [actual], event_context)
+	remove_expired_statuses()
+
+
+func _notify_zone_card_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
+	_notify_zone_card_effects_in_zone(mana_zone, "mana", method_name, extra_args, context)
+	_notify_zone_card_effects_in_zone(enchant_zone, "enchant", method_name, extra_args, context)
+	_notify_zone_card_effects_in_zone(curse_zone, "curse", method_name, extra_args, context)
+
+
+func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String, method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
+	for zone_card in cards.duplicate():
+		if zone_card == null or zone_card.effect == null or not zone_card.effect.has_method(method_name):
+			continue
+
+		var event_context := context.duplicate()
+		event_context["zone_owner"] = self
+		event_context["zone_card"] = zone_card
+		event_context["zone_name"] = zone_name
+		var args := [self, zone_card]
+		args.append_array(extra_args)
+		args.append(event_context)
+		zone_card.effect.callv(method_name, args)
+
+
+func _with_unit_context(context: Dictionary = {}) -> Dictionary:
+	var event_context := context.duplicate()
+	event_context["unit"] = self
+	event_context["owner"] = self
+	return event_context
 
 
 func _prepare_deck(stacks: Array[CardStack], rng: RandomNumberGenerator, starting_hand_size: int) -> void:

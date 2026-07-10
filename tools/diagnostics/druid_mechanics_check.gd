@@ -40,7 +40,8 @@ func _ready() -> void:
 
 	var hand_before := druid.hand.size()
 	var mana_before := druid.mana_zone.size()
-	if not controller.use_druid_prepare_transform(druid):
+	var selected_card: CardData = druid.hand.back() as CardData
+	if not controller.use_druid_prepare_transform(druid, selected_card):
 		_fail("DRUID_DIAG: prepare transform returned false")
 		get_tree().quit(_exit_code)
 		return
@@ -51,6 +52,8 @@ func _ready() -> void:
 		_fail("DRUID_DIAG: prepare did not consume exactly one hand card")
 	if druid.mana_zone.size() != mana_before + 1:
 		_fail("DRUID_DIAG: prepare did not add exactly one mana-zone card")
+	elif druid.mana_zone.back() != selected_card:
+		_fail("DRUID_DIAG: selected hand card was not placed into mana zone")
 	if druid.get_available_mana() < 1:
 		_fail("DRUID_DIAG: available mana did not update")
 
@@ -79,4 +82,3 @@ func _fail(message: String) -> void:
 	_exit_code = 1
 	push_error(message)
 	print("ERROR: " + message)
-

@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_binding_enchantment_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "树灵结契"
+description = "正位：将这张牌逆位置入目标角色的附魔区。附魔区效果：区域持有者每当进行打击时，获得等同于当前手牌数的护甲。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 4
+card_type = 1
+target_type = 1
+ap_cost = 2
+override_range = true
+card_range = 180.0
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "树灵法力"
+inverted_description = "逆位持续面：本牌在法力区时，区域持有者打出的牌获得“支付 1 点法力：抽 2 张牌”。双生法术面不能直接打出。"
+allow_inverted_play = false
+inverted_ap_cost = 2
+inverted_target_type = 0
+is_twin_spell = true
+

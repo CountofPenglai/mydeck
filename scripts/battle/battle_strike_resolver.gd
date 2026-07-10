@@ -70,6 +70,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"attack_results": attack_results,
 		"attack_result_objects": hit_results,
 	}
+	attacker.notify_after_strike(trigger_context)
 	controller.enqueue_trigger(Callable(controller, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
 	return actual_damage
 
