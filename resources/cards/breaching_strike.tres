@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/breaching_strike_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "凿阵一击"
+description = "进行一次武器打击，然后施加破绽。破绽持续到你的下回合开始；目标下一次受到友方角色造成的正数伤害时，该段伤害 x1.5，随后移除破绽。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 1
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3_effect")

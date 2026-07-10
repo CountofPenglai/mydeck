@@ -113,6 +113,13 @@ func get_ordered_discard_choice_max_count(context: Dictionary = {}) -> int:
 	return effect.get_ordered_discard_choice_max_count(context)
 
 
+func get_ordered_discard_choice_min_count(context: Dictionary = {}) -> int:
+	if effect == null:
+		return 0
+
+	return effect.get_ordered_discard_choice_min_count(context)
+
+
 func get_ordered_discard_choice_prompt(context: Dictionary = {}) -> String:
 	if effect == null:
 		return "选择弃牌堆牌"
@@ -139,6 +146,27 @@ func activate_from_exile(context: Dictionary = {}) -> void:
 		return
 
 	effect.activate_from_exile(context)
+
+
+func can_activate_from_enchant(context: Dictionary = {}) -> bool:
+	if effect == null:
+		return false
+
+	return effect.can_activate_from_enchant(context)
+
+
+func get_enchant_action_label(context: Dictionary = {}) -> String:
+	if effect == null:
+		return ""
+
+	return effect.get_enchant_action_label(context)
+
+
+func activate_from_enchant(context: Dictionary = {}) -> void:
+	if effect == null:
+		return
+
+	effect.activate_from_enchant(context)
 
 
 func is_attack_card() -> bool:

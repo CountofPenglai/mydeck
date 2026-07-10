@@ -4,6 +4,7 @@ class_name BlockStatus
 func _init() -> void:
 	status_id = "block"
 	display_name = "抵挡"
+	effect_priority = 100
 
 
 func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> void:

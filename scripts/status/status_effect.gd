@@ -18,6 +18,10 @@ func on_before_damage(_unit: BattleUnitState, _damage_context: DamageContext) ->
 	pass
 
 
+func modify_incoming_damage(_unit: BattleUnitState, _damage_context: DamageContext) -> void:
+	pass
+
+
 func get_damage_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
 	return 0
 
@@ -71,6 +75,10 @@ func on_after_strike(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 
 
 func on_mana_gained(_unit: BattleUnitState, _amount: int, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_armor_changed(_unit: BattleUnitState, _previous: int, _current: int, _context: Dictionary = {}) -> void:
 	pass
 
 

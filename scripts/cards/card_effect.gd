@@ -64,6 +64,18 @@ func on_zone_owner_mana_gained(_owner: BattleUnitState, _zone_card: CardData, _a
 	pass
 
 
+func on_zone_owner_equipment_switched(_owner: BattleUnitState, _zone_card: CardData, _switch_result: Dictionary, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_zone_owner_armor_changed(_owner: BattleUnitState, _zone_card: CardData, _previous: int, _current: int, _context: Dictionary = {}) -> void:
+	pass
+
+
+func get_zone_owner_damage_reduction(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> int:
+	return 0
+
+
 func requires_weapon_choice(_context: Dictionary = {}) -> bool:
 	return uses_strike
 
@@ -84,6 +96,10 @@ func get_ordered_discard_choice_max_count(_context: Dictionary = {}) -> int:
 	return 0
 
 
+func get_ordered_discard_choice_min_count(_context: Dictionary = {}) -> int:
+	return 0
+
+
 func get_ordered_discard_choice_prompt(_context: Dictionary = {}) -> String:
 	return "选择弃牌堆牌"
 
@@ -97,4 +113,16 @@ func get_exile_action_label(_context: Dictionary = {}) -> String:
 
 
 func activate_from_exile(_context: Dictionary = {}) -> void:
+	pass
+
+
+func can_activate_from_enchant(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_enchant_action_label(_context: Dictionary = {}) -> String:
+	return ""
+
+
+func activate_from_enchant(_context: Dictionary = {}) -> void:
 	pass

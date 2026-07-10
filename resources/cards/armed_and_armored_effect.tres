@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ArmedAndArmoredCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/armed_and_armored_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_priority = 0
+uses_strike = false
+armor_gain = 3

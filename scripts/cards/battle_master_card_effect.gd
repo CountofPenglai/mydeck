@@ -29,8 +29,8 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		context
 	)
 	controller.enqueue_effect(
-		Callable(controller, "switch_equipment_from_inventory"),
-		[user, null],
+		Callable(controller, "switch_weapon_from_inventory"),
+		[user],
 		effect_priority,
 		"战斗大师：切换武器",
 		context

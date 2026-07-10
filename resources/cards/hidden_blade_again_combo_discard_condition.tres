@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="DiscardHandCondition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/conditions/discard_hand_condition.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")
+condition_name = "弃置手牌"
+discard_count = 1
+discard_all = false

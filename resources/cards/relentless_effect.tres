@@ -7,4 +7,4 @@ script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = true
 banish_count = 3
-power_per_returned_card = 1
+power_per_returned_card = 2

@@ -11,8 +11,14 @@ func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> v
 	if unit == null or damage_context == null or stacks <= 0 or damage_context.amount <= 0:
 		return
 
+	var previous := stacks
 	var absorbed := damage_context.reduce_amount(stacks)
 	stacks = maxi(0, stacks - absorbed)
+	unit.notify_armor_changed(previous, stacks, {
+		"controller": damage_context.controller,
+		"damage_context": damage_context,
+		"reason": "damage_absorbed",
+	})
 
 	var controller := damage_context.controller
 	if controller != null and absorbed > 0:

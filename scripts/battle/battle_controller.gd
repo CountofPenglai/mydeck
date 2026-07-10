@@ -251,6 +251,9 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 
 	unit.start_turn(config)
 	class_resource_actions_used.erase(unit.unit_id)
+	for battle_unit in units:
+		if battle_unit != null:
+			battle_unit.remove_expired_statuses()
 	_queue_unit_status_effects("on_turn_start", unit)
 	_queue_global_effects("on_turn_start", unit)
 
@@ -284,6 +287,13 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 	unit.current_ap = 0
 	_queue_unit_status_effects("on_turn_end", unit)
 	_queue_global_effects("on_turn_end", unit)
+	enqueue_effect(
+		Callable(unit, "exile_expiring_temporary_cards"),
+		[self],
+		-100,
+		"回合结束临时牌放逐",
+		{"controller": self, "unit": unit, "phase": "turn_end"}
+	)
 
 
 func _finish_turn_end_action(unit: BattleUnitState) -> void:
@@ -455,6 +465,7 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"mana_zone": user.mana_zone.duplicate(),
 		"enchant_zone": user.enchant_zone.duplicate(),
 		"curse_zone": user.curse_zone.duplicate(),
+		"card_runtime_states": user.card_runtime_states.duplicate(true),
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
 		"druid_temporary_mana": user.druid_temporary_mana,
@@ -474,12 +485,14 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	var mana_snapshot: Array = snapshot.get("mana_zone", []) as Array
 	var enchant_snapshot: Array = snapshot.get("enchant_zone", []) as Array
 	var curse_snapshot: Array = snapshot.get("curse_zone", []) as Array
+	var runtime_snapshot: Dictionary = snapshot.get("card_runtime_states", {}) as Dictionary
 	user.hand.assign(hand_snapshot)
 	user.discard_pile.assign(discard_snapshot)
 	user.exiled_pile.assign(exile_snapshot)
 	user.mana_zone.assign(mana_snapshot)
 	user.enchant_zone.assign(enchant_snapshot)
 	user.curse_zone.assign(curse_snapshot)
+	user.card_runtime_states = runtime_snapshot.duplicate(true)
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
 	user.druid_prepare_used = bool(snapshot.get("druid_prepare_used", user.druid_prepare_used))
 	user.druid_temporary_mana = int(snapshot.get("druid_temporary_mana", user.druid_temporary_mana))
@@ -617,6 +630,18 @@ func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 	return card.can_activate_from_exile(_build_exiled_card_action_context(user, card))
 
 
+func can_activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
+	if phase != Phase.BATTLE or is_resolving_actions():
+		return false
+	if user == null or card == null or not user.is_alive():
+		return false
+	if current_unit != user or user.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if not user.has_card_in_enchant(card):
+		return false
+	return card.can_activate_from_enchant(_build_enchant_card_action_context(user, card))
+
+
 func activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 	if not can_activate_exiled_card(user, card):
 		_emit_log("当前无法发动这张放逐区卡牌。")
@@ -628,6 +653,21 @@ func activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 		0,
 		"%s 发动放逐区卡牌" % user.get_display_name(),
 		_build_exiled_card_action_context(user, card)
+	))
+	return true
+
+
+func activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
+	if not can_activate_enchant_card(user, card):
+		_emit_log("当前无法发动这张附魔区卡牌。")
+		return false
+
+	push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_enchant_card_action"),
+		[user, card],
+		0,
+		"%s 发动附魔区卡牌" % user.get_display_name(),
+		_build_enchant_card_action_context(user, card)
 	))
 	return true
 
@@ -646,11 +686,34 @@ func _resolve_exiled_card_action(user: BattleUnitState, card: CardData) -> void:
 	state_changed.emit()
 
 
+func _resolve_enchant_card_action(user: BattleUnitState, card: CardData) -> void:
+	if user == null or card == null or not user.is_alive():
+		return
+	if not user.has_card_in_enchant(card):
+		return
+
+	var context := _build_enchant_card_action_context(user, card)
+	if not card.can_activate_from_enchant(context):
+		return
+	card.activate_from_enchant(context)
+	state_changed.emit()
+
+
 func _build_exiled_card_action_context(user: BattleUnitState, card: CardData) -> Dictionary:
 	return {
 		"controller": self,
 		"user": user,
 		"card": card,
+	}
+
+
+func _build_enchant_card_action_context(user: BattleUnitState, card: CardData) -> Dictionary:
+	return {
+		"controller": self,
+		"user": user,
+		"card": card,
+		"zone_name": "enchant",
+		"action_id": get_current_action_id(),
 	}
 
 
@@ -847,6 +910,10 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 		enqueue_trigger(Callable(self, "_emit_equipment_switched_out"), [result], 0, "切换掉当前装备", result)
 	if new_equipment != null:
 		enqueue_trigger(Callable(self, "_emit_equipment_switched_in"), [result], 0, "切换出新的装备", result)
+	unit.notify_equipment_switched(result, {
+		"controller": self,
+		"action_id": get_current_action_id(),
+	})
 
 	_emit_log("%s 切换装备：%s 装备到%s。" % [
 		unit.get_display_name(),
@@ -855,6 +922,32 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 	])
 	state_changed.emit()
 	return result
+
+
+func can_switch_weapon_from_inventory(unit: BattleUnitState) -> bool:
+	return _find_inventory_weapon(unit) != null
+
+
+func switch_weapon_from_inventory(unit: BattleUnitState) -> Dictionary:
+	var weapon := _find_inventory_weapon(unit)
+	if weapon == null:
+		var result := {"success": false, "controller": self, "unit": unit, "slot": "weapon"}
+		if unit != null:
+			_emit_log("%s 没有可切换的背包武器。" % unit.get_display_name())
+		return result
+	return switch_equipment_from_inventory(unit, weapon)
+
+
+func _find_inventory_weapon(unit: BattleUnitState) -> EquipmentData:
+	if unit == null or unit.character_state == null:
+		return null
+	for stack in unit.character_state.inventory:
+		if stack == null or stack.count <= 0 or not (stack.item_data is EquipmentData):
+			continue
+		var equipment := stack.item_data as EquipmentData
+		if equipment.is_weapon():
+			return equipment
+	return null
 
 
 func can_use_warrior_momentum(unit: BattleUnitState) -> bool:
@@ -1018,6 +1111,17 @@ func should_card_enter_mana_after_play(frame: BattleCardFrame) -> bool:
 	return frame.user.get_druid_card_orientation(frame.card) == CardEnums.DruidOrientation.INVERTED
 
 
+func should_card_exile_after_play(frame: BattleCardFrame) -> bool:
+	return frame != null and frame.user != null and frame.card != null and frame.user.should_exile_card_after_play(frame.card)
+
+
+func finish_card_to_exile(frame: BattleCardFrame) -> void:
+	if frame == null or frame.user == null or frame.card == null:
+		return
+	if frame.user.move_card_to_exile(frame.card):
+		_emit_log("%s 打出的临时牌 %s 进入放逐区。" % [frame.user.get_display_name(), frame.card.card_name])
+
+
 func finish_druid_card_to_mana(frame: BattleCardFrame) -> void:
 	if frame == null or frame.user == null or frame.card == null:
 		return
@@ -1120,7 +1224,8 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 		return 0
 
 	var damage_context := DamageContext.create(self, source, target, amount, label)
-	_process_before_damage(target, damage_context)
+	damage_context.metadata["action_id"] = get_current_action_id()
+	target.modify_incoming_damage(damage_context)
 	if damage_context.prevented:
 		return 0
 	if target.has_method("get_damage_reduction"):
@@ -1130,10 +1235,15 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 			"target": target,
 			"label": label,
 			"amount": damage_context.amount,
+			"damage_context": damage_context,
+			"action_id": get_current_action_id(),
 		})
 		damage_context.reduce_amount(reduction)
 		if damage_context.prevented:
 			return 0
+	_process_before_damage(target, damage_context)
+	if damage_context.prevented:
+		return 0
 
 	var actual := target.apply_damage(damage_context.amount)
 	var source_name := "效果"
@@ -1148,6 +1258,7 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 		"requested_amount": amount,
 		"label": label,
 		"damage_context": damage_context,
+		"action_id": get_current_action_id(),
 	}
 	if source != null and actual > 0:
 		source.notify_after_damage_dealt(event_context)
@@ -1177,6 +1288,7 @@ func heal_unit(source: BattleUnitState, target: BattleUnitState, amount: int, la
 		"amount": actual,
 		"requested_amount": amount,
 		"label": label,
+		"action_id": get_current_action_id(),
 	}
 	if source != null:
 		source.notify_after_heal_given(event_context)
@@ -1458,6 +1570,10 @@ func push_action_frame(frame: BattleActionFrame) -> void:
 	resolution_runner.push_action_frame(frame)
 
 
+func get_current_action_id() -> int:
+	return resolution_runner.get_current_action_id()
+
+
 func is_resolving_actions() -> bool:
 	return action_resolution_lock_count > 0
 
@@ -1580,7 +1696,9 @@ func _get_effect_priority(effect) -> int:
 
 
 func _process_before_damage(target: BattleUnitState, damage_context: DamageContext) -> void:
-	for status in target.statuses.duplicate():
+	var statuses := target.statuses.duplicate()
+	statuses.sort_custom(func(left, right): return _get_effect_priority(left) > _get_effect_priority(right))
+	for status in statuses:
 		if status == null or not status.has_method("on_before_damage"):
 			continue
 		status.on_before_damage(target, damage_context)

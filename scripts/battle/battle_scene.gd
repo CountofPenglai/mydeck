@@ -47,6 +47,8 @@ var _ordered_discard_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _ordered_discard_extra_context: Dictionary = {}
 var _ordered_discard_selected_cards: Array[CardData] = []
 var _ordered_discard_max_count: int = 0
+var _ordered_discard_min_count: int = 0
+var _ordered_discard_confirm_button: Button
 var _ap_orb_layer: Control
 var _druid_prepare_hand_choice_active: bool = false
 
@@ -639,10 +641,12 @@ func _refresh_discard_button() -> void:
 	var unit := controller.current_unit
 	var discard_count := 0
 	var exile_count := 0
+	var enchant_count := 0
 	if unit != null:
 		discard_count = unit.discard_pile.size()
 		exile_count = unit.exiled_pile.size()
-	discard_label.text = "弃牌 %d\n放逐 %d" % [discard_count, exile_count]
+		enchant_count = unit.enchant_zone.size()
+	discard_label.text = "弃牌 %d\n放逐 %d · 附魔 %d" % [discard_count, exile_count, enchant_count]
 
 
 func _refresh_discard_popup() -> void:
@@ -685,18 +689,37 @@ func _refresh_discard_popup() -> void:
 		var exile_empty := Label.new()
 		exile_empty.text = "为空"
 		_discard_list.add_child(exile_empty)
-		return
+	else:
+		for exiled_card in unit.exiled_pile:
+			if exiled_card == null:
+				continue
+			var exile_button := Button.new()
+			exile_button.text = _exiled_card_button_text(unit, exiled_card)
+			exile_button.tooltip_text = _build_card_tooltip(exiled_card)
+			exile_button.disabled = _actions_locked() or not controller.can_activate_exiled_card(unit, exiled_card)
+			if not exile_button.disabled:
+				exile_button.pressed.connect(_activate_exiled_card.bind(exiled_card))
+			_discard_list.add_child(exile_button)
 
-	for exiled_card in unit.exiled_pile:
-		if exiled_card == null:
-			continue
-		var exile_button := Button.new()
-		exile_button.text = _exiled_card_button_text(unit, exiled_card)
-		exile_button.tooltip_text = _build_card_tooltip(exiled_card)
-		exile_button.disabled = _actions_locked() or not controller.can_activate_exiled_card(unit, exiled_card)
-		if not exile_button.disabled:
-			exile_button.pressed.connect(_activate_exiled_card.bind(exiled_card))
-		_discard_list.add_child(exile_button)
+	_discard_list.add_child(HSeparator.new())
+	var enchant_title := Label.new()
+	enchant_title.text = "附魔区"
+	_discard_list.add_child(enchant_title)
+	if unit.enchant_zone.is_empty():
+		var enchant_empty := Label.new()
+		enchant_empty.text = "为空"
+		_discard_list.add_child(enchant_empty)
+	else:
+		for enchant_card in unit.enchant_zone:
+			if enchant_card == null:
+				continue
+			var enchant_button := Button.new()
+			enchant_button.text = _enchant_card_button_text(unit, enchant_card)
+			enchant_button.tooltip_text = _build_card_tooltip(enchant_card)
+			enchant_button.disabled = _actions_locked() or not controller.can_activate_enchant_card(unit, enchant_card)
+			if not enchant_button.disabled:
+				enchant_button.pressed.connect(_activate_enchant_card.bind(enchant_card))
+			_discard_list.add_child(enchant_button)
 
 
 func _discard_card_button_text(card: CardData) -> String:
@@ -726,6 +749,31 @@ func _activate_exiled_card(card: CardData) -> void:
 		return
 
 	if controller.activate_exiled_card(controller.current_unit, card):
+		_clear_input()
+		_hide_discard_popup()
+	_refresh()
+
+
+func _enchant_card_button_text(unit: BattleUnitState, card: CardData) -> String:
+	var text := "%s | 附魔" % card.card_name
+	var context := {
+		"controller": controller,
+		"user": unit,
+		"card": card,
+		"zone_name": "enchant",
+	}
+	var action_label := card.get_enchant_action_label(context)
+	if not action_label.is_empty():
+		text += "\n%s" % action_label
+	return text
+
+
+func _activate_enchant_card(card: CardData) -> void:
+	if _actions_locked():
+		return
+	if controller.current_unit == null or card == null:
+		return
+	if controller.activate_enchant_card(controller.current_unit, card):
 		_clear_input()
 		_hide_discard_popup()
 	_refresh()
@@ -1008,10 +1056,10 @@ func _create_ordered_discard_choice_popup() -> void:
 	clear_button.pressed.connect(_clear_ordered_discard_selection)
 	controls.add_child(clear_button)
 
-	var confirm_button := Button.new()
-	confirm_button.text = "确认"
-	confirm_button.pressed.connect(_confirm_ordered_discard_choice)
-	controls.add_child(confirm_button)
+	_ordered_discard_confirm_button = Button.new()
+	_ordered_discard_confirm_button.text = "确认"
+	_ordered_discard_confirm_button.pressed.connect(_confirm_ordered_discard_choice)
+	controls.add_child(_ordered_discard_confirm_button)
 
 
 func _show_draw_pile_choice(card: CardData, play_mode: int) -> void:
@@ -1059,6 +1107,7 @@ func _show_ordered_discard_choice(card: CardData, play_mode: int, extra_context:
 	_ordered_discard_extra_context = extra_context.duplicate()
 	_ordered_discard_selected_cards.clear()
 	_ordered_discard_max_count = card.get_ordered_discard_choice_max_count(context)
+	_ordered_discard_min_count = card.get_ordered_discard_choice_min_count(context)
 	_clear_children(_ordered_discard_list)
 
 	var title := Label.new()
@@ -1068,7 +1117,7 @@ func _show_ordered_discard_choice(card: CardData, play_mode: int, extra_context:
 
 	if choices.is_empty():
 		var empty_label := Label.new()
-		empty_label.text = "无可选择牌，可以直接确认。"
+		empty_label.text = "无可选择牌。" if _ordered_discard_min_count > 0 else "无可选择牌，可以直接确认。"
 		_ordered_discard_list.add_child(empty_label)
 	else:
 		for choice in choices:
@@ -1088,6 +1137,8 @@ func _add_ordered_discard_choice(card: CardData) -> void:
 	if _actions_locked() or card == null:
 		return
 	if _ordered_discard_selected_cards.size() >= _ordered_discard_max_count:
+		return
+	if _ordered_discard_selected_cards.has(card):
 		return
 
 	_ordered_discard_selected_cards.append(card)
@@ -1119,10 +1170,14 @@ func _refresh_ordered_discard_selected_label() -> void:
 		_ordered_discard_max_count,
 		selected_text,
 	]
+	if _ordered_discard_confirm_button != null:
+		_ordered_discard_confirm_button.disabled = _ordered_discard_selected_cards.size() < _ordered_discard_min_count
 
 
 func _confirm_ordered_discard_choice() -> void:
 	if _actions_locked():
+		return
+	if _ordered_discard_selected_cards.size() < _ordered_discard_min_count:
 		return
 
 	var card := _ordered_discard_card
@@ -1133,6 +1188,7 @@ func _confirm_ordered_discard_choice() -> void:
 	_ordered_discard_play_mode = CardEnums.CardPlayMode.NORMAL
 	_ordered_discard_extra_context.clear()
 	_ordered_discard_selected_cards.clear()
+	_ordered_discard_min_count = 0
 	_ordered_discard_popup.hide()
 	_continue_card_with_extra_context(card, play_mode, extra_context)
 

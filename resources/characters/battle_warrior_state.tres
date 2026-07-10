@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=19 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=28 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
@@ -18,12 +18,21 @@
 [ext_resource type="Resource" path="res://resources/cards/stand_firm_stack.tres" id="16_stand_firm"]
 [ext_resource type="Resource" path="res://resources/cards/barbaric_brawl_stack.tres" id="17_brawl"]
 [ext_resource type="Resource" path="res://resources/cards/merciless_slaughter_stack.tres" id="18_slaughter"]
+[ext_resource type="Resource" path="res://resources/cards/hidden_blade_again_stack.tres" id="19_hidden"]
+[ext_resource type="Resource" path="res://resources/cards/breaching_strike_stack.tres" id="20_breach"]
+[ext_resource type="Resource" path="res://resources/cards/battle_cry_stack.tres" id="21_cry"]
+[ext_resource type="Resource" path="res://resources/cards/armed_and_armored_stack.tres" id="22_armed"]
+[ext_resource type="Resource" path="res://resources/cards/rehearsal_stack.tres" id="23_rehearsal"]
+[ext_resource type="Resource" path="res://resources/cards/wound_forged_bulwark_stack.tres" id="24_bulwark"]
+[ext_resource type="Resource" path="res://resources/cards/bloodied_battle_stack.tres" id="25_bloodied"]
+[ext_resource type="Resource" path="res://resources/cards/stand_immovable_stack.tres" id="26_immovable"]
+[ext_resource type="Resource" path="res://resources/cards/attack_defense_dance_stack.tres" id="27_dance"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 36
-deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense"), ExtResource("12_master"), ExtResource("13_whirlwind"), ExtResource("14_sentinel"), ExtResource("15_relentless"), ExtResource("16_stand_firm"), ExtResource("17_brawl"), ExtResource("18_slaughter")]
+deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense"), ExtResource("12_master"), ExtResource("13_whirlwind"), ExtResource("14_sentinel"), ExtResource("15_relentless"), ExtResource("16_stand_firm"), ExtResource("17_brawl"), ExtResource("18_slaughter"), ExtResource("19_hidden"), ExtResource("20_breach"), ExtResource("21_cry"), ExtResource("22_armed"), ExtResource("23_rehearsal"), ExtResource("24_bulwark"), ExtResource("25_bloodied"), ExtResource("26_immovable"), ExtResource("27_dance")]
 weapon_equipment = ExtResource("4_main_hand")
 weapon_face = 0
 armor_equipment = ExtResource("5_off_hand")

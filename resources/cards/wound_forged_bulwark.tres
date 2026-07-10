@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/wound_forged_bulwark_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "伤铸壁垒"
+description = "获得等同于已损生命值的护甲；你的下回合开始时清空全部护甲。余势：摧毁全部护甲，对范围 1 内所有敌人造成等量伤害。"
+artwork = ExtResource("2_scroll")
+rarity = 2
+card_class = 1
+card_type = 1
+target_type = 4
+ap_cost = 2
+effect = ExtResource("3_effect")
+has_momentum = true
+momentum_conditions = []

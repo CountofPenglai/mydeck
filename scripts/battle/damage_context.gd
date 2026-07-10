@@ -8,6 +8,7 @@ var amount: int = 0
 var label: String = "伤害"
 var prevented: bool = false
 var prevented_by = null
+var metadata: Dictionary = {}
 
 
 static func create(new_controller: BattleController, new_source: BattleUnitState, new_target: BattleUnitState, new_amount: int, new_label: String = "伤害") -> DamageContext:

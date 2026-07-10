@@ -24,6 +24,8 @@ var enchant_zone: Array[CardData] = []
 var curse_zone: Array[CardData] = []
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
+var card_runtime_states: Dictionary = {}
+var turn_serial: int = 0
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
 var druid_temporary_mana: int = 0
@@ -37,6 +39,8 @@ func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
 	radius = _resolve_collision_radius(unit_radius)
 	is_deployed = false
 	battle_action_flags.clear()
+	card_runtime_states.clear()
+	turn_serial = 0
 	_reset_druid_state()
 
 
@@ -50,6 +54,8 @@ func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position:
 	position = start_position
 	is_deployed = true
 	battle_action_flags.clear()
+	card_runtime_states.clear()
+	turn_serial = 0
 	_reset_druid_state()
 
 
@@ -63,6 +69,7 @@ func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> voi
 
 
 func start_turn(config: BattleConfig) -> void:
+	turn_serial += 1
 	current_ap = get_max_ap(config)
 	druid_prepare_used = false
 	druid_temporary_mana = 0
@@ -132,11 +139,11 @@ func get_damage_reduction(context: Dictionary = {}) -> int:
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
 	if character_state != null:
-		return character_state.get_damage_reduction() + get_status_damage_reduction(merged_context)
+		return character_state.get_damage_reduction() + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 	if enemy_state != null:
-		return enemy_state.get_damage_reduction() + get_status_damage_reduction(merged_context)
+		return enemy_state.get_damage_reduction() + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 
-	return get_status_damage_reduction(merged_context)
+	return get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 
 
 func get_character_class() -> int:
@@ -185,6 +192,9 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 	if not merged_context.has("druid_orientation"):
 		merged_context["druid_orientation"] = get_druid_card_orientation(card)
 	var cost := card.get_ap_cost_for_context(merged_context)
+	var runtime_state := get_card_runtime_state(card, false)
+	if not runtime_state.is_empty():
+		cost += int(runtime_state.get("ap_delta", 0))
 	for status in statuses:
 		if status != null and status.has_method("modify_card_ap_cost"):
 			cost = status.modify_card_ap_cost(self, card, cost, merged_context)
@@ -218,6 +228,26 @@ func get_status_damage_reduction(context: Dictionary = {}) -> int:
 			reduction += status.get_damage_reduction(self, context)
 
 	return reduction
+
+
+func get_zone_damage_reduction(context: Dictionary = {}) -> int:
+	var reduction := 0
+	for zone_name in ["mana", "enchant", "curse"]:
+		var cards := _get_special_zone(zone_name)
+		for zone_card in cards.duplicate():
+			if zone_card == null or zone_card.effect == null:
+				continue
+			var event_context := _with_zone_context(zone_name, zone_card, context)
+			reduction += maxi(0, zone_card.effect.get_zone_owner_damage_reduction(self, zone_card, event_context))
+	return reduction
+
+
+func modify_incoming_damage(damage_context: DamageContext) -> void:
+	if damage_context == null:
+		return
+	for status in statuses.duplicate():
+		if status != null:
+			status.modify_incoming_damage(self, damage_context)
 
 
 func get_status_strike_power_bonus(context: Dictionary = {}) -> int:
@@ -412,7 +442,7 @@ func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictio
 	return drawn_cards
 
 
-func mill_cards(count: int) -> Array[CardData]:
+func mill_cards(count: int, context: Dictionary = {}) -> Array[CardData]:
 	var milled: Array[CardData] = []
 	for _i in range(maxi(0, count)):
 		if draw_pile.is_empty():
@@ -423,6 +453,9 @@ func mill_cards(count: int) -> Array[CardData]:
 			continue
 		discard_pile.append(card)
 		milled.append(card)
+		var discard_context := context.duplicate()
+		discard_context["reason"] = "mill"
+		_notify_card_discarded(card, discard_context)
 
 	return milled
 
@@ -465,6 +498,18 @@ func add_card_to_enchant_zone(card: CardData, context: Dictionary = {}) -> void:
 
 	enchant_zone.append(card)
 	_notify_card_entered_special_zone(card, "enchant", context)
+
+
+func move_enchant_card_to_discard(card: CardData, context: Dictionary = {}) -> bool:
+	var index := enchant_zone.find(card)
+	if index < 0:
+		return false
+
+	enchant_zone.remove_at(index)
+	discard_pile.append(card)
+	clear_card_runtime_state(card)
+	_notify_card_discarded(card, context)
+	return true
 
 
 func add_card_to_curse_zone(card: CardData, context: Dictionary = {}) -> void:
@@ -610,6 +655,16 @@ func move_draw_card_to_discard(card: CardData) -> bool:
 	return true
 
 
+func move_discard_card_to_hand(card: CardData) -> bool:
+	var index := discard_pile.find(card)
+	if index < 0:
+		return false
+
+	discard_pile.remove_at(index)
+	hand.append(card)
+	return true
+
+
 func banish_discard_card(card: CardData) -> bool:
 	var index := discard_pile.find(card)
 	if index < 0:
@@ -699,6 +754,78 @@ func has_card_in_exile(card: CardData) -> bool:
 	return exiled_pile.find(card) >= 0
 
 
+func has_card_in_enchant(card: CardData) -> bool:
+	return enchant_zone.find(card) >= 0
+
+
+func get_card_runtime_state(card: CardData, create_if_missing: bool = true) -> Dictionary:
+	if card == null:
+		return {}
+	if card_runtime_states.has(card):
+		return card_runtime_states[card] as Dictionary
+	if not create_if_missing:
+		return {}
+
+	var state: Dictionary = {}
+	card_runtime_states[card] = state
+	return state
+
+
+func clear_card_runtime_state(card: CardData) -> void:
+	if card != null:
+		card_runtime_states.erase(card)
+
+
+func mark_temporary_card(card: CardData, ap_delta: int, exile_after_play: bool, exile_at_turn_end: bool) -> void:
+	var state := get_card_runtime_state(card)
+	state["ap_delta"] = ap_delta
+	state["exile_after_play"] = exile_after_play
+	state["exile_at_turn_end"] = exile_at_turn_end
+	state["expire_turn_serial"] = turn_serial
+
+
+func should_exile_card_after_play(card: CardData) -> bool:
+	var state := get_card_runtime_state(card, false)
+	return bool(state.get("exile_after_play", false))
+
+
+func move_card_to_exile(card: CardData) -> bool:
+	if card == null:
+		return false
+	if exiled_pile.find(card) >= 0:
+		clear_card_runtime_state(card)
+		return true
+
+	var zones: Array = [hand, draw_pile, discard_pile, mana_zone, enchant_zone, curse_zone]
+	for zone_value in zones:
+		var zone: Array = zone_value as Array
+		var index: int = zone.find(card)
+		if index >= 0:
+			zone.remove_at(index)
+			exiled_pile.append(card)
+			clear_card_runtime_state(card)
+			return true
+	return false
+
+
+func exile_expiring_temporary_cards(controller: BattleController) -> int:
+	var exiled_count := 0
+	for card_value in card_runtime_states.keys().duplicate():
+		var card: CardData = card_value as CardData
+		var state := get_card_runtime_state(card, false)
+		if not bool(state.get("exile_at_turn_end", false)):
+			continue
+		if int(state.get("expire_turn_serial", -1)) > turn_serial:
+			continue
+		if move_card_to_exile(card):
+			exiled_count += 1
+			if controller != null:
+				controller._emit_log("%s 的临时牌 %s 在回合结束时被放逐。" % [get_display_name(), card.card_name])
+		else:
+			clear_card_runtime_state(card)
+	return exiled_count
+
+
 func has_used_battle_action(action_id: String) -> bool:
 	return bool(battle_action_flags.get(action_id, false))
 
@@ -759,6 +886,56 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 	remove_expired_statuses()
 
 
+func notify_equipment_switched(switch_result: Dictionary, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	event_context["switch_result"] = switch_result
+	_notify_zone_card_effects("on_zone_owner_equipment_switched", [switch_result], event_context)
+
+
+func get_armor_stacks() -> int:
+	var armor := get_status("armor")
+	return armor.stacks if armor != null else 0
+
+
+func gain_armor(amount: int, context: Dictionary = {}) -> int:
+	var actual := maxi(0, amount)
+	if actual <= 0:
+		return 0
+	var previous := get_armor_stacks()
+	var armor := get_status("armor")
+	if armor == null:
+		armor = ArmorStatus.new()
+		armor.stacks = actual
+		add_status(armor)
+	else:
+		armor.add_stacks(actual)
+	notify_armor_changed(previous, get_armor_stacks(), context)
+	return actual
+
+
+func clear_armor(context: Dictionary = {}) -> int:
+	var armor := get_status("armor")
+	if armor == null or armor.stacks <= 0:
+		return 0
+	var previous := armor.stacks
+	armor.stacks = 0
+	notify_armor_changed(previous, 0, context)
+	remove_expired_statuses()
+	return previous
+
+
+func notify_armor_changed(previous: int, current: int, context: Dictionary = {}) -> void:
+	if previous == current:
+		return
+	var event_context := _with_unit_context(context)
+	event_context["previous_armor"] = previous
+	event_context["current_armor"] = current
+	for status in statuses.duplicate():
+		if status != null:
+			status.on_armor_changed(self, previous, current, event_context)
+	_notify_zone_card_effects("on_zone_owner_armor_changed", [previous, current], event_context)
+
+
 func _reset_druid_state() -> void:
 	mana_zone.clear()
 	enchant_zone.clear()
@@ -777,7 +954,7 @@ func add_status(status: StatusEffect) -> void:
 		existing.add_stacks(status.stacks)
 		return
 
-	statuses.append(status.duplicate(true))
+	statuses.append(status if status.resource_path.is_empty() else status.duplicate(true))
 
 
 func get_status(status_id: String) -> StatusEffect:
@@ -866,14 +1043,31 @@ func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String
 		if zone_card == null or zone_card.effect == null or not zone_card.effect.has_method(method_name):
 			continue
 
-		var event_context := context.duplicate()
-		event_context["zone_owner"] = self
-		event_context["zone_card"] = zone_card
-		event_context["zone_name"] = zone_name
+		var event_context := _with_zone_context(zone_name, zone_card, context)
 		var args := [self, zone_card]
 		args.append_array(extra_args)
 		args.append(event_context)
 		zone_card.effect.callv(method_name, args)
+
+
+func _with_zone_context(zone_name: String, zone_card: CardData, context: Dictionary = {}) -> Dictionary:
+	var event_context := context.duplicate()
+	event_context["zone_owner"] = self
+	event_context["zone_card"] = zone_card
+	event_context["zone_name"] = zone_name
+	return event_context
+
+
+func _get_special_zone(zone_name: String) -> Array[CardData]:
+	match zone_name:
+		"mana":
+			return mana_zone
+		"enchant":
+			return enchant_zone
+		"curse":
+			return curse_zone
+		_:
+			return []
 
 
 func _with_unit_context(context: Dictionary = {}) -> Dictionary:
@@ -891,7 +1085,9 @@ func _prepare_deck(stacks: Array[CardStack], rng: RandomNumberGenerator, startin
 		if stack == null or stack.card_data == null:
 			continue
 		for _i in range(stack.count):
-			draw_pile.append(stack.card_data)
+			var runtime_card := stack.card_data.duplicate() as CardData
+			if runtime_card != null:
+				draw_pile.append(runtime_card)
 
 	_shuffle_cards(draw_pile, rng)
 	draw_cards(starting_hand_size, rng)

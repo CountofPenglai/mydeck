@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/battle_cry_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "临阵怒喝"
+description = "磨 2 张牌，给予武器范围内一个敌人眩晕 3，然后自动切换武器。没有可切换武器时，仍结算磨牌与眩晕。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 1
+card_type = 1
+damage_type = 3
+target_type = 1
+ap_cost = 1
+effect = ExtResource("3_effect")

@@ -12,6 +12,8 @@ var action_stack: Array[BattleActionFrame] = []
 var action_resolution_depth: int = 0
 var current_action_effect_count: int = 0
 var effect_limit_reached: bool = false
+var next_action_id: int = 1
+var action_id_stack: Array[int] = []
 
 
 func setup(new_controller: BattleController) -> void:
@@ -27,6 +29,14 @@ func reset() -> void:
 	action_resolution_depth = 0
 	current_action_effect_count = 0
 	effect_limit_reached = false
+	next_action_id = 1
+	action_id_stack.clear()
+
+
+func get_current_action_id() -> int:
+	if action_id_stack.is_empty():
+		return 0
+	return action_id_stack.back()
 
 
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:
@@ -80,6 +90,9 @@ func resolve_action_stack() -> void:
 		controller._begin_action_resolution()
 	while not action_stack.is_empty():
 		var frame: BattleActionFrame = action_stack.pop_back() as BattleActionFrame
+		var action_id := next_action_id
+		next_action_id += 1
+		action_id_stack.append(action_id)
 		action_resolution_depth += 1
 		current_action_effect_count = 0
 		effect_limit_reached = false
@@ -89,6 +102,7 @@ func resolve_action_stack() -> void:
 		effect_limit_reached = false
 		if frame != null and frame.after_callback.is_valid():
 			frame.after_callback.callv(frame.after_args)
+		action_id_stack.pop_back()
 	if controller != null:
 		controller._end_action_resolution()
 
@@ -136,7 +150,9 @@ func _finish_card_frame(frame: BattleCardFrame) -> void:
 		return
 
 	if frame.discard_after_play:
-		if controller != null and controller.has_method("should_card_enter_mana_after_play") and controller.should_card_enter_mana_after_play(frame):
+		if controller != null and controller.should_card_exile_after_play(frame):
+			controller.finish_card_to_exile(frame)
+		elif controller != null and controller.has_method("should_card_enter_mana_after_play") and controller.should_card_enter_mana_after_play(frame):
 			controller.finish_druid_card_to_mana(frame)
 		else:
 			frame.user.discard_card(frame.card, {

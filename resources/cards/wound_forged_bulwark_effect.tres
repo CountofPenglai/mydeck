@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="WoundForgedBulwarkCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/wound_forged_bulwark_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_priority = 0
+uses_strike = false
+effect_range = 90.0
