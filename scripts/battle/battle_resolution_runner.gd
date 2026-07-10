@@ -92,14 +92,16 @@ func resolve_action_stack() -> void:
 		var frame: BattleActionFrame = action_stack.pop_back() as BattleActionFrame
 		var action_id := next_action_id
 		next_action_id += 1
+		var parent_effect_count := current_action_effect_count
+		var parent_limit_reached := effect_limit_reached
 		action_id_stack.append(action_id)
 		action_resolution_depth += 1
 		current_action_effect_count = 0
 		effect_limit_reached = false
 		_resolve_action_frame(frame)
 		action_resolution_depth -= 1
-		current_action_effect_count = 0
-		effect_limit_reached = false
+		current_action_effect_count = parent_effect_count
+		effect_limit_reached = parent_limit_reached
 		if frame != null and frame.after_callback.is_valid():
 			frame.after_callback.callv(frame.after_args)
 		action_id_stack.pop_back()

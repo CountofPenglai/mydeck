@@ -26,19 +26,28 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 	var previous: EquipmentData = null
 	if slot == "weapon":
 		previous = state.weapon_equipment
+	elif slot == "armor":
+		previous = state.armor_equipment
+	elif slot == "accessory_1":
+		previous = state.accessory_equipment_1
+	elif slot == "accessory_2":
+		previous = state.accessory_equipment_2
+	else:
+		return {"success": false}
+
+	var source_stack: InventoryStack = state.inventory[stack_index]
+	if previous != null and source_stack.count > 1 and not _can_add_inventory_item(state, previous):
+		return {"success": false}
+
+	if slot == "weapon":
 		state.weapon_equipment = equipment
 		state.weapon_face = 0
 	elif slot == "armor":
-		previous = state.armor_equipment
 		state.armor_equipment = equipment
 	elif slot == "accessory_1":
-		previous = state.accessory_equipment_1
 		state.accessory_equipment_1 = equipment
 	elif slot == "accessory_2":
-		previous = state.accessory_equipment_2
 		state.accessory_equipment_2 = equipment
-	else:
-		return {"success": false}
 
 	remove_inventory_item_at(state, stack_index)
 	if previous != null:
@@ -97,6 +106,15 @@ static func add_inventory_item(state: CharacterState, item: ItemData) -> void:
 	new_stack.count = 1
 	if state.inventory.size() < CharacterState.INVENTORY_LIMIT:
 		state.inventory.append(new_stack)
+
+
+static func _can_add_inventory_item(state: CharacterState, item: ItemData) -> bool:
+	if state == null or item == null:
+		return false
+	for stack in state.inventory:
+		if stack != null and stack.item_data == item and stack.count < item.max_stack:
+			return true
+	return state.inventory.size() < CharacterState.INVENTORY_LIMIT
 
 
 static func _find_inventory_equipment(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:

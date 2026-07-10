@@ -248,6 +248,7 @@ func modify_incoming_damage(damage_context: DamageContext) -> void:
 	for status in statuses.duplicate():
 		if status != null:
 			status.modify_incoming_damage(self, damage_context)
+	remove_expired_statuses()
 
 
 func get_status_strike_power_bonus(context: Dictionary = {}) -> int:

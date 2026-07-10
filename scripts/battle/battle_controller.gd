@@ -456,7 +456,7 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 	if user == null:
 		return {}
 
-	return {
+	var snapshot := {
 		"current_ap": user.current_ap,
 		"current_health": user.get_current_health(),
 		"hand": user.hand.duplicate(),
@@ -466,10 +466,20 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"enchant_zone": user.enchant_zone.duplicate(),
 		"curse_zone": user.curse_zone.duplicate(),
 		"card_runtime_states": user.card_runtime_states.duplicate(true),
+		"statuses": _duplicate_resources(user.statuses),
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
 		"druid_temporary_mana": user.druid_temporary_mana,
 	}
+	if user.character_state != null:
+		snapshot["class_resources"] = _duplicate_resources(user.character_state.class_resources)
+		snapshot["inventory"] = _duplicate_resources(user.character_state.inventory)
+		snapshot["weapon_equipment"] = user.character_state.weapon_equipment
+		snapshot["weapon_face"] = user.character_state.weapon_face
+		snapshot["armor_equipment"] = user.character_state.armor_equipment
+		snapshot["accessory_equipment_1"] = user.character_state.accessory_equipment_1
+		snapshot["accessory_equipment_2"] = user.character_state.accessory_equipment_2
+	return snapshot
 
 
 func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) -> void:
@@ -493,9 +503,32 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	user.enchant_zone.assign(enchant_snapshot)
 	user.curse_zone.assign(curse_snapshot)
 	user.card_runtime_states = runtime_snapshot.duplicate(true)
+	var status_snapshot: Array = snapshot.get("statuses", []) as Array
+	user.statuses.assign(status_snapshot)
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
 	user.druid_prepare_used = bool(snapshot.get("druid_prepare_used", user.druid_prepare_used))
 	user.druid_temporary_mana = int(snapshot.get("druid_temporary_mana", user.druid_temporary_mana))
+	if user.character_state != null:
+		var resource_snapshot: Array = snapshot.get("class_resources", []) as Array
+		var inventory_snapshot: Array = snapshot.get("inventory", []) as Array
+		user.character_state.class_resources.assign(resource_snapshot)
+		user.character_state.inventory.assign(inventory_snapshot)
+		user.character_state.weapon_equipment = snapshot.get("weapon_equipment") as EquipmentData
+		user.character_state.weapon_face = int(snapshot.get("weapon_face", user.character_state.weapon_face))
+		user.character_state.armor_equipment = snapshot.get("armor_equipment") as EquipmentData
+		user.character_state.accessory_equipment_1 = snapshot.get("accessory_equipment_1") as EquipmentData
+		user.character_state.accessory_equipment_2 = snapshot.get("accessory_equipment_2") as EquipmentData
+		CharacterEquipmentModel.refresh_enabled(user.character_state)
+
+
+func _duplicate_resources(source: Array) -> Array:
+	var result: Array = []
+	for value in source:
+		if value is Resource:
+			result.append((value as Resource).duplicate(false))
+		else:
+			result.append(value)
+	return result
 
 
 func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> bool:
@@ -605,6 +638,8 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 		"druid_orientation": _get_druid_orientation_for_card(user, card),
 	}
 	if user.current_ap < get_card_ap_cost_for_mode(user, card, play_mode, context):
+		return false
+	if not card.can_play(context):
 		return false
 
 	return card.can_pay_special_conditions(_build_special_play_condition_context(user, card, play_mode), play_mode)

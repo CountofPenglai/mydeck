@@ -41,6 +41,8 @@ func can_play(context: Dictionary = {}) -> bool:
 	if user == null:
 		return false
 	var selected := _selected_card(context)
+	if selected == null and not context.has("ordered_discard_cards"):
+		return not get_ordered_discard_choice_cards(context).is_empty()
 	return selected != null and user.has_card_in_discard(selected)
 
 

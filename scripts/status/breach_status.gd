@@ -23,14 +23,7 @@ func modify_incoming_damage(_unit: BattleUnitState, damage_context: DamageContex
 
 	damage_context.amount = maxi(0, ceili(float(damage_context.amount) * damage_multiplier))
 	damage_context.metadata["breach_status"] = self
-
-
-func on_after_damage_taken(_unit: BattleUnitState, context: Dictionary = {}) -> void:
-	if int(context.get("amount", 0)) <= 0:
-		return
-	var damage_context: DamageContext = context.get("damage_context") as DamageContext
-	if damage_context != null and damage_context.metadata.get("breach_status") == self:
-		stacks = 0
+	stacks = 0
 
 
 func should_remove() -> bool:

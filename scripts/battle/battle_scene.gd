@@ -1056,6 +1056,11 @@ func _create_ordered_discard_choice_popup() -> void:
 	clear_button.pressed.connect(_clear_ordered_discard_selection)
 	controls.add_child(clear_button)
 
+	var cancel_button := Button.new()
+	cancel_button.text = "取消"
+	cancel_button.pressed.connect(_cancel_ordered_discard_choice)
+	controls.add_child(cancel_button)
+
 	_ordered_discard_confirm_button = Button.new()
 	_ordered_discard_confirm_button.text = "确认"
 	_ordered_discard_confirm_button.pressed.connect(_confirm_ordered_discard_choice)
@@ -1151,6 +1156,16 @@ func _clear_ordered_discard_selection() -> void:
 
 	_ordered_discard_selected_cards.clear()
 	_refresh_ordered_discard_selected_label()
+
+
+func _cancel_ordered_discard_choice() -> void:
+	_ordered_discard_card = null
+	_ordered_discard_play_mode = CardEnums.CardPlayMode.NORMAL
+	_ordered_discard_extra_context.clear()
+	_ordered_discard_selected_cards.clear()
+	_ordered_discard_max_count = 0
+	_ordered_discard_min_count = 0
+	_ordered_discard_popup.hide()
 
 
 func _refresh_ordered_discard_selected_label() -> void:
