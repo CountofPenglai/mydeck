@@ -159,10 +159,10 @@ func _handle_card_target(position: Vector2, clicked_unit: BattleUnitState) -> vo
 	play_context["equipment_slot"] = pending_equipment_slot
 	if target_type == CardEnums.TargetType.AREA:
 		played = controller.play_card(controller.current_unit, pending_card, [position], play_context, pending_play_mode)
-	elif clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
+	elif clicked_unit != null:
 		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
 	else:
-		_append_log("请选择一个敌方目标打出卡牌。")
+		_append_log("请选择一个单位目标打出卡牌。")
 
 	if played:
 		_clear_input()

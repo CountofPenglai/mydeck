@@ -77,7 +77,6 @@ return int(value)
 push_action_frame(frame)
 enqueue_effect(callback, args, priority, label, context)
 enqueue_trigger(callback, args, priority, label, context)
-push_card_frame(frame)
 resolve_effect_queue()
 ```
 
@@ -93,19 +92,19 @@ resolve_effect_queue()
 - 回合结束。
 - 后续装备启动式异能等直接点击动作也应接入主要行动栈。
 
-主要行动使用 `BattleActionFrame`，进入 `action_stack`。栈行为是后进先出。
+主要行动使用 `BattleActionFrame`，进入 FIFO `action_queue`。runner 只有一个非重入 pump；行动或 after 回调追加的新行动只会排到队尾，不会递归调用新的 resolve。
 
-`action_stack` 只用于管理当前主要行动，以及这个行动结算过程中附带产生的其它主要行动。玩家在 UI 上快速点击产生的另一个独立主要行动，不应该在当前主要行动栈结算中插入。
+控制器会验证回合所有权和结算锁。玩家命令只能由当前存活单位在 `ACTIVE` 行动阶段提交；AI 使用显式内部提交窗口，一次决策只提交一个行动。
 
 每个主要行动结算时会创建独立的附属动作队列作用域：
 
 1. 将主要行动自身的 `callback` 作为一个普通效果入队。
 2. drain 当前队列。
 3. 行动内部追加的效果、状态事件、trigger 都进入当前队列。
-4. 若结算中压入新的主要行动，新的主要行动先结算。
-5. 当前主要行动的队列清空后，才执行 `after_callback`。
+4. 当前行动追加的新主要行动进入 FIFO 队尾，等待当前行动的效果和 after 阶段全部结束。
+5. 当前效果队列清空后执行 `after_callback`，再 drain after 阶段新增的效果，最后退出 action id 和队列作用域。
 
-`after_callback` 在当前主要行动完全退出后执行。这样 AI 或 UI 在 after 阶段发起的新主要行动，会按自然发起顺序立即结算，不会因为仍处在旧行动深度里被后续行动反向压栈。
+`after_callback` 属于当前主要行动，沿用同一个 action id 和效果预算。卡牌离场、弃牌 hook、回合推进请求都因此能在解锁前完成，不会落入默认队列或形成递归调用链。
 
 ### 结算中的 UI 锁
 
@@ -117,7 +116,7 @@ resolve_effect_queue()
 - 职业资源按钮，例如势。
 - 后续装备启动式异能按钮。
 
-这个锁只阻止玩家 UI 发起新的独立主要行动；结算内部由效果、trigger 或 after 回调压入的附带主要行动仍然允许进入 `action_stack`。
+这个锁同时由控制器领域入口执行，不只依赖 UI。结算内部若确实需要提交新行动，必须通过明确的内部入口；状态和卡牌 after hook 只能追加附属效果，不能直接打开新的玩家命令。
 
 ### 队列条目
 
@@ -129,7 +128,6 @@ resolve_effect_queue()
 - `order`: 入队顺序，由 runner 自动分配。
 - `label`: 调试/日志用名称。
 - `context`: 结算上下文。
-- `is_trigger`: 是否为 trigger。当前主要是元数据，排序规则不因它变化。
 
 ### 队列排序
 
@@ -144,13 +142,11 @@ resolve_effect_queue()
 
 `enqueue_effect()` 与 `enqueue_trigger()` 都进入当前效果队列。
 
-当前差异：
-
-- `enqueue_effect()` 创建普通效果条目。
-- `enqueue_trigger()` 创建 `is_trigger = true` 的条目。
-- 排序仍统一看 `priority` 和 `order`。
+两者使用相同的队列条目和排序规则；`enqueue_trigger()` 是用于表达事件来源的语义入口，不再保存无效的 `is_trigger` 元数据。
 
 写状态、装备、卡牌 trigger 时，应把后续效果加入当前结算队列，而不是立即执行。这些由主要行动触发出来的效果统称为附属动作。
+
+当前约定：伤害前倍率、伤害减免、AP 费用查询等“必须立即返回数值”的 before/query hook 保持同步；抽牌后、弃牌后、伤害后、治疗后、护甲变化、区域牌触发等 after hook 统一进入当前效果队列，并受 32 效果预算保护。
 
 示例：
 
@@ -166,20 +162,20 @@ controller.enqueue_trigger(
 
 ### 卡牌打出
 
-卡牌打出现在也是主要行动的一种。`push_card_frame()` 仍然保留为兼容入口，但内部会转换为 `BattleActionFrame` 并进入 `action_stack`。
+卡牌打出是主要行动的一种，由控制器创建 `BattleCardFrame` 并包装成 `BattleActionFrame`。
 
 流程：
 
-1. `push_card_frame(frame)` 将卡牌帧转换为主要行动。
-2. 该主要行动把 `card.play(context, targets)` 加入附属动作队列。
-3. drain 当前队列。牌效果中追加的非卡牌效果、trigger 都进入同一个队列作用域。
-4. 队列清空后，通过 `after_callback` 执行弃牌、日志、战斗结束检查等收尾流程。
+1. 提交阶段只验证请求并保留卡牌行动，不扣 AP、不支付特殊费用。
+2. 卡牌行动开始后重新验证来源、目标和费用，并在同一个 action id 内完成支付。
+3. 支付产生的 trigger 先进入队列；支付后续效果会在这些 trigger 结算后检查角色存活和卡牌来源，再执行 `card.play()`。
+4. 卡牌效果及其 trigger 全部 drain 后，通过 `after_callback` 执行弃牌、放逐、法力区归属、日志和战斗结束检查。
 
 这实现了以下语义：
 
 - 一张牌及其触发的非卡牌效果使用队列。
-- 如果一张牌打出后又触发另一张牌打出，后打出的牌会先结算。
-- 后打出的牌及其 trigger 队列结算完成后，再回到先打出牌的剩余队列。
+- 同一卡牌实体在行动完成前带有 in-flight 标记，不能重复提交。
+- 新卡牌行动进入 FIFO 队尾，不会嵌入当前卡牌效果队列。
 
 ### 队列作用域
 
@@ -189,7 +185,7 @@ controller.enqueue_trigger(
 - 每个主要行动结算时 `_push_effect_queue_scope()` 新建作用域。
 - 主要行动结算完成后 `_pop_effect_queue_scope()` 移除作用域。
 
-因此，主要行动 A 的附属动作队列不会和主要行动 B 的附属动作队列混成一个队列；但若行动 A 的队列中途压入行动 B，runner 会先处理行动 B。
+因此，主要行动 A 的附属动作队列不会和主要行动 B 混合；行动 A 中提交的行动 B 会在 A 的效果和 after 阶段完成后开始。
 
 ### 32 个效果上限
 
@@ -197,13 +193,15 @@ controller.enqueue_trigger(
 
 当前规则：
 
-- 只有 `action_resolution_depth > 0` 时启用该限制。
+- 只有 `action_active` 时启用该限制。
 - 每执行一个队列条目，计数加 1。
-- 达到上限后，后续效果不再加入栈和队列。
+- 达到上限后，后续附属效果不再加入当前效果队列；回合推进等主要行动不使用这个局部效果预算。
 - 若队列 drain 过程中发现已达到限制，会清空当前队列并停止后续结算。
 - 主要行动结算结束后，计数和限制状态会重置。
 
 写会反复触发自身或互相触发的效果时，仍应主动设计终止条件；32 上限只是兜底。
+
+runner 另有两层总量保护：待结算行动最多 64 个，单次 pump 最多处理 512 个行动。达到总行动上限时会取消剩余行动并清理其中卡牌的 in-flight 标记。
 
 ## 新机制接入建议
 
@@ -223,7 +221,7 @@ controller.queue_unit_status_event("on_block_spent", unit, damage_context)
 
 卡牌效果内可以直接完成本牌的主效果，也可以继续 `enqueue_effect()` / `enqueue_trigger()`。
 
-若卡牌效果会打出另一张牌，应压入新的主要行动，通常通过 `BattleCardFrame` / `push_card_frame()`，不要直接调用那张牌的 `play()`。
+若卡牌效果会打出另一张牌，应通过控制器的内部行动提交入口排入 FIFO 队列，不要直接调用那张牌的 `play()`。
 
 ### 装备与 trigger
 
@@ -233,7 +231,7 @@ controller.queue_unit_status_event("on_block_spent", unit, damage_context)
 - 切换掉当前装备。
 - 切换出新的装备。
 
-这些时点后续接入具体装备 trigger 时，应继续沿用 `enqueue_trigger()`。
+“切换装备时”是读取旧装备状态的 before 信号，必须在实际替换前同步发出；“切换掉当前装备”和“切换出新的装备”属于 after trigger，继续使用 `enqueue_trigger()`。
 
 ## 快速检查清单
 

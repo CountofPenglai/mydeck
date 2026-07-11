@@ -196,6 +196,7 @@ func _prepare_combat(controller: BattleController, warrior: BattleUnitState, ene
 	warrior.ensure_initialized(controller.config, controller.rng)
 	controller.phase = BattleController.Phase.BATTLE
 	controller.current_unit = warrior
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 	warrior.position = Vector2(200.0, 200.0)
 	warrior.is_deployed = true
 	enemy.position = warrior.position + Vector2(70.0, 0.0)

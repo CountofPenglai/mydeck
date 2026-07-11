@@ -64,6 +64,13 @@ func get_target_type_for_mode(play_mode: int = CardEnums.CardPlayMode.NORMAL, co
 	return effect.get_target_type_for_mode(context, play_mode, target_type)
 
 
+func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = null) -> bool:
+	if effect != null:
+		return effect.is_unit_target_allowed(context, target)
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	return user != null and target != null and target.faction != user.faction
+
+
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:
 	if effect == null:
 		return true

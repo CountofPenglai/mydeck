@@ -11,32 +11,24 @@ enum State {
 func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 	var controller = context.get("controller")
 	var unit = enemy_state
-	if controller == null or unit == null:
-		return {}
+	if controller == null or unit == null or unit.current_ap <= 0 or not unit.is_alive():
+		return {"state": state, "action_started": false}
 
-	while unit.current_ap > 0 and unit.is_alive():
-		var target = controller.get_nearest_opponent(unit)
-		if target == null:
-			break
+	var target = controller.get_nearest_opponent(unit)
+	if target == null:
+		return {"state": state, "action_started": false}
 
-		var card = controller.find_playable_card_against(unit, target)
-		if card != null:
-			state = State.ATTACK
-			if not controller.play_card(unit, card, [target]):
-				break
-			continue
+	var card = controller.find_playable_card_against(unit, target)
+	if card != null:
+		state = State.ATTACK
+		return {"state": state, "action_started": controller.play_card(unit, card, [target])}
 
-		if unit.distance_to(target) <= unit.get_attack_range():
-			state = State.ATTACK
-			if not controller.basic_attack(unit, target):
-				break
-			continue
+	if unit.distance_to(target) <= unit.get_attack_range():
+		state = State.ATTACK
+		return {"state": state, "action_started": controller.basic_attack(unit, target)}
 
-		state = State.APPROACH
-		if not _move_toward_attack_range(controller, unit, target):
-			break
-
-	return {"state": state}
+	state = State.APPROACH
+	return {"state": state, "action_started": _move_toward_attack_range(controller, unit, target)}
 
 
 func _move_toward_attack_range(controller: BattleController, unit: BattleUnitState, target: BattleUnitState) -> bool:

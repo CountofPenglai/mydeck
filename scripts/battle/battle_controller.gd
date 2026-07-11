@@ -11,6 +11,8 @@ signal equipment_switched_in(context: Dictionary)
 const DRUID_PREPARE_TRANSFORM_ACTION := "druid_prepare_transform"
 const DRUID_PREPARE_UNTRANSFORM_ACTION := "druid_prepare_untransform"
 const WARRIOR_MOMENTUM_RESOURCE := "势"
+const MAX_ENEMY_DECISIONS_PER_TURN := 32
+const CARD_EFFECT_CONTINUATION_PRIORITY := -100000
 
 enum Phase {
 	DEPLOYMENT,
@@ -22,6 +24,13 @@ enum UnitFilter {
 	OPPONENTS,
 	ALLIES,
 	ALL,
+}
+
+enum TurnFlowState {
+	IDLE,
+	START_PENDING,
+	ACTIVE,
+	END_PENDING,
 }
 
 var scenario: BattleScenario
@@ -36,8 +45,13 @@ var enemy_units: Array[BattleUnitState] = []
 var turn_order: Array[BattleUnitState] = []
 var current_turn_index: int = -1
 var current_unit: BattleUnitState
+var turn_flow_state: int = TurnFlowState.IDLE
+var enemy_decision_count: int = 0
 var class_resource_actions_used := {}
-var action_resolution_lock_count: int = 0
+var cards_in_flight := {}
+var action_resolution_active: bool = false
+var internal_action_submission_depth: int = 0
+var resolution_state_notification_active: bool = false
 var resolution_runner := BattleResolutionRunner.new()
 var targeting := BattleTargeting.new()
 var strike_resolver := BattleStrikeResolver.new()
@@ -113,8 +127,13 @@ func _reset_runtime_state() -> void:
 	turn_order.clear()
 	current_turn_index = -1
 	current_unit = null
+	turn_flow_state = TurnFlowState.IDLE
+	enemy_decision_count = 0
 	class_resource_actions_used.clear()
-	action_resolution_lock_count = 0
+	cards_in_flight.clear()
+	action_resolution_active = false
+	internal_action_submission_depth = 0
+	resolution_state_notification_active = false
 
 
 func _create_runtime_character_state(template: CharacterState) -> CharacterState:
@@ -194,6 +213,7 @@ func start_battle() -> bool:
 		unit.ensure_initialized(config, rng)
 
 	phase = Phase.BATTLE
+	turn_flow_state = TurnFlowState.IDLE
 	_rebuild_turn_order()
 	_emit_log("战斗开始。")
 	current_turn_index = -1
@@ -202,7 +222,7 @@ func start_battle() -> bool:
 
 
 func advance_turn() -> void:
-	if phase != Phase.BATTLE:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.IDLE:
 		return
 
 	if _check_battle_end():
@@ -215,7 +235,8 @@ func advance_turn() -> void:
 		current_turn_index = (current_turn_index + 1) % turn_order.size()
 		current_unit = turn_order[current_turn_index]
 		if current_unit.is_alive():
-			push_action_frame(BattleActionFrame.create(
+			turn_flow_state = TurnFlowState.START_PENDING
+			if not push_action_frame(BattleActionFrame.create(
 				Callable(self, "_resolve_turn_start_action"),
 				[current_unit],
 				0,
@@ -223,18 +244,25 @@ func advance_turn() -> void:
 				{"unit": current_unit, "phase": "turn_start"},
 				Callable(self, "_finish_turn_start_action"),
 				[current_unit]
-			))
+			)):
+				turn_flow_state = TurnFlowState.IDLE
 			return
 
 	_check_battle_end()
 
 
 func end_current_turn() -> void:
-	if phase != Phase.BATTLE or current_unit == null:
+	if is_resolving_actions() or resolution_state_notification_active:
+		return
+	_request_turn_end(current_unit)
+
+
+func _request_turn_end(unit: BattleUnitState) -> void:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit or turn_flow_state != TurnFlowState.ACTIVE:
 		return
 
-	var unit := current_unit
-	push_action_frame(BattleActionFrame.create(
+	turn_flow_state = TurnFlowState.END_PENDING
+	if not push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_turn_end_action"),
 		[unit],
 		0,
@@ -242,7 +270,8 @@ func end_current_turn() -> void:
 		{"unit": unit, "phase": "turn_end"},
 		Callable(self, "_finish_turn_end_action"),
 		[unit]
-	))
+	)):
+		turn_flow_state = TurnFlowState.ACTIVE
 
 
 func _resolve_turn_start_action(unit: BattleUnitState) -> void:
@@ -259,14 +288,20 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 
 
 func _finish_turn_start_action(unit: BattleUnitState) -> void:
-	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+	if phase != Phase.BATTLE:
+		turn_flow_state = TurnFlowState.IDLE
+		return
+	if unit == null or current_unit != unit or not unit.is_alive():
+		turn_flow_state = TurnFlowState.IDLE
+		advance_turn()
 		return
 
 	unit.remove_expired_statuses()
+	turn_flow_state = TurnFlowState.ACTIVE
 	_emit_log("轮到 %s，AP：%d。" % [unit.get_display_name(), unit.current_ap])
 	state_changed.emit()
 	if current_unit == unit and unit.faction == BattleUnitState.Faction.ENEMY:
-		_run_enemy_turn(unit)
+		_begin_enemy_turn(unit)
 
 
 func _resolve_turn_end_action(unit: BattleUnitState) -> void:
@@ -297,6 +332,8 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 
 
 func _finish_turn_end_action(unit: BattleUnitState) -> void:
+	if current_unit == unit:
+		turn_flow_state = TurnFlowState.IDLE
 	if phase == Phase.BATTLE and current_unit == unit:
 		advance_turn()
 
@@ -306,12 +343,7 @@ func move_current_unit_to(position: Vector2) -> bool:
 
 
 func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
-	if phase != Phase.BATTLE:
-		_emit_log("战斗尚未开始。")
-		return false
-
-	if unit == null or not unit.is_alive():
-		_emit_log("没有可移动的单位。")
+	if not _can_submit_turn_action(unit, "移动"):
 		return false
 
 	if not _is_position_valid_for_unit(unit, position, false):
@@ -326,18 +358,17 @@ func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
 		_emit_log("%s AP不足，移动需要 %d AP。" % [unit.get_display_name(), ap_cost])
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_direct_move_action"),
 		[unit, position],
 		0,
 		"%s 直接移动" % unit.get_display_name(),
 		{"unit": unit, "position": position, "ap_cost": ap_cost}
 	))
-	return true
 
 
 func _resolve_direct_move_action(unit: BattleUnitState, position: Vector2) -> void:
-	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+	if not _is_turn_action_execution_valid(unit):
 		return
 	if not _is_position_valid_for_unit(unit, position, false):
 		return
@@ -364,21 +395,50 @@ func _resolve_direct_move_action(unit: BattleUnitState, position: Vector2) -> vo
 
 
 func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}, play_mode: int = CardEnums.CardPlayMode.NORMAL) -> bool:
-	if phase != Phase.BATTLE:
-		_emit_log("战斗尚未开始。")
+	var context := _build_card_play_context(user, card, targets, strike_context, play_mode, true)
+	if context == null:
 		return false
 
-	if user == null or card == null or not user.is_alive():
-		_emit_log("没有可打出的卡牌。")
-		return false
+	var frame := BattleCardFrame.create(user, card, targets, context)
+	var priority := card.effect.effect_priority if card.effect != null else 0
+	var card_instance_id := card.get_instance_id()
+	var was_resolving := is_resolving_actions()
+	cards_in_flight[card_instance_id] = true
+	var accepted := push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_card_play_frame"),
+		[frame],
+		priority,
+		"%s 卡牌行动" % card.card_name,
+		context,
+		Callable(self, "_finish_card_play_frame"),
+		[frame]
+	))
+	if not accepted:
+		cards_in_flight.erase(card_instance_id)
+	if not accepted or was_resolving:
+		return accepted
+	return frame.resolved_successfully
 
-	if not _card_source_is_valid(user, card, play_mode, true):
-		return false
+
+func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary, play_mode: int, write_log: bool, allow_during_resolution: bool = false) -> CardPlayContext:
+	if card == null or not _can_submit_turn_action(user, "出牌", write_log, allow_during_resolution):
+		if write_log:
+			if card == null:
+				_emit_log("没有可打出的卡牌。")
+		return null
+	if not allow_during_resolution and cards_in_flight.has(card.get_instance_id()):
+		if write_log:
+			_emit_log("%s 已在结算队列中。" % card.card_name)
+		return null
+
+	if not _card_source_is_valid(user, card, play_mode, write_log):
+		return null
 	if not card.supports_play_mode(play_mode):
-		_emit_log("%s 不能以%s方式打出。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
-		return false
-	if not _is_druid_card_play_state_valid(user, card, true):
-		return false
+		if write_log:
+			_emit_log("%s 不能以%s方式打出。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
+		return null
+	if not _is_druid_card_play_state_valid(user, card, write_log):
+		return null
 
 	var druid_orientation := _get_druid_orientation_for_card(user, card)
 	var card_context_seed := {
@@ -392,19 +452,21 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 	var condition_context := _build_special_play_condition_context(user, card, play_mode)
 	condition_context["druid_orientation"] = druid_orientation
 	if not card.can_pay_special_conditions(condition_context, play_mode):
-		_emit_log("%s 的%s条件不足：%s。" % [card.card_name, CardEnums.play_mode_label(play_mode), card.get_special_condition_text(play_mode)])
-		return false
+		if write_log:
+			_emit_log("%s 的%s条件不足：%s。" % [card.card_name, CardEnums.play_mode_label(play_mode), card.get_special_condition_text(play_mode)])
+		return null
 
 	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode, card_context_seed)
 	if user.current_ap < effective_ap_cost:
-		_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, effective_ap_cost])
-		return false
+		if write_log:
+			_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, effective_ap_cost])
+		return null
 
 	var equipment_slot := str(strike_context.get("equipment_slot", ""))
 	var target_context := strike_context.duplicate()
 	target_context["druid_orientation"] = druid_orientation
-	if not _targets_are_valid(user, card, targets, true, equipment_slot, play_mode, target_context):
-		return false
+	if not _targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, target_context):
+		return null
 
 	var extra_context := strike_context.duplicate()
 	extra_context.erase("equipment_slot")
@@ -414,42 +476,113 @@ func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_con
 	var context := CardPlayContext.create(self, user, card, equipment_slot, extra_context, play_mode)
 	var context_dict := context.to_dict()
 	if not card.can_play(context_dict):
-		_emit_log("%s 当前不能打出。" % card.card_name)
-		return false
+		if write_log:
+			_emit_log("%s 当前不能打出。" % card.card_name)
+		return null
+	return context
 
-	if resolution_runner.effect_limit_reached:
-		_emit_log("%s 未加入结算：当前主要行动效果结算已达到上限。" % card.card_name)
-		return false
 
-	var payment_snapshot := _snapshot_card_payment_state(user)
-	user.current_ap -= effective_ap_cost
-	if not _try_pay_druid_resonance(user, card, context):
-		_restore_card_payment_state(user, payment_snapshot)
-		return false
-	if not card.pay_special_conditions(condition_context, play_mode):
-		_restore_card_payment_state(user, payment_snapshot)
-		_emit_log("%s 的%s条件支付失败。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
-		return false
+func _resolve_card_play_frame(frame: BattleCardFrame) -> void:
+	if frame == null or frame.user == null or frame.card == null or frame.context == null:
+		return
 
-	var discard_after_play := true
+	var strike_context := frame.context.extra.duplicate()
+	strike_context["equipment_slot"] = frame.context.equipment_slot
+	var refreshed_context := _build_card_play_context(
+		frame.user,
+		frame.card,
+		frame.targets,
+		strike_context,
+		frame.context.play_mode,
+		true,
+		true
+	)
+	if refreshed_context == null:
+		return
+	frame.context = refreshed_context
+	var context_dict := refreshed_context.to_dict()
+	var effective_ap_cost := int(refreshed_context.extra.get("actual_ap_cost", frame.card.ap_cost))
+	var play_mode := refreshed_context.play_mode
+	var druid_orientation := int(refreshed_context.extra.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
+	var condition_context := _build_special_play_condition_context(frame.user, frame.card, play_mode)
+	condition_context["druid_orientation"] = druid_orientation
+
+	var payment_snapshot := _snapshot_card_payment_state(frame.user)
+	var payment_queue_size := resolution_runner.get_current_effect_queue_size()
+	frame.user.current_ap -= effective_ap_cost
+	if not _try_pay_druid_resonance(frame.user, frame.card, refreshed_context):
+		_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
+		return
+	if not frame.card.pay_special_conditions(condition_context, play_mode):
+		_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
+		_emit_log("%s 的%s条件支付失败。" % [frame.card.card_name, CardEnums.play_mode_label(play_mode)])
+		return
+
 	if play_mode == CardEnums.CardPlayMode.MOMENTUM:
-		if not user.banish_discard_card(card):
-			_restore_card_payment_state(user, payment_snapshot)
-			_emit_log("%s 不在弃牌堆，无法余势打出。" % card.card_name)
-			return false
-		discard_after_play = false
-		_emit_log("%s 放逐弃牌堆中的 %s。" % [user.get_display_name(), card.card_name])
+		if not frame.user.banish_discard_card(frame.card):
+			_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
+			_emit_log("%s 不在弃牌堆，无法余势打出。" % frame.card.card_name)
+			return
+		frame.discard_after_play = false
+		_emit_log("%s 放逐弃牌堆中的 %s。" % [frame.user.get_display_name(), frame.card.card_name])
 
 	if play_mode == CardEnums.CardPlayMode.NORMAL:
-		user.notify_card_ap_cost_paid(card, {
+		frame.user.notify_card_ap_cost_paid(frame.card, {
 			"controller": self,
-			"card": card,
+			"card": frame.card,
 			"ap_cost": effective_ap_cost,
 			"druid_orientation": druid_orientation,
 		})
 
-	resolution_runner.push_card_frame(BattleCardFrame.create(user, card, targets, context, discard_after_play))
-	return true
+	frame.resolved_successfully = true
+	enqueue_effect(
+		Callable(self, "_resolve_paid_card_effect"),
+		[frame, context_dict],
+		CARD_EFFECT_CONTINUATION_PRIORITY,
+		"%s 支付后效果" % frame.card.card_name,
+		context_dict
+	)
+
+
+func _resolve_paid_card_effect(frame: BattleCardFrame, context_dict: Dictionary) -> void:
+	if frame == null or not frame.resolved_successfully or frame.user == null or frame.card == null:
+		return
+	if not frame.user.is_alive():
+		_emit_log("%s 在支付触发结算后已无法行动，%s 的效果未执行。" % [frame.user.get_display_name(), frame.card.card_name])
+		return
+	var source_is_valid := frame.user.has_card_in_hand(frame.card)
+	if frame.context.play_mode == CardEnums.CardPlayMode.MOMENTUM:
+		source_is_valid = frame.user.has_card_in_exile(frame.card)
+	if not source_is_valid:
+		_emit_log("%s 已不在预期区域，效果未执行。" % frame.card.card_name)
+		return
+	frame.card.play(context_dict, frame.targets)
+
+
+func _finish_card_play_frame(frame: BattleCardFrame) -> void:
+	if frame == null or frame.card == null:
+		return
+	cards_in_flight.erase(frame.card.get_instance_id())
+	if not frame.resolved_successfully or frame.user == null:
+		return
+
+	if frame.discard_after_play:
+		if should_card_exile_after_play(frame):
+			finish_card_to_exile(frame)
+		elif should_card_enter_mana_after_play(frame):
+			finish_druid_card_to_mana(frame)
+		else:
+			frame.user.discard_card(frame.card, {
+				"controller": self,
+				"reason": "card_after_play",
+				"source": frame.user,
+				"source_card": frame.card,
+				"card_context": frame.context,
+			})
+	var actual_ap_cost := int(frame.context.extra.get("actual_ap_cost", frame.card.ap_cost))
+	_emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, actual_ap_cost])
+	state_changed.emit()
+	_check_battle_end()
 
 
 func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
@@ -521,6 +654,11 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 		CharacterEquipmentModel.refresh_enabled(user.character_state)
 
 
+func _rollback_card_payment(user: BattleUnitState, snapshot: Dictionary, effect_queue_size: int) -> void:
+	_restore_card_payment_state(user, snapshot)
+	resolution_runner.truncate_current_effect_queue(effect_queue_size)
+
+
 func _duplicate_resources(source: Array) -> Array:
 	var result: Array = []
 	for value in source:
@@ -532,10 +670,9 @@ func _duplicate_resources(source: Array) -> Array:
 
 
 func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> bool:
-	if phase != Phase.BATTLE:
+	if not _can_submit_turn_action(attacker, "普通攻击"):
 		return false
-
-	if attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
+	if target == null or not target.is_alive():
 		_emit_log("攻击目标无效。")
 		return false
 
@@ -549,20 +686,19 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_basic_attack_action"),
 		[attacker, target, equipment_slot],
 		0,
 		"%s 普通攻击" % attacker.get_display_name(),
 		{"attacker": attacker, "target": target, "equipment_slot": equipment_slot}
 	))
-	return true
 
 
 func _resolve_basic_attack_action(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> void:
-	if phase != Phase.BATTLE:
+	if not _is_turn_action_execution_valid(attacker):
 		return
-	if attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
+	if target == null or not target.is_alive():
 		_emit_log("攻击目标无效。")
 		return
 	if attacker.current_ap < config.basic_attack_ap_cost:
@@ -622,7 +758,7 @@ func get_card_ap_cost_for_mode(user: BattleUnitState, card: CardData, play_mode:
 
 
 func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: int) -> bool:
-	if phase != Phase.BATTLE or user == null or card == null or not user.is_alive():
+	if card == null or not _can_submit_turn_action(user, "出牌", false):
 		return false
 	if not _card_source_is_valid(user, card, play_mode, false):
 		return false
@@ -646,14 +782,14 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 
 
 func can_preview_card_targets(user: BattleUnitState, card: CardData, targets: Array, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
-	if phase != Phase.BATTLE or user == null or card == null or not user.is_alive():
+	if card == null or not _can_submit_turn_action(user, "选择目标", false):
 		return false
 
 	return _targets_are_valid(user, card, targets, false, equipment_slot, play_mode, extra_context)
 
 
 func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
-	if phase != Phase.BATTLE or is_resolving_actions():
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions() or resolution_state_notification_active:
 		return false
 	if user == null or card == null or not user.is_alive():
 		return false
@@ -666,7 +802,7 @@ func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 
 
 func can_activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
-	if phase != Phase.BATTLE or is_resolving_actions():
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions() or resolution_state_notification_active:
 		return false
 	if user == null or card == null or not user.is_alive():
 		return false
@@ -682,14 +818,13 @@ func activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 		_emit_log("当前无法发动这张放逐区卡牌。")
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_exiled_card_action"),
 		[user, card],
 		0,
 		"%s 发动放逐区卡牌" % user.get_display_name(),
 		_build_exiled_card_action_context(user, card)
 	))
-	return true
 
 
 func activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
@@ -697,14 +832,13 @@ func activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
 		_emit_log("当前无法发动这张附魔区卡牌。")
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_enchant_card_action"),
 		[user, card],
 		0,
 		"%s 发动附魔区卡牌" % user.get_display_name(),
 		_build_enchant_card_action_context(user, card)
 	))
-	return true
 
 
 func _resolve_exiled_card_action(user: BattleUnitState, card: CardData) -> void:
@@ -930,7 +1064,7 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 		"unit": unit,
 		"preferred_equipment": preferred_equipment,
 	}
-	enqueue_trigger(Callable(self, "_emit_equipment_switch_started"), [before_context], 0, "切换装备时", before_context)
+	_emit_equipment_switch_started(before_context)
 
 	result = unit.character_state.switch_equipment_from_inventory(preferred_equipment)
 	result["controller"] = self
@@ -986,7 +1120,7 @@ func _find_inventory_weapon(unit: BattleUnitState) -> EquipmentData:
 
 
 func can_use_warrior_momentum(unit: BattleUnitState) -> bool:
-	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or unit == null or current_unit != unit:
 		return false
 	if unit.faction != BattleUnitState.Faction.PLAYER:
 		return false
@@ -999,6 +1133,8 @@ func can_use_warrior_momentum(unit: BattleUnitState) -> bool:
 
 
 func use_warrior_momentum(unit: BattleUnitState) -> bool:
+	if is_resolving_actions() or resolution_state_notification_active:
+		return false
 	if phase != Phase.BATTLE or unit == null or current_unit != unit:
 		return false
 	if unit.get_character_class() != CardEnums.CardClass.WARRIOR:
@@ -1011,14 +1147,13 @@ func use_warrior_momentum(unit: BattleUnitState) -> bool:
 		_emit_log("%s 没有可消耗的势。" % unit.get_display_name())
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_warrior_momentum_action"),
 		[unit],
 		0,
 		"%s 使用势" % unit.get_display_name(),
 		{"unit": unit, "resource": WARRIOR_MOMENTUM_RESOURCE}
 	))
-	return true
 
 
 func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
@@ -1037,7 +1172,7 @@ func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
 
 
 func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
-	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or unit == null or current_unit != unit:
 		return false
 	if unit.faction != BattleUnitState.Faction.PLAYER:
 		return false
@@ -1050,7 +1185,7 @@ func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
 
 
 func use_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData = null) -> bool:
-	if is_resolving_actions():
+	if is_resolving_actions() or resolution_state_notification_active:
 		return false
 	if not can_use_druid_prepare_transform(unit):
 		return false
@@ -1058,14 +1193,13 @@ func use_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData 
 		_emit_log("%s 不在手牌中，无法逆置置入法力区。" % selected_card.card_name)
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_druid_prepare_transform"),
 		[unit, selected_card],
 		0,
 		"%s 准备变身" % unit.get_display_name(),
 		{"unit": unit, "selected_card": selected_card}
 	))
-	return true
 
 
 func _resolve_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData = null) -> void:
@@ -1092,7 +1226,7 @@ func _resolve_druid_prepare_transform(unit: BattleUnitState, selected_card: Card
 
 
 func can_use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
-	if phase != Phase.BATTLE or unit == null or current_unit != unit:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or unit == null or current_unit != unit:
 		return false
 	if unit.faction != BattleUnitState.Faction.PLAYER:
 		return false
@@ -1105,19 +1239,18 @@ func can_use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
 
 
 func use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
-	if is_resolving_actions():
+	if is_resolving_actions() or resolution_state_notification_active:
 		return false
 	if not can_use_druid_prepare_untransform(unit):
 		return false
 
-	push_action_frame(BattleActionFrame.create(
+	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_druid_prepare_untransform"),
 		[unit],
 		0,
 		"%s 解除变身" % unit.get_display_name(),
 		{"unit": unit}
 	))
-	return true
 
 
 func _resolve_druid_prepare_untransform(unit: BattleUnitState) -> void:
@@ -1366,9 +1499,9 @@ func find_playable_card_against(user: BattleUnitState, target: BattleUnitState) 
 	for card in user.hand:
 		if card == null:
 			continue
-		if user.current_ap < get_card_ap_cost(user, card):
+		if not can_play_card_with_mode(user, card, CardEnums.CardPlayMode.NORMAL):
 			continue
-		if _targets_are_valid(user, card, [target], false):
+		if can_preview_card_targets(user, card, [target]):
 			return card
 
 	return null
@@ -1401,22 +1534,87 @@ func get_first_undeployed_player() -> BattleUnitState:
 	return null
 
 
-func _run_enemy_turn(unit: BattleUnitState) -> void:
-	if unit.enemy_state == null or unit.enemy_state.enemy_data == null:
-		end_current_turn()
+func _begin_enemy_turn(unit: BattleUnitState) -> void:
+	if not _is_active_enemy_turn(unit):
 		return
-
-	var behavior := unit.enemy_state.enemy_data.behavior
+	enemy_decision_count = 0
+	var behavior := _get_enemy_behavior(unit)
 	if behavior == null:
 		_emit_log("%s 没有战斗逻辑，结束回合。" % unit.get_display_name())
-		end_current_turn()
+		_complete_enemy_turn(unit)
 		return
 
 	behavior.on_turn_start({"controller": self}, unit)
-	behavior.choose_action({"controller": self}, unit)
-	behavior.on_turn_end({"controller": self}, unit)
-	if phase == Phase.BATTLE and current_unit == unit:
-		end_current_turn()
+	_queue_enemy_decision(unit)
+
+
+func _queue_enemy_decision(unit: BattleUnitState) -> void:
+	if not _is_active_enemy_turn(unit):
+		return
+	if enemy_decision_count >= MAX_ENEMY_DECISIONS_PER_TURN:
+		_emit_log("%s 的行动次数达到 %d，强制结束回合。" % [unit.get_display_name(), MAX_ENEMY_DECISIONS_PER_TURN])
+		_complete_enemy_turn(unit)
+		return
+
+	var decision_result := {"action_started": false}
+	if not push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_enemy_decision_action"),
+		[unit, decision_result],
+		0,
+		"%s 敌方决策" % unit.get_display_name(),
+		{"unit": unit, "decision_index": enemy_decision_count},
+		Callable(self, "_finish_enemy_decision_action"),
+		[unit, decision_result]
+	)):
+		_complete_enemy_turn(unit)
+
+
+func _resolve_enemy_decision_action(unit: BattleUnitState, decision_result: Dictionary) -> void:
+	decision_result["action_started"] = false
+	if not _is_active_enemy_turn(unit):
+		return
+
+	var behavior := _get_enemy_behavior(unit)
+	if behavior == null:
+		return
+	enemy_decision_count += 1
+	internal_action_submission_depth += 1
+	var result := behavior.choose_action({"controller": self}, unit)
+	internal_action_submission_depth = maxi(0, internal_action_submission_depth - 1)
+	decision_result["action_started"] = bool(result.get("action_started", false))
+
+
+func _finish_enemy_decision_action(unit: BattleUnitState, decision_result: Dictionary) -> void:
+	if not _is_active_enemy_turn(unit):
+		return
+	if bool(decision_result.get("action_started", false)):
+		_queue_enemy_decision(unit)
+	else:
+		_complete_enemy_turn(unit)
+
+
+func _complete_enemy_turn(unit: BattleUnitState) -> void:
+	if not _is_active_enemy_turn(unit):
+		return
+	var behavior := _get_enemy_behavior(unit)
+	if behavior != null:
+		behavior.on_turn_end({"controller": self}, unit)
+	_request_turn_end(unit)
+
+
+func _is_active_enemy_turn(unit: BattleUnitState) -> bool:
+	return phase == Phase.BATTLE \
+		and turn_flow_state == TurnFlowState.ACTIVE \
+		and unit != null \
+		and current_unit == unit \
+		and unit.faction == BattleUnitState.Faction.ENEMY \
+		and unit.is_alive()
+
+
+func _get_enemy_behavior(unit: BattleUnitState) -> EnemyBehavior:
+	if unit == null or unit.enemy_state == null or unit.enemy_state.enemy_data == null:
+		return null
+	return unit.enemy_state.enemy_data.behavior
 
 
 func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
@@ -1454,6 +1652,19 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 		if not (target is BattleUnitState) or not target.is_alive():
 			if write_log:
 				_emit_log("目标无效。")
+			return false
+
+		var target_context := extra_context.duplicate()
+		target_context["controller"] = self
+		target_context["user"] = user
+		target_context["card"] = card
+		target_context["equipment_slot"] = equipment_slot
+		target_context["play_mode"] = play_mode
+		if not target_context.has("druid_orientation"):
+			target_context["druid_orientation"] = _get_druid_orientation_for_card(user, card)
+		if not card.is_unit_target_allowed(target_context, target):
+			if write_log:
+				_emit_log("%s 不能选择 %s 作为目标。" % [card.card_name, target.get_display_name()])
 			return false
 
 		var distance := user.distance_to(target)
@@ -1567,6 +1778,9 @@ func _check_battle_end() -> bool:
 		return false
 
 	phase = Phase.ENDED
+	turn_flow_state = TurnFlowState.IDLE
+	cards_in_flight.clear()
+	resolution_runner.clear_pending_actions()
 	if players_alive:
 		_emit_log("战斗胜利。")
 	else:
@@ -1598,31 +1812,79 @@ func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, lab
 
 
 func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:
+	if get_current_action_id() <= 0:
+		if callback.is_valid():
+			callback.callv(args)
+		return
 	resolution_runner.enqueue_trigger(callback, args, priority, label, context)
 
 
-func push_action_frame(frame: BattleActionFrame) -> void:
-	resolution_runner.push_action_frame(frame)
+func push_action_frame(frame: BattleActionFrame) -> bool:
+	return resolution_runner.push_action_frame(frame)
+
+
+func _on_action_frames_cancelled(frames: Array) -> void:
+	for frame_value in frames:
+		var frame := frame_value as BattleActionFrame
+		if frame == null or not (frame.context is CardPlayContext):
+			continue
+		var card_context := frame.context as CardPlayContext
+		if card_context.card != null:
+			cards_in_flight.erase(card_context.card.get_instance_id())
 
 
 func get_current_action_id() -> int:
 	return resolution_runner.get_current_action_id()
 
 
+func _can_submit_turn_action(unit: BattleUnitState, action_label: String, write_log: bool = true, allow_during_resolution: bool = false) -> bool:
+	var failure := ""
+	if phase != Phase.BATTLE:
+		failure = "战斗尚未开始"
+	elif unit == null or not unit.is_alive():
+		failure = "行动单位无效"
+	elif current_unit != unit or turn_flow_state != TurnFlowState.ACTIVE:
+		failure = "当前不是该单位的行动阶段"
+	elif (is_resolving_actions() or resolution_state_notification_active) \
+		and internal_action_submission_depth <= 0 and not allow_during_resolution:
+		failure = "当前仍在结算其他行动"
+
+	if failure.is_empty():
+		return true
+	if write_log:
+		_emit_log("无法执行%s：%s。" % [action_label, failure])
+	return false
+
+
+func _is_turn_action_execution_valid(unit: BattleUnitState) -> bool:
+	return phase == Phase.BATTLE \
+		and turn_flow_state == TurnFlowState.ACTIVE \
+		and unit != null \
+		and unit.is_alive() \
+		and current_unit == unit
+
+
 func is_resolving_actions() -> bool:
-	return action_resolution_lock_count > 0
+	return action_resolution_active or resolution_runner.is_draining_actions
 
 
 func _begin_action_resolution() -> void:
-	action_resolution_lock_count += 1
-	if action_resolution_lock_count == 1:
-		state_changed.emit()
+	if action_resolution_active:
+		return
+	action_resolution_active = true
+	state_changed.emit()
 
 
 func _end_action_resolution() -> void:
-	action_resolution_lock_count = maxi(0, action_resolution_lock_count - 1)
-	if action_resolution_lock_count == 0:
-		state_changed.emit()
+	if not action_resolution_active:
+		return
+	action_resolution_active = false
+
+
+func _notify_action_resolution_finished() -> void:
+	resolution_state_notification_active = true
+	state_changed.emit()
+	resolution_state_notification_active = false
 
 
 func resolve_effect_queue() -> void:
@@ -1650,7 +1912,7 @@ func _queue_global_effects(callback_name: String, unit: BattleUnitState = null) 
 		return
 
 	for effect in scene_prototype.global_effects:
-		if effect == null or not effect.has_method(callback_name):
+		if effect == null or not _resource_script_defines_method(effect, callback_name):
 			continue
 
 		var context := {
@@ -1673,7 +1935,7 @@ func _queue_unit_status_effects(callback_name: String, unit: BattleUnitState) ->
 		return
 
 	for status in unit.statuses.duplicate():
-		if status == null or not status.has_method(callback_name):
+		if status == null or not _resource_script_defines_method(status, callback_name):
 			continue
 
 		var context := {
@@ -1691,7 +1953,7 @@ func _queue_unit_status_effects(callback_name: String, unit: BattleUnitState) ->
 
 
 func queue_status_event(status: StatusEffect, callback_name: String, unit: BattleUnitState, context = null) -> void:
-	if status == null or unit == null or not status.has_method(callback_name):
+	if status == null or unit == null or not _resource_script_defines_method(status, callback_name):
 		return
 
 	var event_context = context
@@ -1730,6 +1992,15 @@ func _get_effect_priority(effect) -> int:
 	return int(value)
 
 
+func _resource_script_defines_method(resource: Resource, method_name: String) -> bool:
+	if resource == null or resource.get_script() == null:
+		return false
+	for method in resource.get_script().get_script_method_list():
+		if str(method.get("name", "")) == method_name:
+			return true
+	return false
+
+
 func _process_before_damage(target: BattleUnitState, damage_context: DamageContext) -> void:
 	var statuses := target.statuses.duplicate()
 	statuses.sort_custom(func(left, right): return _get_effect_priority(left) > _get_effect_priority(right))
@@ -1741,13 +2012,6 @@ func _process_before_damage(target: BattleUnitState, damage_context: DamageConte
 			break
 
 	target.remove_expired_statuses()
-
-
-func _apply_global_effects(callback_name: String, unit: BattleUnitState = null) -> void:
-	_queue_global_effects(callback_name, unit)
-	resolve_effect_queue()
-
-
 
 
 func _closest_boundary_point(position: Vector2) -> Vector2:

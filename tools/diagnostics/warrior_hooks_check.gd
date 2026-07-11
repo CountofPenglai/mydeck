@@ -1,6 +1,7 @@
 extends Node
 
 const BREACH_STATUS_SCRIPT := preload("res://scripts/status/breach_status.gd")
+const DIAGNOSTIC_DISCARD_STATUS_SCRIPT := preload("res://tools/diagnostics/diagnostic_discard_status.gd")
 
 var _exit_code: int = 0
 var _outer_limit_count: int = 0
@@ -253,6 +254,11 @@ func _test_payment_rollback(controller: BattleController, warrior: BattleUnitSta
 	var second_condition := DiscardHandCondition.new()
 	test_card.combo_conditions.assign([first_condition, second_condition])
 	var payment_card := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var discard_marker := {"count": 0}
+	var discard_listener: StatusEffect = DIAGNOSTIC_DISCARD_STATUS_SCRIPT.new()
+	discard_listener.set("marker", discard_marker)
+	warrior.statuses.clear()
+	warrior.add_status(discard_listener)
 	warrior.hand.assign([test_card, payment_card])
 	warrior.discard_pile.clear()
 	warrior.current_ap = 5
@@ -260,6 +266,11 @@ func _test_payment_rollback(controller: BattleController, warrior: BattleUnitSta
 		_fail("WARRIOR_HOOK: intentionally failing payment chain unexpectedly succeeded")
 	if warrior.current_ap != 5 or warrior.hand != [test_card, payment_card] or not warrior.discard_pile.is_empty():
 		_fail("WARRIOR_HOOK: failed special payment did not restore AP and card zones")
+	if int(discard_marker.get("count", 0)) != 0:
+		_fail("WARRIOR_HOOK: rolled-back payment still executed a discard hook")
+	if controller.resolution_runner.queue_scopes.size() != 1 \
+		or not (controller.resolution_runner.queue_scopes[0] as Array).is_empty():
+		_fail("WARRIOR_HOOK: failed payment left effects in the base queue")
 
 
 func _test_full_inventory_weapon_switch() -> void:
@@ -318,6 +329,7 @@ func _deal_twice(controller: BattleController, source: BattleUnitState, target: 
 func _prepare(controller: BattleController, warrior: BattleUnitState, ally: BattleUnitState, enemy: BattleUnitState) -> void:
 	controller.phase = BattleController.Phase.BATTLE
 	controller.current_unit = warrior
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 	warrior.turn_serial = 1
 	warrior.position = Vector2(200.0, 200.0)
 	ally.position = warrior.position + Vector2(30.0, 0.0)

@@ -204,12 +204,8 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 
 func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_card_ap_cost_paid"):
-			status.on_card_ap_cost_paid(self, card, event_context)
-
+	_notify_status_effects("on_card_ap_cost_paid", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_ap_cost_paid", [card], event_context)
-	remove_expired_statuses()
 
 
 func get_status_damage_bonus(context: Dictionary = {}) -> int:
@@ -839,52 +835,32 @@ func mark_battle_action_used(action_id: String) -> void:
 
 func notify_after_damage_dealt(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_after_damage_dealt"):
-			status.on_after_damage_dealt(self, event_context)
-
+	_notify_status_effects("on_after_damage_dealt", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_damage_dealt", [], event_context)
-	remove_expired_statuses()
 
 
 func notify_after_damage_taken(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_after_damage_taken"):
-			status.on_after_damage_taken(self, event_context)
-
+	_notify_status_effects("on_after_damage_taken", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_damage_taken", [], event_context)
-	remove_expired_statuses()
 
 
 func notify_after_heal_given(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_after_heal_given"):
-			status.on_after_heal_given(self, event_context)
-
+	_notify_status_effects("on_after_heal_given", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_heal_given", [], event_context)
-	remove_expired_statuses()
 
 
 func notify_after_heal_received(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_after_heal_received"):
-			status.on_after_heal_received(self, event_context)
-
+	_notify_status_effects("on_after_heal_received", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_heal_received", [], event_context)
-	remove_expired_statuses()
 
 
 func notify_after_strike(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_after_strike"):
-			status.on_after_strike(self, event_context)
-
+	_notify_status_effects("on_after_strike", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_strike", [], event_context)
-	remove_expired_statuses()
 
 
 func notify_equipment_switched(switch_result: Dictionary, context: Dictionary = {}) -> void:
@@ -931,9 +907,7 @@ func notify_armor_changed(previous: int, current: int, context: Dictionary = {})
 	var event_context := _with_unit_context(context)
 	event_context["previous_armor"] = previous
 	event_context["current_armor"] = current
-	for status in statuses.duplicate():
-		if status != null:
-			status.on_armor_changed(self, previous, current, event_context)
+	_notify_status_effects("on_armor_changed", [previous, current], event_context)
 	_notify_zone_card_effects("on_zone_owner_armor_changed", [previous, current], event_context)
 
 
@@ -987,35 +961,23 @@ func remove_expired_statuses() -> void:
 func _notify_card_drawn(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	event_context["drawn_card"] = card
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_card_drawn"):
-			status.on_card_drawn(self, card, event_context)
-
+	_notify_status_effects("on_card_drawn", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_drawn", [card], event_context)
-	remove_expired_statuses()
 
 
 func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	event_context["discarded_card"] = card
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_card_discarded"):
-			status.on_card_discarded(self, card, event_context)
-
+	_notify_status_effects("on_card_discarded", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_discarded", [card], event_context)
-	remove_expired_statuses()
 
 
 func _notify_card_entered_special_zone(card: CardData, zone_name: String, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	event_context["entered_card"] = card
 	event_context["zone_name"] = zone_name
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_card_entered_special_zone"):
-			status.on_card_entered_special_zone(self, card, zone_name, event_context)
-
+	_notify_status_effects("on_card_entered_special_zone", [card, zone_name], event_context)
 	_notify_zone_card_effects("on_zone_card_entered_special_zone", [card, zone_name], event_context)
-	remove_expired_statuses()
 
 
 func _notify_mana_gained(amount: int, context: Dictionary = {}) -> void:
@@ -1025,11 +987,30 @@ func _notify_mana_gained(amount: int, context: Dictionary = {}) -> void:
 
 	var event_context := _with_unit_context(context)
 	event_context["mana_gained"] = actual
-	for status in statuses.duplicate():
-		if status != null and status.has_method("on_mana_gained"):
-			status.on_mana_gained(self, actual, event_context)
-
+	_notify_status_effects("on_mana_gained", [actual], event_context)
 	_notify_zone_card_effects("on_zone_owner_mana_gained", [actual], event_context)
+
+
+func _notify_status_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
+	for status in statuses.duplicate():
+		if status == null or not _script_defines_method(status, method_name):
+			continue
+		var args := [self]
+		args.append_array(extra_args)
+		args.append(context)
+		_dispatch_trigger(
+			Callable(self, "_invoke_status_hook"),
+			[status, method_name, args],
+			status.effect_priority,
+			"%s.%s" % [status.display_name, method_name],
+			context
+		)
+
+
+func _invoke_status_hook(status: StatusEffect, method_name: String, args: Array) -> void:
+	if status == null or not statuses.has(status) or status.should_remove():
+		return
+	status.callv(method_name, args)
 	remove_expired_statuses()
 
 
@@ -1041,14 +1022,37 @@ func _notify_zone_card_effects(method_name: String, extra_args: Array = [], cont
 
 func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String, method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
 	for zone_card in cards.duplicate():
-		if zone_card == null or zone_card.effect == null or not zone_card.effect.has_method(method_name):
+		if zone_card == null or zone_card.effect == null or not _script_defines_method(zone_card.effect, method_name):
 			continue
 
 		var event_context := _with_zone_context(zone_name, zone_card, context)
 		var args := [self, zone_card]
 		args.append_array(extra_args)
 		args.append(event_context)
-		zone_card.effect.callv(method_name, args)
+		_dispatch_trigger(
+			Callable(zone_card.effect, method_name),
+			args,
+			zone_card.effect.effect_priority,
+			"%s.%s" % [zone_card.card_name, method_name],
+			event_context
+		)
+
+
+func _dispatch_trigger(callback: Callable, args: Array, priority: int, label: String, context: Dictionary) -> void:
+	var controller: BattleController = context.get("controller") as BattleController
+	if controller != null and controller.get_current_action_id() > 0:
+		controller.enqueue_trigger(callback, args, priority, label, context)
+	else:
+		callback.callv(args)
+
+
+func _script_defines_method(resource: Resource, method_name: String) -> bool:
+	if resource == null or resource.get_script() == null:
+		return false
+	for method in resource.get_script().get_script_method_list():
+		if str(method.get("name", "")) == method_name:
+			return true
+	return false
 
 
 func _with_zone_context(zone_name: String, zone_card: CardData, context: Dictionary = {}) -> Dictionary:

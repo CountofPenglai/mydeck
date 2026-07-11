@@ -6,6 +6,7 @@ var card: CardData
 var targets: Array = []
 var context: CardPlayContext
 var discard_after_play: bool = true
+var resolved_successfully: bool = false
 
 
 static func create(new_user: BattleUnitState, new_card: CardData, new_targets: Array, new_context: CardPlayContext, should_discard_after_play: bool = true) -> BattleCardFrame:

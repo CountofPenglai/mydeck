@@ -37,6 +37,7 @@ func _ready() -> void:
 		_fail("DRUID_DIAG: druid has empty hand")
 		get_tree().quit(_exit_code)
 		return
+	_test_moonlight_targets(controller, druid)
 
 	var hand_before := druid.hand.size()
 	var mana_before := druid.mana_zone.size()
@@ -61,6 +62,45 @@ func _ready() -> void:
 	get_tree().quit(_exit_code)
 
 
+func _test_moonlight_targets(controller: BattleController, druid: BattleUnitState) -> void:
+	var moonlight := load("res://resources/cards/druid_moonlit_mend.tres") as CardData
+	var ordinary_attack := load("res://resources/cards/battle_strike.tres") as CardData
+	var ally := _find_other_player(controller, druid)
+	var enemy: BattleUnitState = controller.enemy_units[0] if not controller.enemy_units.is_empty() else null
+	if moonlight == null or ordinary_attack == null or ally == null or enemy == null:
+		_fail("DRUID_DIAG: moonlight target diagnostic resources missing")
+		return
+
+	ally.position = druid.position + Vector2(40.0, 0.0)
+	enemy.position = druid.position + Vector2(80.0, 0.0)
+	if not controller.can_preview_card_targets(druid, moonlight, [ally]):
+		_fail("DRUID_DIAG: moonlight rejected an allied target")
+	if not controller.can_preview_card_targets(druid, moonlight, [enemy]):
+		_fail("DRUID_DIAG: moonlight rejected an enemy target")
+	if controller.can_preview_card_targets(druid, ordinary_attack, [ally]):
+		_fail("DRUID_DIAG: ordinary attack incorrectly accepted an allied target")
+
+	ally.set_current_health(maxi(1, ally.get_max_health() - 6))
+	var ally_health_before := ally.get_current_health()
+	moonlight.effect.play({
+		"controller": controller,
+		"user": druid,
+		"card": moonlight,
+	}, [ally])
+	if ally.get_current_health() <= ally_health_before:
+		_fail("DRUID_DIAG: moonlight did not heal its allied target")
+
+	enemy.set_current_health(enemy.get_max_health())
+	var enemy_health_before := enemy.get_current_health()
+	moonlight.effect.play({
+		"controller": controller,
+		"user": druid,
+		"card": moonlight,
+	}, [enemy])
+	if enemy.get_current_health() >= enemy_health_before:
+		_fail("DRUID_DIAG: moonlight did not damage its enemy target")
+
+
 func _deploy_players(controller: BattleController) -> void:
 	var deploy_rect := controller.map_data.player_deployment_rect
 	for index in range(controller.player_units.size()):
@@ -75,6 +115,13 @@ func _find_druid(controller: BattleController) -> BattleUnitState:
 		if unit != null and unit.is_druid():
 			return unit
 
+	return null
+
+
+func _find_other_player(controller: BattleController, excluded: BattleUnitState) -> BattleUnitState:
+	for unit in controller.player_units:
+		if unit != null and unit != excluded:
+			return unit
 	return null
 
 

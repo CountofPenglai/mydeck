@@ -5,6 +5,10 @@ class_name DruidMoonlitMendCardEffect
 @export_range(0, 99, 1) var resonance_extra: int = 2
 
 
+func is_unit_target_allowed(_context: Dictionary = {}, target: BattleUnitState = null) -> bool:
+	return target != null
+
+
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller: BattleController = context.get("controller") as BattleController
 	var user: BattleUnitState = context.get("user") as BattleUnitState
@@ -29,4 +33,3 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			controller.heal_unit(user, target_unit, amount, "月愈")
 		else:
 			controller.apply_damage(user, target_unit, amount, "月火")
-

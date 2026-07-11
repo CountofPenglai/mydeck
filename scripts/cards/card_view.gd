@@ -78,7 +78,6 @@ func _on_play_button_pressed() -> void:
 		play_button.disabled = true
 		return
 
-	_card_data.play(play_context, selected_targets)
 	play_requested.emit(_card_data)
 
 
