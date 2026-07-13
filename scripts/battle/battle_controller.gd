@@ -2,6 +2,14 @@ extends RefCounted
 class_name BattleController
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+const BattleSurfaceState = preload("res://scripts/battle/battle_surface_state.gd")
+const BattlePathfinder = preload("res://scripts/battle/battle_pathfinder.gd")
+const RangerTurnDamageBonusStatus = preload("res://scripts/status/ranger_turn_damage_bonus_status.gd")
+const RangerGainMultiplierStatus = preload("res://scripts/status/ranger_gain_multiplier_status.gd")
+const RangerMoveSurchargeStatus = preload("res://scripts/status/ranger_move_surcharge_status.gd")
+const RangerBurnStatus = preload("res://scripts/status/ranger_burn_status.gd")
+const RangerBlindStatus = preload("res://scripts/status/ranger_blind_status.gd")
+const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 
 signal log_message(message: String)
 signal state_changed
@@ -56,6 +64,9 @@ var resolution_state_notification_active: bool = false
 var resolution_runner := BattleResolutionRunner.new()
 var targeting := BattleTargeting.new()
 var strike_resolver := BattleStrikeResolver.new()
+var surface_state := BattleSurfaceState.new()
+var battle_round: int = 0
+var stealth_cancelled_actions: Dictionary = {}
 
 func setup(new_scenario: BattleScenario) -> void:
 	scenario = new_scenario
@@ -64,6 +75,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		scene_prototype = null
 		map_data = BattleMapData.new()
 		_reset_runtime_state()
+		surface_state.setup(map_data)
 		resolution_runner.setup(self)
 		targeting.setup(self)
 		strike_resolver.setup(self)
@@ -79,6 +91,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		map_data.background_texture = scene_prototype.scene_texture
 	rng.seed = scenario.seed
 	_reset_runtime_state()
+	surface_state.setup(map_data)
 	resolution_runner.setup(self)
 	targeting.setup(self)
 	strike_resolver.setup(self)
@@ -92,6 +105,7 @@ func setup(new_scenario: BattleScenario) -> void:
 			continue
 		var unit := BattleUnitState.new()
 		unit.setup_player(id, character_state, config.default_token_radius)
+		unit.battle_controller = self
 		id += 1
 		units.append(unit)
 		player_units.append(unit)
@@ -112,6 +126,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		var spawn_cell: Vector2i = spawn_cell_value
 		var unit := BattleUnitState.new()
 		unit.setup_enemy(id, enemy_state, config.default_token_radius)
+		unit.battle_controller = self
 		unit.set_hex_cell(spawn_cell, map_data)
 		id += 1
 		units.append(unit)
@@ -139,6 +154,8 @@ func _reset_runtime_state() -> void:
 	action_resolution_active = false
 	internal_action_submission_depth = 0
 	resolution_state_notification_active = false
+	battle_round = 0
+	stealth_cancelled_actions.clear()
 
 
 func _create_runtime_character_state(template: CharacterState) -> CharacterState:
@@ -238,6 +255,10 @@ func advance_turn() -> void:
 
 	for _i in range(turn_order.size()):
 		current_turn_index = (current_turn_index + 1) % turn_order.size()
+		if current_turn_index == 0:
+			battle_round += 1
+			if battle_round > 1:
+				surface_state.advance_round(battle_round)
 		current_unit = turn_order[current_turn_index]
 		if current_unit.is_alive():
 			turn_flow_state = TurnFlowState.START_PENDING
@@ -290,6 +311,7 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 	_queue_unit_status_effects("on_turn_start", unit)
 	_queue_global_effects("on_turn_start", unit)
 	unit.notify_equipment_turn_start({"controller": self, "phase": "turn_start"})
+	_apply_surface_turn_start(unit)
 
 
 func _finish_turn_start_action(unit: BattleUnitState) -> void:
@@ -327,7 +349,14 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 	unit.current_ap = 0
 	_queue_unit_status_effects("on_turn_end", unit)
 	_queue_global_effects("on_turn_end", unit)
+	enqueue_effect(
+		Callable(unit, "notify_zone_turn_end"),
+		[{"controller": self, "unit": unit, "phase": "turn_end"}],
+		-90,
+		"回合结束附魔区触发"
+	)
 	unit.notify_equipment_turn_end({"controller": self, "phase": "turn_end"})
+	_resolve_ranger_turn_end(unit)
 	enqueue_effect(
 		Callable(unit, "exile_expiring_temporary_cards"),
 		[self],
@@ -355,9 +384,13 @@ func move_unit_to_cell(unit: BattleUnitState, cell: Vector2i) -> bool:
 	if not _is_cell_valid_for_unit(unit, cell, false):
 		return false
 
-	var distance := map_data.get_distance(unit.cell, cell)
-	var ap_cost := unit.get_move_ap_cost(distance, config)
-	if distance <= 0:
+	var path := get_movement_path(unit, cell)
+	if path.is_empty():
+		_emit_log("没有通往目标格的合法路径。")
+		return false
+	var movement_cost: int = BattlePathfinder.get_path_cost(path, surface_state)
+	var ap_cost := unit.get_move_ap_cost(movement_cost, config)
+	if movement_cost <= 0:
 		return true
 
 	if unit.current_ap < ap_cost:
@@ -379,25 +412,46 @@ func _resolve_direct_move_action(unit: BattleUnitState, cell: Vector2i) -> void:
 	if not _is_cell_valid_for_unit(unit, cell, false):
 		return
 
-	var distance := map_data.get_distance(unit.cell, cell)
-	if distance <= 0:
+	var path := get_movement_path(unit, cell)
+	if path.is_empty():
+		return
+	var movement_cost: int = BattlePathfinder.get_path_cost(path, surface_state)
+	if movement_cost <= 0:
 		return
 
-	var ap_cost := unit.get_move_ap_cost(distance, config)
+	var ap_cost := unit.get_move_ap_cost(movement_cost, config)
 	if unit.current_ap < ap_cost:
 		_emit_log("%s AP不足，移动需要 %d AP。" % [unit.get_display_name(), ap_cost])
 		return
 
+	_close_ranger_combo_window(unit)
 	unit.current_ap -= ap_cost
 	unit.notify_move_ap_cost_paid({
 		"controller": self,
 		"cell": cell,
-		"distance": distance,
+		"distance": movement_cost,
+		"path": path,
 		"ap_cost": ap_cost,
 	})
-	unit.set_hex_cell(cell, map_data)
+	for index in range(1, path.size()):
+		unit.set_hex_cell(path[index], map_data)
+		if process_surface_entry(unit, path[index]):
+			break
+	_notify_opponents_movement_completed(unit)
 	_emit_log("%s 移动到格 (%d, %d)，消耗 %d AP。" % [unit.get_display_name(), unit.cell.x, unit.cell.y, ap_cost])
 	state_changed.emit()
+
+
+func get_movement_path(unit: BattleUnitState, cell: Vector2i) -> Array[Vector2i]:
+	if unit == null or map_data == null:
+		return []
+	return BattlePathfinder.find_path(
+		map_data,
+		surface_state,
+		unit.cell,
+		cell,
+		func(candidate: Vector2i) -> bool: return candidate == unit.cell or targeting.is_unit_cell_clear(unit, candidate, false)
+	)
 
 
 func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}, play_mode: int = CardEnums.CardPlayMode.NORMAL) -> bool:
@@ -439,7 +493,8 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 
 	if not _card_source_is_valid(user, card, play_mode, write_log):
 		return null
-	if not card.supports_play_mode(play_mode):
+	var ranger_universal_combo := _is_ranger_universal_combo(user, play_mode)
+	if not _card_supports_play_mode_for_user(user, card, play_mode):
 		if write_log:
 			_emit_log("%s 不能以%s方式打出。" % [card.card_name, CardEnums.play_mode_label(play_mode)])
 		return null
@@ -453,13 +508,20 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 		"card": card,
 		"play_mode": play_mode,
 		"druid_orientation": druid_orientation,
+		"ranger_universal_combo": ranger_universal_combo,
 	}
 
 	var condition_context := _build_special_play_condition_context(user, card, play_mode)
+	condition_context.merge(strike_context, true)
 	condition_context["druid_orientation"] = druid_orientation
-	if not card.can_pay_special_conditions(condition_context, play_mode):
+	condition_context["ranger_universal_combo"] = ranger_universal_combo
+	if not ranger_universal_combo and not card.can_pay_special_conditions(condition_context, play_mode):
 		if write_log:
 			_emit_log("%s 的%s条件不足：%s。" % [card.card_name, CardEnums.play_mode_label(play_mode), card.get_special_condition_text(play_mode)])
+		return null
+	if not card.can_pay_play_cost(condition_context):
+		if write_log:
+			_emit_log("%s 的额外费用无法支付。" % card.card_name)
 		return null
 
 	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode, card_context_seed)
@@ -479,6 +541,7 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 	extra_context["actual_ap_cost"] = effective_ap_cost
 	extra_context["play_mode"] = play_mode
 	extra_context["druid_orientation"] = druid_orientation
+	extra_context["ranger_universal_combo"] = ranger_universal_combo
 	var context := CardPlayContext.create(self, user, card, equipment_slot, extra_context, play_mode)
 	var context_dict := context.to_dict()
 	if not card.can_play(context_dict):
@@ -511,18 +574,30 @@ func _resolve_card_play_frame(frame: BattleCardFrame) -> void:
 	var play_mode := refreshed_context.play_mode
 	var druid_orientation := int(refreshed_context.extra.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
 	var condition_context := _build_special_play_condition_context(frame.user, frame.card, play_mode)
+	condition_context.merge(refreshed_context.extra, true)
 	condition_context["druid_orientation"] = druid_orientation
+	var ranger_universal_combo := bool(refreshed_context.extra.get("ranger_universal_combo", false))
+	condition_context["ranger_universal_combo"] = ranger_universal_combo
 
 	var payment_snapshot := _snapshot_card_payment_state(frame.user)
 	var payment_queue_size := resolution_runner.get_current_effect_queue_size()
 	frame.user.current_ap -= effective_ap_cost
+	if not frame.card.pay_play_cost(condition_context):
+		_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
+		_emit_log("%s 的额外费用支付失败。" % frame.card.card_name)
+		return
 	if not _try_pay_druid_resonance(frame.user, frame.card, refreshed_context):
 		_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
 		return
-	if not frame.card.pay_special_conditions(condition_context, play_mode):
+	if not ranger_universal_combo and not frame.card.pay_special_conditions(condition_context, play_mode):
 		_rollback_card_payment(frame.user, payment_snapshot, payment_queue_size)
 		_emit_log("%s 的%s条件支付失败。" % [frame.card.card_name, CardEnums.play_mode_label(play_mode)])
 		return
+	if play_mode == CardEnums.CardPlayMode.COMBO and frame.user.is_ranger():
+		frame.user.ranger_state.combo_window_open = false
+		if ranger_universal_combo:
+			frame.user.ranger_state.universal_combo_ready = false
+			frame.user.ranger_state.universal_combo_expires_turn_serial = -1
 
 	if play_mode == CardEnums.CardPlayMode.MOMENTUM:
 		if not frame.user.banish_discard_card(frame.card):
@@ -563,6 +638,10 @@ func _resolve_paid_card_effect(frame: BattleCardFrame, context_dict: Dictionary)
 	if not source_is_valid:
 		_emit_log("%s 已不在预期区域，效果未执行。" % frame.card.card_name)
 		return
+	for target_value in frame.targets:
+		var target := target_value as BattleUnitState
+		if target != null and should_cancel_hostile_effect(frame.user, target, frame.card.card_name):
+			return
 	frame.card.play(context_dict, frame.targets)
 
 
@@ -588,6 +667,21 @@ func _finish_card_play_frame(frame: BattleCardFrame) -> void:
 			})
 	frame.user.finish_next_card_damage_bonus(frame.card)
 	var actual_ap_cost := int(frame.context.extra.get("actual_ap_cost", frame.card.ap_cost))
+	frame.user.notify_after_card_played(frame.card, {
+		"controller": self,
+		"card": frame.card,
+		"source": frame.user,
+		"play_mode": frame.context.play_mode,
+		"ap_cost": actual_ap_cost,
+		"action_id": get_current_action_id(),
+	})
+	_notify_opponents_card_completed(frame.user, frame.card)
+	if frame.user.is_ranger():
+		frame.user.ranger_state.cards_played_this_turn += 1
+		if frame.context.play_mode == CardEnums.CardPlayMode.COMBO and frame.card.is_available_to_class(CardEnums.CardClass.RANGER):
+			gain_ranger_combo(frame.user, 1)
+		frame.user.ranger_state.combo_window_open = true
+		_resolve_ranger_no_place_recall(frame.user)
 	_emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, actual_ap_cost])
 	state_changed.emit()
 	_check_battle_end()
@@ -614,6 +708,9 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
 		"druid_temporary_mana": user.druid_temporary_mana,
+		"ranger_elements": user.ranger_state.element_inventory.duplicate(true),
+		"ranger_prepared_blend": user.ranger_state.prepared_blend,
+		"ranger_prepared_weapon_slot": user.ranger_state.prepared_weapon_slot,
 	}
 	if user.character_state != null:
 		snapshot["class_resources"] = _duplicate_resources(user.character_state.class_resources)
@@ -655,6 +752,9 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
 	user.druid_prepare_used = bool(snapshot.get("druid_prepare_used", user.druid_prepare_used))
 	user.druid_temporary_mana = int(snapshot.get("druid_temporary_mana", user.druid_temporary_mana))
+	user.ranger_state.element_inventory = (snapshot.get("ranger_elements", {}) as Dictionary).duplicate(true)
+	user.ranger_state.prepared_blend = int(snapshot.get("ranger_prepared_blend", user.ranger_state.prepared_blend))
+	user.ranger_state.prepared_weapon_slot = str(snapshot.get("ranger_prepared_weapon_slot", user.ranger_state.prepared_weapon_slot))
 	if user.character_state != null:
 		var resource_snapshot: Array = snapshot.get("class_resources", []) as Array
 		var inventory_snapshot: Array = snapshot.get("inventory", []) as Array
@@ -665,6 +765,7 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 		user.character_state.armor_equipment = snapshot.get("armor_equipment") as EquipmentData
 		user.character_state.accessory_equipment_1 = snapshot.get("accessory_equipment_1") as EquipmentData
 		user.character_state.accessory_equipment_2 = snapshot.get("accessory_equipment_2") as EquipmentData
+		user.sync_ranger_element_inventory()
 
 
 func _rollback_card_payment(user: BattleUnitState, snapshot: Dictionary, effect_queue_size: int) -> void:
@@ -688,12 +789,15 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_
 	if target == null or not target.is_alive():
 		_emit_log("攻击目标无效。")
 		return false
+	if attacker.faction != target.faction and is_unit_concealed(target):
+		_emit_log("%s 位于隐蔽地表，不能被单体攻击指定。" % target.get_display_name())
+		return false
 
 	if attacker.current_ap < config.basic_attack_ap_cost:
 		_emit_log("%s AP不足，普通攻击需要 %d AP。" % [attacker.get_display_name(), config.basic_attack_ap_cost])
 		return false
 
-	var attack_range := attacker.get_attack_range(equipment_slot)
+	var attack_range := get_effective_attack_range_against(attacker, target, equipment_slot)
 	var distance := attacker.cell_distance_to(target)
 	if distance > attack_range:
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
@@ -714,16 +818,20 @@ func _resolve_basic_attack_action(attacker: BattleUnitState, target: BattleUnitS
 	if target == null or not target.is_alive():
 		_emit_log("攻击目标无效。")
 		return
+	if attacker.faction != target.faction and is_unit_concealed(target):
+		_emit_log("%s 位于隐蔽地表，不能被单体攻击指定。" % target.get_display_name())
+		return
 	if attacker.current_ap < config.basic_attack_ap_cost:
 		_emit_log("%s AP不足，普通攻击需要 %d AP。" % [attacker.get_display_name(), config.basic_attack_ap_cost])
 		return
 
-	var attack_range := attacker.get_attack_range(equipment_slot)
+	var attack_range := get_effective_attack_range_against(attacker, target, equipment_slot)
 	var distance := attacker.cell_distance_to(target)
 	if distance > attack_range:
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return
 
+	_close_ranger_combo_window(attacker)
 	attacker.current_ap -= config.basic_attack_ap_cost
 	perform_strike(attacker, target, null, "普通攻击", equipment_slot)
 	state_changed.emit()
@@ -775,7 +883,7 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 		return false
 	if not _card_source_is_valid(user, card, play_mode, false):
 		return false
-	if not card.supports_play_mode(play_mode):
+	if not _card_supports_play_mode_for_user(user, card, play_mode):
 		return false
 	if not _is_druid_card_play_state_valid(user, card, false):
 		return false
@@ -791,6 +899,8 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 	if not card.can_play(context):
 		return false
 
+	if _is_ranger_universal_combo(user, play_mode):
+		return true
 	return card.can_pay_special_conditions(_build_special_play_condition_context(user, card, play_mode), play_mode)
 
 
@@ -812,6 +922,28 @@ func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
 		return false
 
 	return card.can_activate_from_exile(_build_exiled_card_action_context(user, card))
+
+
+func can_activate_discard_card(user: BattleUnitState, card: CardData) -> bool:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions():
+		return false
+	if user == null or card == null or current_unit != user or not user.has_card_in_discard(card):
+		return false
+	return card.can_activate_from_discard({"controller": self, "user": user, "card": card, "ranger_discard_activation": true})
+
+
+func activate_discard_card(user: BattleUnitState, card: CardData, extra_context: Dictionary = {}) -> bool:
+	var context := extra_context.duplicate()
+	context["controller"] = self
+	context["user"] = user
+	context["card"] = card
+	context["ranger_discard_activation"] = true
+	if not can_activate_discard_card(user, card):
+		return false
+	var activated := card.activate_from_discard(context)
+	if activated:
+		_close_ranger_combo_window(user)
+	return activated
 
 
 func can_activate_enchant_card(user: BattleUnitState, card: CardData) -> bool:
@@ -910,6 +1042,55 @@ func _build_special_play_condition_context(user: BattleUnitState, card: CardData
 	}
 
 
+func _card_supports_play_mode_for_user(user: BattleUnitState, card: CardData, play_mode: int) -> bool:
+	if card == null:
+		return false
+	if play_mode != CardEnums.CardPlayMode.COMBO:
+		return card.supports_play_mode(play_mode)
+	if user == null:
+		return false
+	if not user.is_ranger():
+		return card.supports_play_mode(play_mode)
+	if not user.ranger_state.combo_window_open:
+		return false
+	return card.supports_play_mode(play_mode) or user.ranger_state.universal_combo_ready
+
+
+func _is_ranger_universal_combo(user: BattleUnitState, play_mode: int) -> bool:
+	return (
+		play_mode == CardEnums.CardPlayMode.COMBO
+		and user != null
+		and user.is_ranger()
+		and user.ranger_state.combo_window_open
+		and user.ranger_state.universal_combo_ready
+	)
+
+
+func _resolve_ranger_no_place_recall(unit: BattleUnitState) -> void:
+	if unit == null or not unit.is_ranger() or unit.ranger_state.no_place_recall_charges <= 0:
+		return
+	var candidate: CardData
+	if unit.hand.is_empty():
+		for card in unit.discard_pile:
+			if card != null and card.effect is RangerNoPlaceToHuntCardEffect:
+				candidate = card
+				break
+		if candidate != null and unit.move_discard_card_to_hand(candidate):
+			unit.ranger_state.no_place_recall_charges -= 1
+	if candidate == null and unit.ranger_state.cards_played_this_turn == 3:
+		for card in unit.draw_pile:
+			if card != null and card.effect is RangerNoPlaceToHuntCardEffect:
+				candidate = card
+				break
+		if candidate != null and unit.move_draw_card_to_hand(candidate):
+			unit.ranger_state.no_place_recall_charges -= 1
+	if candidate != null:
+		_emit_log("%s 自动将无处不猎移回手牌，本场剩余 %d 次。" % [
+			unit.get_display_name(),
+			unit.ranger_state.no_place_recall_charges,
+		])
+
+
 func _card_source_is_valid(user: BattleUnitState, card: CardData, play_mode: int, write_log: bool) -> bool:
 	match play_mode:
 		CardEnums.CardPlayMode.NORMAL, CardEnums.CardPlayMode.COMBO:
@@ -934,8 +1115,11 @@ func can_unit_reach_cell_with_ap(unit: BattleUnitState, cell: Vector2i, max_ap: 
 	if not _is_cell_valid_for_unit(unit, cell, false, write_log):
 		return false
 
-	var distance := map_data.get_distance(unit.cell, cell)
-	var ap_cost := unit.get_move_ap_cost(distance, config) if apply_ap_cost_modifiers else ceili(float(distance) / float(unit.get_move_distance_per_ap(config)))
+	var path := get_movement_path(unit, cell)
+	if path.is_empty():
+		return false
+	var movement_cost := BattlePathfinder.get_path_cost(path, surface_state)
+	var ap_cost := unit.get_move_ap_cost(movement_cost, config) if apply_ap_cost_modifiers else ceili(float(movement_cost) / float(unit.get_move_distance_per_ap(config)))
 	if ap_cost > max_ap:
 		if write_log:
 			_emit_log("%s 无法以 %d AP 移动到目标位置。" % [unit.get_display_name(), max_ap])
@@ -966,12 +1150,15 @@ func can_unit_reach_cell_with_distance(unit: BattleUnitState, cell: Vector2i, ma
 	if not _is_cell_valid_for_unit(unit, cell, false, write_log):
 		return false
 
-	var distance := map_data.get_distance(unit.cell, cell)
-	if distance > max_distance:
+	var path := get_movement_path(unit, cell)
+	if path.is_empty():
+		return false
+	var movement_cost := BattlePathfinder.get_path_cost(path, surface_state)
+	if movement_cost > max_distance:
 		if write_log:
 			_emit_log("%s 无法移动到目标位置，距离 %.0f 超出可移动距离 %.0f。" % [
 				unit.get_display_name(),
-				distance,
+				movement_cost,
 				max_distance,
 			])
 		return false
@@ -1001,10 +1188,13 @@ func get_reachable_cells(unit: BattleUnitState, ap_budget: int = -1) -> Array[Ve
 		return result
 	var available_ap := unit.current_ap if ap_budget < 0 else ap_budget
 	for cell in map_data.get_all_cells():
-		var distance := map_data.get_distance(unit.cell, cell)
-		if unit.get_move_ap_cost(distance, config) > available_ap:
-			continue
 		if cell != unit.cell and not targeting.is_unit_cell_clear(unit, cell, false):
+			continue
+		var path := get_movement_path(unit, cell)
+		if path.is_empty():
+			continue
+		var movement_cost: int = BattlePathfinder.get_path_cost(path, surface_state)
+		if unit.get_move_ap_cost(movement_cost, config) > available_ap:
 			continue
 		result.append(cell)
 	return result
@@ -1017,6 +1207,8 @@ func apply_card_movement_to_cell(unit: BattleUnitState, cell: Vector2i, label: S
 		return false
 
 	unit.set_hex_cell(cell, map_data)
+	process_surface_entry(unit, cell)
+	_notify_opponents_movement_completed(unit)
 	_emit_log("%s 移动到格 (%d, %d)（%s）。" % [unit.get_display_name(), unit.cell.x, unit.cell.y, label])
 	state_changed.emit()
 	return true
@@ -1194,6 +1386,7 @@ func _resolve_equipment_action(unit: BattleUnitState, effect: EquipmentEffect) -
 		if cost > 0 and not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, cost):
 			return
 		if effect.activate(unit, action.get("root") as EquipmentData, action.get("component") as EquipmentData, action.get("runtime") as EquipmentRuntimeState, context):
+			_close_ranger_combo_window(unit)
 			_emit_log("%s 使用 %s。" % [unit.get_display_name(), str(action.get("label", "武器行动"))])
 			state_changed.emit()
 		return
@@ -1412,14 +1605,386 @@ func grant_next_attack_card_free(unit: BattleUnitState, stacks: int = 1) -> void
 	state_changed.emit()
 
 
-func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害") -> int:
+func enter_ranger_stealth(unit: BattleUnitState, label: String = "潜行") -> bool:
+	if unit == null or not unit.enter_stealth():
+		return false
+	_emit_log("%s 进入%s。" % [unit.get_display_name(), label])
+	state_changed.emit()
+	return true
+
+
+func consume_ranger_stealth_for_attack(unit: BattleUnitState, override_multiplier: float = 0.0) -> float:
+	if unit == null or not unit.is_stealthed():
+		return 1.0
+	unit.leave_stealth()
+	var multiplier := override_multiplier if override_multiplier > 0.0 else 1.5
+	_emit_log("%s 主动破隐，本次完整攻击伤害 x%.1f。" % [unit.get_display_name(), multiplier])
+	state_changed.emit()
+	return multiplier
+
+
+func should_cancel_hostile_effect(source: BattleUnitState, target: BattleUnitState, effect_kind: String = "效果") -> bool:
+	if source == null or target == null or source.faction == target.faction or not target.is_ranger():
+		return false
+	var action_id := get_current_action_id()
+	var key := "%d:%d" % [action_id, target.unit_id]
+	if action_id > 0 and stealth_cancelled_actions.has(key):
+		return true
+	if not target.is_stealthed():
+		return false
+	target.leave_stealth()
+	if action_id > 0:
+		stealth_cancelled_actions[key] = true
+	target.notify_ranger_stealth_cancelled({
+		"controller": self,
+		"source": source,
+		"effect_kind": effect_kind,
+		"action_id": action_id,
+	})
+	_emit_log("%s 的潜行抵消了来自 %s 的整次%s。" % [target.get_display_name(), source.get_display_name(), effect_kind])
+	state_changed.emit()
+	return true
+
+
+func is_unit_concealed(unit: BattleUnitState) -> bool:
+	return unit != null and unit.is_stealthed() and surface_state.is_concealing(unit.cell)
+
+
+func gain_ranger_combo(unit: BattleUnitState, amount: int) -> int:
+	if unit == null or not unit.is_ranger() or amount <= 0:
+		return 0
+	var current: int = unit.ranger_state.combo_points
+	for _point in range(amount):
+		current += 1
+		if current == 2 or current == 4 or current == 6 or current == 8:
+			_queue_ranger_combo_reward(unit, current)
+		elif current >= 10:
+			_queue_ranger_combo_reward(unit, 10)
+			current -= 10
+	unit.ranger_state.combo_points = current
+	_emit_log("%s 获得 %d 点连击，当前为 %d。" % [unit.get_display_name(), amount, current])
+	state_changed.emit()
+	return amount
+
+
+func _close_ranger_combo_window(unit: BattleUnitState) -> void:
+	if unit != null and unit.is_ranger():
+		unit.ranger_state.combo_window_open = false
+
+
+func collect_surface_elements(unit: BattleUnitState, cell: Vector2i, label: String = "采集") -> int:
+	if unit == null or not unit.is_ranger():
+		return 0
+	var components: Array[int] = surface_state.get_component_elements(surface_state.get_element(cell))
+	var added := 0
+	for element in components:
+		added += unit.collect_ranger_element(element, 1)
+	if added > 0:
+		_emit_log("%s 从%s格采集 %d 枚元素。" % [unit.get_display_name(), label, added])
+		state_changed.emit()
+	return added
+
+
+func prepare_ranger_blend(unit: BattleUnitState, blend: int, equipment_slot: String, catalyst: int = BattleSurfaceState.Element.NONE) -> bool:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions():
+		return false
+	if unit == null or unit != current_unit or not unit.is_ranger() or not unit.is_stealthed():
+		return false
+	if unit.ranger_state.prepared_blend != BattleSurfaceState.Element.NONE:
+		return false
+	var ingredients: Array[int] = surface_state.get_component_elements(blend)
+	if ingredients.size() != 2:
+		return false
+	if catalyst != BattleSurfaceState.Element.NONE:
+		ingredients.append(catalyst)
+	if not unit.ranger_state.pay_elements(ingredients):
+		return false
+	unit.sync_ranger_element_inventory()
+	unit.ranger_state.prepared_blend = blend
+	unit.ranger_state.prepared_weapon_slot = equipment_slot
+	_close_ranger_combo_window(unit)
+	_emit_log("%s 调配%s，并装填至%s。" % [unit.get_display_name(), BattleSurfaceState.label(blend), equipment_slot])
+	state_changed.emit()
+	return true
+
+
+func resolve_ranger_after_strike(context: Dictionary) -> void:
+	var attacker: BattleUnitState = context.get("attacker") as BattleUnitState
+	var target: BattleUnitState = context.get("target") as BattleUnitState
+	var profile: StrikeProfile = context.get("strike_profile_object") as StrikeProfile
+	if attacker == null or target == null or profile == null or not attacker.is_ranger():
+		return
+	var actual_damage := int(context.get("actual_damage", 0))
+	var is_dagger := profile.primary_equipment != null and profile.primary_equipment.has_tag("匕首")
+	if is_dagger and actual_damage > 0:
+		collect_surface_elements(attacker, target.cell, "目标")
+	var state: RangerCombatState = attacker.ranger_state
+	if state.prepared_blend == BattleSurfaceState.Element.NONE or state.prepared_weapon_slot != profile.primary_slot:
+		return
+	var blend: int = state.prepared_blend
+	state.prepared_blend = BattleSurfaceState.Element.NONE
+	state.prepared_weapon_slot = ""
+	_apply_ranger_blend_payload(attacker, target, blend, is_dagger)
+
+
+func force_move_toward(unit: BattleUnitState, destination: Vector2i, max_steps: int, source: BattleUnitState = null) -> int:
+	if unit == null or map_data == null or max_steps <= 0:
+		return 0
+	if should_cancel_hostile_effect(source, unit, "强制移动"):
+		return 0
+	var path := map_data.get_line(unit.cell, destination)
+	var moved := 0
+	for index in range(1, mini(path.size(), max_steps + 1)):
+		var next_cell: Vector2i = path[index]
+		if not map_data.is_valid_cell(next_cell) or not targeting.is_unit_cell_clear(unit, next_cell, false):
+			break
+		unit.set_hex_cell(next_cell, map_data)
+		moved += 1
+		if process_surface_entry(unit, next_cell):
+			break
+	if moved > 0:
+		_notify_opponents_movement_completed(unit)
+		_emit_log("%s 被强制移动 %d 格。" % [unit.get_display_name(), moved])
+		state_changed.emit()
+	return moved
+
+
+func force_move_away(unit: BattleUnitState, origin: Vector2i, max_steps: int, source: BattleUnitState = null) -> int:
+	if unit == null or max_steps <= 0 or map_data == null:
+		return 0
+	var moved := 0
+	for _step in range(max_steps):
+		var best := BattleHexGrid.INVALID_CELL
+		var best_distance := map_data.get_distance(unit.cell, origin)
+		for neighbor in BattleHexGrid.neighbors(unit.cell):
+			if not map_data.is_valid_cell(neighbor) or not targeting.is_unit_cell_clear(unit, neighbor, false):
+				continue
+			var distance := map_data.get_distance(neighbor, origin)
+			if distance > best_distance:
+				best = neighbor
+				best_distance = distance
+		if best == BattleHexGrid.INVALID_CELL:
+			break
+		if should_cancel_hostile_effect(source, unit, "强制移动"):
+			break
+		unit.set_hex_cell(best, map_data)
+		moved += 1
+		if process_surface_entry(unit, best):
+			break
+	if moved > 0:
+		_notify_opponents_movement_completed(unit)
+		state_changed.emit()
+	return moved
+
+
+func _notify_opponents_movement_completed(moved_unit: BattleUnitState) -> void:
+	if moved_unit == null:
+		return
+	for observer in get_opposing_units(moved_unit):
+		observer.notify_enemy_movement_completed(moved_unit, {"controller": self, "source": moved_unit})
+
+
+func _notify_opponents_card_completed(card_user: BattleUnitState, card: CardData) -> void:
+	if card_user == null or card == null:
+		return
+	for observer in get_opposing_units(card_user):
+		observer.notify_enemy_card_completed(card_user, card, {"controller": self, "source": card_user})
+
+
+func _apply_ranger_blend_payload(attacker: BattleUnitState, target: BattleUnitState, blend: int, is_dagger: bool) -> void:
+	match blend:
+		BattleSurfaceState.Element.STEAM:
+			if is_dagger:
+				enqueue_effect(Callable(self, "enter_ranger_stealth"), [attacker, "雾隐回身"], -5, "雾隐回身")
+			else:
+				force_move_away(target, attacker.cell, 1, attacker)
+		BattleSurfaceState.Element.LAVA:
+			if is_dagger:
+				_apply_burn(target, 2, 2)
+			else:
+				_apply_burn(target, 1, 2)
+				for other in get_units_in_range(target, 1, UnitFilter.ALL):
+					if other.faction != attacker.faction:
+						_apply_burn(other, 1, 2)
+		BattleSurfaceState.Element.BLAZE:
+			if is_dagger:
+				gain_ranger_combo(attacker, 2)
+			else:
+				var breach := BreachStatus.new()
+				breach.applied_by = attacker
+				breach.expires_on_source_turn = attacker.turn_serial + 1
+				target.remove_status("breach")
+				target.add_status(breach)
+		BattleSurfaceState.Element.POISON_BOG:
+			var gain_status := RangerGainMultiplierStatus.new()
+			gain_status.status_id = "ranger_bad_blood" if is_dagger else "ranger_corrosion"
+			gain_status.display_name = "坏血" if is_dagger else "蚀甲"
+			gain_status.gain_kind = RangerGainMultiplierStatus.GainKind.HEALING if is_dagger else RangerGainMultiplierStatus.GainKind.ARMOR
+			target.remove_status(gain_status.status_id)
+			target.add_status(gain_status)
+		BattleSurfaceState.Element.ICE:
+			if is_dagger:
+				var discount := NextMoveApDiscountStatus.new()
+				discount.discount_amount = 1
+				attacker.add_status(discount)
+			else:
+				var surcharge := RangerMoveSurchargeStatus.new()
+				target.remove_status(surcharge.status_id)
+				target.add_status(surcharge)
+		BattleSurfaceState.Element.SANDSTORM:
+			if is_dagger:
+				attacker.gain_armor(3, {"controller": self, "reason": "ranger_stone_skin"})
+			else:
+				var blind := RangerBlindStatus.new()
+				target.remove_status(blind.status_id)
+				target.add_status(blind)
+
+
+func _apply_burn(target: BattleUnitState, damage: int, turns: int) -> void:
+	if target == null:
+		return
+	var burn := RangerBurnStatus.new()
+	burn.damage_per_turn = damage
+	burn.remaining_turns = turns
+	target.remove_status(burn.status_id)
+	target.add_status(burn)
+
+
+func get_surface_damage_bonus(unit: BattleUnitState) -> int:
+	if unit == null:
+		return 0
+	match surface_state.get_element(unit.cell):
+		BattleSurfaceState.Element.FIRE:
+			return 1
+		BattleSurfaceState.Element.BLAZE:
+			return 2
+		BattleSurfaceState.Element.POISON_BOG:
+			return -1
+		_:
+			return 0
+
+
+func get_surface_damage_reduction(unit: BattleUnitState, context: Dictionary = {}) -> int:
+	if unit == null:
+		return 0
+	var element: int = surface_state.get_element(unit.cell)
+	if element == BattleSurfaceState.Element.EARTH:
+		return 1
+	if element == BattleSurfaceState.Element.STEAM:
+		var damage_context: DamageContext = context.get("damage_context") as DamageContext
+		if damage_context != null \
+				and not bool(damage_context.metadata.get("ignore_ranged_surface_reduction", false)) \
+				and int(damage_context.metadata.get("range_type", -1)) == EquipmentData.WeaponRangeType.RANGED:
+			return 1
+	return 0
+
+
+func modify_attack_range_for_surface(unit: BattleUnitState, base_range: int, equipment_slot: String = "") -> int:
+	if unit == null:
+		return base_range
+	var profile := unit.build_strike_profile_object(equipment_slot, {"skip_surface_range": true})
+	if profile.primary_range_type != EquipmentData.WeaponRangeType.RANGED:
+		return base_range
+	match surface_state.get_element(unit.cell):
+		BattleSurfaceState.Element.EARTH:
+			return maxi(1, base_range - 1)
+		BattleSurfaceState.Element.AIR:
+			return base_range + 1
+		_:
+			return base_range
+
+
+func get_effective_attack_range_against(attacker: BattleUnitState, target: BattleUnitState, equipment_slot: String = "") -> int:
+	if attacker == null:
+		return 0
+	var attack_range := attacker.get_attack_range(equipment_slot)
+	var profile := attacker.build_strike_profile_object(equipment_slot)
+	if target != null and profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
+		if surface_state.get_element(attacker.cell) == BattleSurfaceState.Element.SANDSTORM \
+				or surface_state.get_element(target.cell) == BattleSurfaceState.Element.SANDSTORM:
+			attack_range = mini(attack_range, 2)
+	return attack_range
+
+
+func process_surface_entry(unit: BattleUnitState, cell: Vector2i) -> bool:
+	if unit == null or not unit.is_alive():
+		return false
+	var element := surface_state.get_element(cell)
+	if element == BattleSurfaceState.Element.FIRE:
+		apply_damage(null, unit, 1, "火焰地表", {"environmental": true})
+	elif element == BattleSurfaceState.Element.LAVA:
+		var entry_key := "lava_entry:%d:%d" % [battle_round, current_turn_index]
+		if not unit.battle_action_flags.has(entry_key):
+			unit.battle_action_flags[entry_key] = true
+			apply_damage(null, unit, 2, "熔岩地表", {"environmental": true})
+	return element == BattleSurfaceState.Element.ICE
+
+
+func _apply_surface_turn_start(unit: BattleUnitState) -> void:
+	if unit == null or not unit.is_alive():
+		return
+	if surface_state.get_element(unit.cell) == BattleSurfaceState.Element.LAVA:
+		var start_key := "lava_start:%d:%d" % [battle_round, current_turn_index]
+		if not unit.battle_action_flags.has(start_key):
+			unit.battle_action_flags[start_key] = true
+			apply_damage(null, unit, 2, "熔岩地表", {"environmental": true})
+
+
+func _resolve_ranger_turn_end(unit: BattleUnitState) -> void:
+	if unit == null or not unit.is_ranger():
+		return
+	if unit.ranger_state.stealth_active and unit.turn_serial >= unit.ranger_state.stealth_expires_turn_serial:
+		unit.leave_stealth()
+		_emit_log("%s 的潜行自然结束。" % unit.get_display_name())
+	unit.ranger_state.universal_combo_ready = false
+	unit.ranger_state.universal_combo_expires_turn_serial = -1
+
+
+func _queue_ranger_combo_reward(unit: BattleUnitState, threshold: int) -> void:
+	match threshold:
+		2:
+			enqueue_effect(Callable(unit, "draw_cards"), [1, rng, {"controller": self, "reason": "ranger_combo_2"}], 0, "连击2：抽牌")
+		4:
+			var status := RangerTurnDamageBonusStatus.new()
+			status.stacks = 2
+			unit.add_status(status)
+		6:
+			var move_status := NextMoveApDiscountStatus.new()
+			move_status.discount_amount = 1
+			unit.add_status(move_status)
+		8:
+			enqueue_effect(Callable(self, "enter_ranger_stealth"), [unit, "连击潜行"], 0, "连击8：潜行")
+		10:
+			enqueue_effect(Callable(self, "_grant_ranger_finisher"), [unit], 0, "连击10：猎杀时刻")
+
+
+func _grant_ranger_finisher(unit: BattleUnitState) -> void:
+	var template := load("res://resources/cards/ranger_hunt_moment.tres") as CardData
+	if unit == null or template == null:
+		return
+	var card := template.duplicate(true) as CardData
+	unit.hand.append(card)
+	unit.mark_temporary_card(card, 0, true, true)
+	_emit_log("%s 获得衍生牌“猎杀时刻”。" % unit.get_display_name())
+	state_changed.emit()
+
+
+func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int, label: String = "伤害", metadata: Dictionary = {}) -> int:
 	if target == null or not target.is_alive():
 		return 0
 	if amount <= 0:
 		return 0
 
-	var damage_context := DamageContext.create(self, source, target, amount, label)
+	if should_cancel_hostile_effect(source, target, label):
+		return 0
+	var adjusted_amount := amount
+	var target_surface: int = surface_state.get_element(target.cell)
+	if target_surface == BattleSurfaceState.Element.AIR or target_surface == BattleSurfaceState.Element.ICE:
+		adjusted_amount += 1
+	var damage_context := DamageContext.create(self, source, target, adjusted_amount, label)
 	damage_context.metadata["action_id"] = get_current_action_id()
+	for key in metadata:
+		damage_context.metadata[key] = metadata[key]
 	target.modify_incoming_damage(damage_context)
 	if damage_context.prevented:
 		return 0
@@ -1457,6 +2022,11 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	}
 	if source != null and actual > 0:
 		source.notify_after_damage_dealt(event_context)
+		if surface_state.get_element(source.cell) == BattleSurfaceState.Element.BLAZE:
+			var backlash_key := "ranger_blaze_backlash_%d" % get_current_action_id()
+			if not source.battle_action_flags.has(backlash_key):
+				source.battle_action_flags[backlash_key] = true
+				enqueue_effect(Callable(self, "apply_damage"), [null, source, 1, "烈焰反噬", {"environmental": true}], -10, "烈焰反噬")
 	if actual > 0:
 		target.notify_after_damage_taken(event_context)
 	return actual
@@ -1466,8 +2036,21 @@ func heal_unit(source: BattleUnitState, target: BattleUnitState, amount: int, la
 	if target == null or not target.is_alive() or amount <= 0:
 		return 0
 
+	var adjusted_amount := amount
+	if surface_state.get_element(target.cell) == BattleSurfaceState.Element.WATER:
+		adjusted_amount += 1
+	var heal_context := {
+		"controller": self,
+		"source": source,
+		"target": target,
+		"label": label,
+		"action_id": get_current_action_id(),
+	}
+	for status in target.statuses:
+		if status != null:
+			adjusted_amount = status.modify_healing_received(target, adjusted_amount, heal_context)
 	var before := target.get_current_health()
-	target.set_current_health(before + amount)
+	target.set_current_health(before + adjusted_amount)
 	var actual := target.get_current_health() - before
 	if actual <= 0:
 		return 0
@@ -1693,9 +2276,26 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 			if write_log:
 				_emit_log("%s 不能选择 %s 作为目标。" % [card.card_name, target.get_display_name()])
 			return false
+		if target_type == CardEnums.TargetType.SINGLE and user.faction != target.faction and is_unit_concealed(target):
+			if write_log:
+				_emit_log("%s 位于隐蔽地表，不能被敌方单体效果指定。" % target.get_display_name())
+			return false
 
 		var distance := user.cell_distance_to(target)
 		var card_range := card.get_effective_range(user, equipment_slot)
+		if card.effect != null and card.effect.uses_strike:
+			var profile := user.build_strike_profile_object(equipment_slot)
+			if card.effect is RangerHuntMomentCardEffect and profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
+				card_range = profile.primary_range + 2
+				if distance > card_range:
+					if write_log:
+						_emit_log("%s 距离 %.0f，超出 %s 射程 %.0f。" % [target.get_display_name(), distance, card.card_name, card_range])
+					return false
+				continue
+			if profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
+				if surface_state.get_element(user.cell) == BattleSurfaceState.Element.SANDSTORM \
+						or surface_state.get_element(target.cell) == BattleSurfaceState.Element.SANDSTORM:
+					card_range = mini(card_range, 2)
 		if distance > card_range:
 			if write_log:
 				_emit_log("%s 距离 %.0f，超出 %s 射程 %.0f。" % [target.get_display_name(), distance, card.card_name, card_range])
@@ -1851,6 +2451,13 @@ func _on_action_frames_cancelled(frames: Array) -> void:
 		var card_context := frame.context as CardPlayContext
 		if card_context.card != null:
 			cards_in_flight.erase(card_context.card.get_instance_id())
+
+
+func _on_action_resolution_completed(action_id: int) -> void:
+	var prefix := "%d:" % action_id
+	for key_value in stealth_cancelled_actions.keys().duplicate():
+		if str(key_value).begins_with(prefix):
+			stealth_cancelled_actions.erase(key_value)
 
 
 func get_current_action_id() -> int:

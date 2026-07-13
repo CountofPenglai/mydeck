@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="RangerHunterThreeActsCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/ranger_hunter_three_acts_card_effect.gd" id="1_effect"]
+
+[resource]
+script = ExtResource("1_effect")
+effect_priority = 0
+uses_strike = false
+cards_per_act = 3

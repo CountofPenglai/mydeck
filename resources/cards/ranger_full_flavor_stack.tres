@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="CardStack" load_steps=3 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_stack.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_full_flavor.tres" id="2"]
+[resource]
+script = ExtResource("1")
+card_data = ExtResource("2")
+count = 1

@@ -9,6 +9,7 @@ class_name CardData
 @export_group("Gameplay")
 @export_enum("普通", "稀有", "史诗", "传说") var rarity: int = CardEnums.Rarity.COMMON
 @export_enum("中立", "战士", "法师", "游侠", "德鲁伊", "术士") var card_class: int = CardEnums.CardClass.NEUTRAL
+@export var allowed_classes: PackedInt32Array = []
 @export_enum("攻击", "技能") var card_type: int = CardEnums.CardType.SKILL
 @export_flags("Physical", "Magical") var card_tags: int = 0
 @export_enum("力量", "敏捷", "智力", "武器") var damage_type: int = CardEnums.DamageType.STRENGTH
@@ -46,6 +47,14 @@ func can_play(context: Dictionary = {}) -> bool:
 		return true
 
 	return effect.can_play(context)
+
+
+func can_pay_play_cost(context: Dictionary = {}) -> bool:
+	return effect == null or effect.can_pay_play_cost(context)
+
+
+func pay_play_cost(context: Dictionary = {}) -> bool:
+	return effect == null or effect.pay_play_cost(context)
 
 
 func get_valid_targets(context: Dictionary = {}) -> Array:
@@ -104,6 +113,30 @@ func requires_ordered_discard_choice(context: Dictionary = {}) -> bool:
 		return false
 
 	return effect.requires_ordered_discard_choice(context)
+
+
+func requires_ranger_recipe_choice(context: Dictionary = {}) -> bool:
+	if effect == null:
+		return false
+	return effect.requires_ranger_recipe_choice(context)
+
+
+func get_ranger_recipe_options(context: Dictionary = {}) -> Array[Dictionary]:
+	if effect == null:
+		return []
+	return effect.get_ranger_recipe_options(context)
+
+
+func can_activate_from_discard(context: Dictionary = {}) -> bool:
+	return effect != null and effect.can_activate_from_discard(context)
+
+
+func get_discard_action_label(context: Dictionary = {}) -> String:
+	return effect.get_discard_action_label(context) if effect != null else ""
+
+
+func activate_from_discard(context: Dictionary = {}) -> bool:
+	return effect != null and effect.activate_from_discard(context)
 
 
 func get_ordered_discard_choice_cards(context: Dictionary = {}) -> Array[CardData]:
@@ -253,7 +286,18 @@ func get_rarity_label() -> String:
 
 
 func get_class_label() -> String:
+	if not allowed_classes.is_empty():
+		var labels := PackedStringArray()
+		for allowed_class in allowed_classes:
+			labels.append(CardEnums.class_label(allowed_class))
+		return "/".join(labels)
 	return CardEnums.class_label(card_class)
+
+
+func is_available_to_class(character_class: int) -> bool:
+	if not allowed_classes.is_empty():
+		return allowed_classes.has(character_class)
+	return card_class == CardEnums.CardClass.NEUTRAL or card_class == character_class
 
 
 func get_card_type_label() -> String:

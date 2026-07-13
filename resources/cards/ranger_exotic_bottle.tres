@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_exotic_bottle_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "异域爆瓶"
+description = "选择高级元素配方，消耗两种反应元素各 1 枚及任意催化剂 1 枚。对中心敌人造成 8 点敏捷伤害、相邻敌人各 4 点，随后将中心及相邻格变为对应高级地表。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 1
+target_type = 3
+ap_cost = 2
+override_range = true
+card_range = 4
+effect = ExtResource("3_effect")

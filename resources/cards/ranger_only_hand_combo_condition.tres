@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="RangerOnlyHandComboCondition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/conditions/ranger_only_hand_combo_condition.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")

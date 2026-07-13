@@ -1,7 +1,28 @@
-[gd_resource type="Resource" script_class="BattleMapData" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="BattleMapData" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_map_data.gd" id="1_map"]
 [ext_resource type="Texture2D" path="res://assets/art/battlefields/ruined_keep_courtyard.png" id="2_bg"]
+[ext_resource type="Script" path="res://scripts/battle/battle_element_cell.gd" id="3_element_cell"]
+
+[sub_resource type="Resource" id="ElementCell_fire"]
+script = ExtResource("3_element_cell")
+cell = Vector2i(4, 2)
+element = 1
+
+[sub_resource type="Resource" id="ElementCell_water"]
+script = ExtResource("3_element_cell")
+cell = Vector2i(5, 3)
+element = 2
+
+[sub_resource type="Resource" id="ElementCell_earth"]
+script = ExtResource("3_element_cell")
+cell = Vector2i(6, 4)
+element = 3
+
+[sub_resource type="Resource" id="ElementCell_air"]
+script = ExtResource("3_element_cell")
+cell = Vector2i(7, 5)
+element = 4
 
 [resource]
 script = ExtResource("1_map")
@@ -13,3 +34,4 @@ hex_size = 40.0
 grid_origin = Vector2(50, 45)
 player_deployment_columns = 3
 enemy_spawn_columns = 3
+element_cells = Array[ExtResource("3_element_cell")]([SubResource("ElementCell_fire"), SubResource("ElementCell_water"), SubResource("ElementCell_earth"), SubResource("ElementCell_air")])

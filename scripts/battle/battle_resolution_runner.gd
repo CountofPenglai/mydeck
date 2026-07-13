@@ -157,6 +157,8 @@ func _resolve_action_frame(frame: BattleActionFrame) -> void:
 	if frame.after_callback.is_valid():
 		frame.after_callback.callv(frame.after_args)
 		_drain_current_effect_queue()
+	if controller != null:
+		controller._on_action_resolution_completed(current_action_id)
 	_pop_effect_queue_scope()
 
 

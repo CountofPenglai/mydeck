@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_tri_phase_dissection_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_elements_collected_condition.tres" id="4_combo"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "三相解剖"
+description = "对同一目标进行 3 次匕首打击，每次将匕首基础伤害替换为 1；每次正数生命伤害均可独立采集。连击条件：本回合实际加入库存的元素至少 3 枚。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 3
+effect = ExtResource("3_effect")
+has_combo = true
+combo_conditions = [ExtResource("4_combo")]

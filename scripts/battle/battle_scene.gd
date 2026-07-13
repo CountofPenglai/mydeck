@@ -13,6 +13,7 @@ enum InputMode {
 	MOVE,
 	BASIC_ATTACK_TARGET,
 	CARD_TARGET,
+	CARD_LANDING,
 }
 
 @export var scenario: BattleScenario
@@ -24,6 +25,7 @@ var pending_card: CardData
 var pending_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var pending_equipment_slot: String = ""
 var pending_extra_context: Dictionary = {}
+var pending_unit_target: BattleUnitState
 var _weapon_choice_popup: PopupPanel
 var _weapon_choice_list: VBoxContainer
 var _weapon_choice_next_mode: int = InputMode.NONE
@@ -49,6 +51,14 @@ var _ordered_discard_selected_cards: Array[CardData] = []
 var _ordered_discard_max_count: int = 0
 var _ordered_discard_min_count: int = 0
 var _ordered_discard_confirm_button: Button
+var _ordered_discard_is_ranger_debt: bool = false
+var _ordered_discard_is_discard_activation: bool = false
+var _ordered_discard_is_pending_ranger: bool = false
+var _ranger_blend_popup: PopupPanel
+var _ranger_blend_list: VBoxContainer
+var _ranger_recipe_card: CardData
+var _ranger_recipe_play_mode: int = CardEnums.CardPlayMode.NORMAL
+var _ranger_enemy_hand_target: BattleUnitState
 var _ap_orb_layer: Control
 var _druid_prepare_hand_choice_active: bool = false
 
@@ -85,6 +95,7 @@ func _ready() -> void:
 	_create_discard_popup()
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
+	_create_ranger_blend_popup()
 	var startup_scenario := scenario
 	if startup_scenario == null:
 		startup_scenario = DEFAULT_SCENARIO
@@ -113,6 +124,8 @@ func handle_map_click(position: Vector2) -> void:
 			_handle_basic_attack_target(clicked_unit)
 		InputMode.CARD_TARGET:
 			_handle_card_target(cell, clicked_unit)
+		InputMode.CARD_LANDING:
+			_handle_card_landing(cell)
 		InputMode.MOVE:
 			if controller.move_current_unit_to_cell(cell):
 				_clear_input()
@@ -129,6 +142,7 @@ func get_map_preview_context() -> Dictionary:
 		"pending_play_mode": pending_play_mode,
 		"pending_equipment_slot": pending_equipment_slot,
 		"pending_extra_context": pending_extra_context.duplicate(),
+		"pending_unit_target": pending_unit_target,
 		"pending_target_type": _get_pending_card_target_type(),
 	}
 
@@ -161,11 +175,32 @@ func _handle_card_target(cell: Vector2i, clicked_unit: BattleUnitState) -> void:
 	if target_type == CardEnums.TargetType.AREA:
 		played = controller.play_card(controller.current_unit, pending_card, [cell], play_context, pending_play_mode)
 	elif clicked_unit != null:
+		if pending_card.effect is RangerCrossHuntStepCardEffect and not play_context.has("landing_cell"):
+			pending_unit_target = clicked_unit
+			input_mode = InputMode.CARD_LANDING
+			_append_log("选择交错猎步的落点。")
+			_refresh()
+			return
+		if pending_card.effect is RangerStealPlanCardEffect and not play_context.has("selected_enemy_card") and not clicked_unit.hand.is_empty():
+			_show_ranger_enemy_hand_choice(clicked_unit)
+			return
 		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
 	else:
 		_append_log("请选择一个单位目标打出卡牌。")
 
 	if played:
+		_clear_input()
+		_hide_discard_popup()
+
+
+func _handle_card_landing(cell: Vector2i) -> void:
+	if pending_card == null or pending_unit_target == null:
+		_clear_input()
+		return
+	var play_context := pending_extra_context.duplicate()
+	play_context["equipment_slot"] = pending_equipment_slot
+	play_context["landing_cell"] = cell
+	if controller.play_card(controller.current_unit, pending_card, [pending_unit_target], play_context, pending_play_mode):
 		_clear_input()
 		_hide_discard_popup()
 
@@ -255,6 +290,10 @@ func _on_end_turn_pressed() -> void:
 	if _actions_locked():
 		return
 	_clear_input()
+	var unit := controller.current_unit
+	if unit != null and unit.is_ranger() and unit.ranger_state.discard_debt > 0 and not unit.hand.is_empty():
+		_show_ranger_discard_debt(unit)
+		return
 	controller.end_current_turn()
 	_refresh()
 
@@ -330,6 +369,24 @@ func _select_discard_card(card: CardData) -> void:
 	_refresh()
 
 
+func _activate_discard_action(card: CardData) -> void:
+	if _actions_locked() or controller.current_unit == null or card == null:
+		return
+	var context := {
+		"controller": controller,
+		"user": controller.current_unit,
+		"card": card,
+		"ranger_discard_activation": true,
+	}
+	_hide_discard_popup()
+	if card.requires_ordered_discard_choice(context):
+		_ordered_discard_is_discard_activation = true
+		_show_ordered_discard_choice(card, CardEnums.CardPlayMode.NORMAL, context)
+		return
+	controller.activate_discard_card(controller.current_unit, card, context)
+	_refresh()
+
+
 func _select_card(card: CardData) -> void:
 	if _actions_locked():
 		return
@@ -355,6 +412,16 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 		return
 
 	_clear_input()
+	var choice_context := {
+		"controller": controller,
+		"user": controller.current_unit,
+		"card": card,
+		"play_mode": play_mode,
+	}
+	if card.requires_ranger_recipe_choice(choice_context):
+		_show_ranger_card_recipe_popup(card, play_mode, choice_context)
+		_refresh()
+		return
 	if _needs_draw_pile_choice(card, play_mode):
 		_show_draw_pile_choice(card, play_mode)
 		_refresh()
@@ -392,6 +459,7 @@ func _clear_input() -> void:
 	pending_play_mode = CardEnums.CardPlayMode.NORMAL
 	pending_equipment_slot = ""
 	pending_extra_context.clear()
+	pending_unit_target = null
 	_druid_prepare_hand_choice_active = false
 
 
@@ -513,6 +581,11 @@ func _refresh() -> void:
 	_refresh_discard_button()
 	_refresh_discard_popup()
 	map_view.queue_redraw()
+	var current := controller.current_unit
+	if not _actions_locked() and current != null and current.is_ranger() \
+			and current.ranger_state.pending_hand_discard_count > 0 \
+			and (_ordered_discard_popup == null or not _ordered_discard_popup.visible):
+		_show_ranger_pending_hand_discard(current)
 
 
 func _refresh_deploy_list() -> void:
@@ -557,6 +630,34 @@ func _refresh_class_resource_list() -> void:
 					druid_button.pressed.connect(_on_druid_prepare_untransform_pressed.bind(unit))
 				druid_button.disabled = _actions_locked()
 				class_resource_list.add_child(druid_button)
+
+		if unit.is_ranger():
+			has_resources = true
+			var ranger_label := Label.new()
+			var stealth_text := "潜行" if unit.is_stealthed() else "显形"
+			var combo_text := "可连击" if unit.ranger_state.combo_window_open else "连击关闭"
+			ranger_label.text = "%s：%s | 连击 %d（%s）| 元素 %s" % [
+				unit.get_display_name(),
+				stealth_text,
+				unit.ranger_state.combo_points,
+				combo_text,
+				unit.ranger_state.get_summary(),
+			]
+			class_resource_list.add_child(ranger_label)
+			if unit == controller.current_unit and unit.is_stealthed() and unit.ranger_state.prepared_blend == BattleSurfaceState.Element.NONE:
+				var blend_button := Button.new()
+				blend_button.text = "调配特调"
+				blend_button.tooltip_text = "消耗两枚不同基础元素，为匕首或弩装填一份特调。"
+				blend_button.disabled = _actions_locked() or unit.ranger_state.get_element_type_count() < 2
+				blend_button.pressed.connect(_show_ranger_blend_popup.bind(unit))
+				class_resource_list.add_child(blend_button)
+			elif unit.ranger_state.prepared_blend != BattleSurfaceState.Element.NONE:
+				var prepared_label := Label.new()
+				prepared_label.text = "已装填：%s（%s）" % [
+					BattleSurfaceState.label(unit.ranger_state.prepared_blend),
+					"匕首" if unit.ranger_state.prepared_weapon_slot == "weapon" else "弩",
+				]
+				class_resource_list.add_child(prepared_label)
 
 		for pool_state in unit.character_state.class_resources:
 			if pool_state == null:
@@ -680,11 +781,15 @@ func _refresh_discard_popup() -> void:
 			if card == null:
 				continue
 			var button := Button.new()
-			button.text = _discard_card_button_text(card)
+			var can_discard_action := controller.can_activate_discard_card(unit, card)
+			button.text = card.get_discard_action_label({"controller": controller, "user": unit, "card": card}) if can_discard_action else _discard_card_button_text(card)
 			button.tooltip_text = _build_card_tooltip(card)
-			button.disabled = _actions_locked() or not controller.can_play_card_with_mode(unit, card, CardEnums.CardPlayMode.MOMENTUM)
+			button.disabled = _actions_locked() or (not can_discard_action and not controller.can_play_card_with_mode(unit, card, CardEnums.CardPlayMode.MOMENTUM))
 			if not button.disabled:
-				button.pressed.connect(_select_discard_card.bind(card))
+				if can_discard_action:
+					button.pressed.connect(_activate_discard_action.bind(card))
+				else:
+					button.pressed.connect(_select_discard_card.bind(card))
 			_discard_list.add_child(button)
 
 	var separator := HSeparator.new()
@@ -1076,6 +1181,136 @@ func _create_ordered_discard_choice_popup() -> void:
 	controls.add_child(_ordered_discard_confirm_button)
 
 
+func _create_ranger_blend_popup() -> void:
+	_ranger_blend_popup = PopupPanel.new()
+	_ranger_blend_popup.title = "调配特调"
+	_ranger_blend_popup.exclusive = true
+	add_child(_ranger_blend_popup)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_ranger_blend_popup.add_child(margin)
+
+	_ranger_blend_list = VBoxContainer.new()
+	_ranger_blend_list.custom_minimum_size = Vector2(360, 0)
+	_ranger_blend_list.add_theme_constant_override("separation", 8)
+	margin.add_child(_ranger_blend_list)
+
+
+func _show_ranger_blend_popup(unit: BattleUnitState) -> void:
+	if unit == null or unit != controller.current_unit or not unit.is_ranger():
+		return
+	_clear_children(_ranger_blend_list)
+	var title := Label.new()
+	title.text = "选择配方与装填武器"
+	_ranger_blend_list.add_child(title)
+	for blend in [
+		BattleSurfaceState.Element.STEAM,
+		BattleSurfaceState.Element.LAVA,
+		BattleSurfaceState.Element.BLAZE,
+		BattleSurfaceState.Element.POISON_BOG,
+		BattleSurfaceState.Element.ICE,
+		BattleSurfaceState.Element.SANDSTORM,
+	]:
+		var ingredients: Array[int] = controller.surface_state.get_component_elements(blend)
+		if not unit.ranger_state.can_pay_elements(ingredients):
+			continue
+		var row := HBoxContainer.new()
+		var recipe_label := Label.new()
+		recipe_label.text = BattleSurfaceState.label(blend)
+		recipe_label.custom_minimum_size.x = 100
+		row.add_child(recipe_label)
+		for slot in ["weapon", "paired"]:
+			var button := Button.new()
+			button.text = "匕首" if slot == "weapon" else "弩"
+			button.pressed.connect(_on_ranger_blend_selected.bind(unit, blend, slot))
+			row.add_child(button)
+		_ranger_blend_list.add_child(row)
+	_ranger_blend_popup.popup_centered()
+
+
+func _on_ranger_blend_selected(unit: BattleUnitState, blend: int, equipment_slot: String) -> void:
+	_ranger_blend_popup.hide()
+	controller.prepare_ranger_blend(unit, blend, equipment_slot)
+	_refresh()
+
+
+func _show_ranger_card_recipe_popup(card: CardData, play_mode: int, context: Dictionary) -> void:
+	_ranger_recipe_card = card
+	_ranger_recipe_play_mode = play_mode
+	_clear_children(_ranger_blend_list)
+	var title := Label.new()
+	title.text = "%s：选择配方与催化剂" % card.card_name
+	_ranger_blend_list.add_child(title)
+	for option in card.get_ranger_recipe_options(context):
+		var button := Button.new()
+		button.text = str(option.get("label", "配方"))
+		button.pressed.connect(_on_ranger_card_recipe_selected.bind(option))
+		_ranger_blend_list.add_child(button)
+	_ranger_blend_popup.popup_centered()
+
+
+func _on_ranger_card_recipe_selected(option: Dictionary) -> void:
+	var card := _ranger_recipe_card
+	var play_mode := _ranger_recipe_play_mode
+	_ranger_recipe_card = null
+	_ranger_recipe_play_mode = CardEnums.CardPlayMode.NORMAL
+	_ranger_blend_popup.hide()
+	if card == null:
+		return
+	pending_extra_context = option.duplicate(true)
+	if _is_direct_card_target(card, play_mode):
+		_play_direct_card(card, play_mode, pending_extra_context)
+	else:
+		_begin_card_targeting(card, play_mode)
+	_refresh()
+
+
+func _show_ranger_enemy_hand_choice(target: BattleUnitState) -> void:
+	if pending_card == null or target == null:
+		return
+	_ranger_enemy_hand_target = target
+	_clear_children(_ranger_blend_list)
+	var title := Label.new()
+	title.text = "窃取预案：选择 %s 的一张手牌" % target.get_display_name()
+	_ranger_blend_list.add_child(title)
+	var effect := pending_card.effect as RangerStealPlanCardEffect
+	var context := pending_extra_context.duplicate()
+	context["controller"] = controller
+	context["user"] = controller.current_unit
+	context["card"] = pending_card
+	var copyable := effect.get_copyable_enemy_cards(context, target)
+	var dagger_mode := pending_equipment_slot != "paired"
+	for enemy_card in target.hand:
+		if enemy_card == null:
+			continue
+		var button := Button.new()
+		button.text = enemy_card.card_name
+		button.tooltip_text = _build_card_tooltip(enemy_card)
+		button.disabled = dagger_mode and not copyable.has(enemy_card)
+		button.pressed.connect(_on_ranger_enemy_hand_selected.bind(enemy_card))
+		_ranger_blend_list.add_child(button)
+	_ranger_blend_popup.popup_centered()
+
+
+func _on_ranger_enemy_hand_selected(enemy_card: CardData) -> void:
+	var target := _ranger_enemy_hand_target
+	_ranger_enemy_hand_target = null
+	_ranger_blend_popup.hide()
+	if pending_card == null or target == null or enemy_card == null:
+		return
+	var play_context := pending_extra_context.duplicate()
+	play_context["equipment_slot"] = pending_equipment_slot
+	play_context["selected_enemy_card"] = enemy_card
+	if controller.play_card(controller.current_unit, pending_card, [target], play_context, pending_play_mode):
+		_clear_input()
+		_hide_discard_popup()
+	_refresh()
+
+
 func _show_draw_pile_choice(card: CardData, play_mode: int) -> void:
 	var unit := controller.current_unit
 	if unit == null or card == null:
@@ -1117,6 +1352,8 @@ func _show_ordered_discard_choice(card: CardData, play_mode: int, extra_context:
 	context["play_mode"] = play_mode
 	var choices := card.get_ordered_discard_choice_cards(context)
 	_ordered_discard_card = card
+	_ordered_discard_is_ranger_debt = false
+	_ordered_discard_is_discard_activation = bool(extra_context.get("ranger_discard_activation", false))
 	_ordered_discard_play_mode = play_mode
 	_ordered_discard_extra_context = extra_context.duplicate()
 	_ordered_discard_selected_cards.clear()
@@ -1147,6 +1384,56 @@ func _show_ordered_discard_choice(card: CardData, play_mode: int, extra_context:
 	_ordered_discard_popup.popup_centered()
 
 
+func _show_ranger_discard_debt(unit: BattleUnitState) -> void:
+	if unit == null or not unit.is_ranger():
+		return
+	_ordered_discard_card = null
+	_ordered_discard_is_ranger_debt = true
+	_ordered_discard_selected_cards.clear()
+	_ordered_discard_max_count = mini(unit.ranger_state.discard_debt, unit.hand.size())
+	_ordered_discard_min_count = _ordered_discard_max_count
+	_clear_children(_ordered_discard_list)
+	var title := Label.new()
+	title.text = "支付弃牌债务：选择 %d 张手牌弃置" % _ordered_discard_max_count
+	_ordered_discard_list.add_child(title)
+	for choice in unit.hand:
+		if choice == null:
+			continue
+		var button := Button.new()
+		button.text = "%s | %s" % [choice.card_name, choice.get_card_type_label()]
+		button.tooltip_text = _build_card_tooltip(choice)
+		button.pressed.connect(_add_ordered_discard_choice.bind(choice))
+		_ordered_discard_list.add_child(button)
+	_refresh_ordered_discard_selected_label()
+	_ordered_discard_popup.popup_centered()
+
+
+func _show_ranger_pending_hand_discard(unit: BattleUnitState) -> void:
+	if unit == null or not unit.is_ranger() or unit.hand.is_empty():
+		return
+	_ordered_discard_card = null
+	_ordered_discard_is_ranger_debt = false
+	_ordered_discard_is_discard_activation = false
+	_ordered_discard_is_pending_ranger = true
+	_ordered_discard_selected_cards.clear()
+	_ordered_discard_max_count = mini(unit.ranger_state.pending_hand_discard_count, unit.hand.size())
+	_ordered_discard_min_count = _ordered_discard_max_count
+	_clear_children(_ordered_discard_list)
+	var title := Label.new()
+	title.text = "选择 %d 张手牌弃置" % _ordered_discard_max_count
+	_ordered_discard_list.add_child(title)
+	for choice in unit.hand:
+		if choice == null:
+			continue
+		var button := Button.new()
+		button.text = "%s | %s" % [choice.card_name, choice.get_card_type_label()]
+		button.tooltip_text = _build_card_tooltip(choice)
+		button.pressed.connect(_add_ordered_discard_choice.bind(choice))
+		_ordered_discard_list.add_child(button)
+	_refresh_ordered_discard_selected_label()
+	_ordered_discard_popup.popup_centered()
+
+
 func _add_ordered_discard_choice(card: CardData) -> void:
 	if _actions_locked() or card == null:
 		return
@@ -1168,7 +1455,12 @@ func _clear_ordered_discard_selection() -> void:
 
 
 func _cancel_ordered_discard_choice() -> void:
+	if _ordered_discard_is_pending_ranger:
+		return
 	_ordered_discard_card = null
+	_ordered_discard_is_ranger_debt = false
+	_ordered_discard_is_discard_activation = false
+	_ordered_discard_is_pending_ranger = false
 	_ordered_discard_play_mode = CardEnums.CardPlayMode.NORMAL
 	_ordered_discard_extra_context.clear()
 	_ordered_discard_selected_cards.clear()
@@ -1202,6 +1494,58 @@ func _confirm_ordered_discard_choice() -> void:
 	if _actions_locked():
 		return
 	if _ordered_discard_selected_cards.size() < _ordered_discard_min_count:
+		return
+
+	if _ordered_discard_is_ranger_debt:
+		var unit := controller.current_unit
+		var selected_cards := _ordered_discard_selected_cards.duplicate()
+		_ordered_discard_is_ranger_debt = false
+		_ordered_discard_selected_cards.clear()
+		_ordered_discard_min_count = 0
+		_ordered_discard_max_count = 0
+		_ordered_discard_popup.hide()
+		if unit != null and unit.is_ranger():
+			for selected_card in selected_cards:
+				unit.discard_card(selected_card, {
+					"controller": controller,
+					"source": unit,
+					"reason": "ranger_discard_debt",
+				})
+			unit.ranger_state.discard_debt = 0
+		controller.end_current_turn()
+		_refresh()
+		return
+	if _ordered_discard_is_pending_ranger:
+		var pending_unit := controller.current_unit
+		var pending_cards := _ordered_discard_selected_cards.duplicate()
+		_ordered_discard_is_pending_ranger = false
+		_ordered_discard_selected_cards.clear()
+		_ordered_discard_min_count = 0
+		_ordered_discard_max_count = 0
+		_ordered_discard_popup.hide()
+		if pending_unit != null and pending_unit.is_ranger():
+			for selected_card in pending_cards:
+				pending_unit.discard_card(selected_card, {
+					"controller": controller,
+					"source": pending_unit,
+					"reason": "ranger_pending_hand_discard",
+				})
+			pending_unit.ranger_state.pending_hand_discard_count = 0
+		_refresh()
+		return
+	if _ordered_discard_is_discard_activation:
+		var discard_action_card := _ordered_discard_card
+		var discard_context := _ordered_discard_extra_context.duplicate()
+		discard_context["ordered_discard_cards"] = _ordered_discard_selected_cards.duplicate()
+		_ordered_discard_is_discard_activation = false
+		_ordered_discard_card = null
+		_ordered_discard_extra_context.clear()
+		_ordered_discard_selected_cards.clear()
+		_ordered_discard_min_count = 0
+		_ordered_discard_max_count = 0
+		_ordered_discard_popup.hide()
+		controller.activate_discard_card(controller.current_unit, discard_action_card, discard_context)
+		_refresh()
 		return
 
 	var card := _ordered_discard_card

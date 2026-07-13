@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_desperate_string_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_only_hand_combo_condition.tres" id="4_combo"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "绝处续弦"
+description = "武器打击。若本牌是唯一手牌，可作为连击牌打出；打击完成后抽 3 张，再选择并弃 1 张。"
+artwork = ExtResource("2_art")
+rarity = 1
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 1
+effect = ExtResource("3_effect")
+has_combo = true
+combo_conditions = [ExtResource("4_combo")]

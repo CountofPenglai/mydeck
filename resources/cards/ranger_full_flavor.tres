@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_full_flavor_effect.tres" id="3"]
+[resource]
+script = ExtResource("1")
+card_name = "百味齐备"
+description = "抽 2 张；元素库存至少有 2 种时额外抽 1 张，四种齐全时再额外抽 1 张。"
+artwork = ExtResource("2")
+rarity = 1
+card_class = 3
+card_type = 1
+target_type = 4
+ap_cost = 1
+effect = ExtResource("3")

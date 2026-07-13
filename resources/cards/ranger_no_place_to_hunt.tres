@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_no_place_to_hunt_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "无处不猎"
+description = "武器打击。每场3次：本牌在弃牌堆且手牌变空，或在牌库且本回合打出第3张牌时，自动移回手牌。"
+artwork = ExtResource("2_scroll")
+rarity = 2
+card_class = 3
+card_type = 0
+damage_type = 3
+target_type = 1
+ap_cost = 1
+effect = ExtResource("3_effect")

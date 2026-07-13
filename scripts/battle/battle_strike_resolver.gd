@@ -30,17 +30,39 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	profile_context["target"] = target
 	profile_context["label"] = label
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
-	var primary_base_damage := maxi(0, profile.primary_base_damage + profile.primary_damage_bonus + damage_modifier)
-	var primary_damage := _apply_damage_multiplier(primary_base_damage, damage_multiplier)
-	var actual_damage := controller.apply_damage(attacker, target, primary_damage, label)
+	var resolved_multiplier := damage_multiplier
+	if options.has("ranger_attack_multiplier"):
+		resolved_multiplier *= float(options.get("ranger_attack_multiplier", 1.0))
+	elif not bool(options.get("skip_ranger_ambush", false)):
+		resolved_multiplier *= controller.consume_ranger_stealth_for_attack(
+			attacker,
+			float(options.get("ranger_ambush_override", 0.0))
+		)
+	var primary_weapon_damage := int(options.get("primary_base_damage_override", profile.primary_base_damage))
+	var primary_base_damage := maxi(0, primary_weapon_damage + profile.primary_damage_bonus + damage_modifier)
+	var primary_damage := _apply_damage_multiplier(primary_base_damage, resolved_multiplier)
+	var damage_metadata := {
+		"strike": true,
+		"range_type": profile.primary_range_type,
+		"equipment_slot": equipment_slot,
+		"source_card": source,
+		"ignore_ranged_surface_reduction": bool(options.get("ignore_ranged_surface_reduction", false)),
+	}
+	var actual_damage := controller.apply_damage(attacker, target, primary_damage, label, damage_metadata)
 	var hit_results: Array[StrikeHitResult] = [
 		StrikeHitResult.create(profile.primary_slot, profile.primary_equipment, primary_damage, actual_damage)
 	]
 
 	if profile.add_offhand and target.is_alive():
 		var offhand_base_damage := maxi(0, profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier)
-		var offhand_damage := _apply_damage_multiplier(offhand_base_damage, damage_multiplier)
-		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label)
+		var offhand_damage := _apply_damage_multiplier(offhand_base_damage, resolved_multiplier)
+		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label, {
+			"strike": true,
+			"range_type": profile.primary_range_type,
+			"equipment_slot": "off",
+			"source_card": source,
+			"ignore_ranged_surface_reduction": bool(options.get("ignore_ranged_surface_reduction", false)),
+		})
 		actual_damage += offhand_actual
 		hit_results.append(StrikeHitResult.create("off", profile.offhand_equipment, offhand_damage, offhand_actual))
 
@@ -56,7 +78,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"damage_amount": primary_damage,
 		"base_damage_amount": primary_base_damage,
 		"damage_modifier": damage_modifier,
-		"damage_multiplier": damage_multiplier,
+		"damage_multiplier": resolved_multiplier,
 		"actual_damage": actual_damage,
 		"label": label,
 		"strike_profile": profile.to_dict(),
@@ -65,6 +87,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"attack_result_objects": hit_results,
 	}
 	attacker.notify_after_strike(trigger_context)
+	controller.resolve_ranger_after_strike(trigger_context)
 	controller.enqueue_trigger(Callable(controller, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
 	return actual_damage
 

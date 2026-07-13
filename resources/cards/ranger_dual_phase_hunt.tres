@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_dual_phase_hunt_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "双相猎影"
+description = "进入潜行，分别获得一次进攻续接和一次防御续接：主动攻击破隐或敌方行动被潜行抵消后，可各重新进入潜行一次。两次耗尽或下回合结束时弃置。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 3
+card_type = 1
+target_type = 4
+ap_cost = 2
+effect = ExtResource("3_effect")

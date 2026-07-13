@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_hunting_ground_lockdown_effect.tres" id="3"]
+[resource]
+script = ExtResource("1")
+card_name = "猎场封锁"
+description = "附魔：进入潜行并选择武器模式。下回合开始前，首个在该模式范围内完成出牌的敌人触发范围伏击。"
+artwork = ExtResource("2")
+rarity = 1
+card_class = 3
+card_type = 1
+target_type = 4
+ap_cost = 2
+effect = ExtResource("3")

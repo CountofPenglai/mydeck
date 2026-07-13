@@ -1,0 +1,5 @@
+[gd_resource type="Resource" script_class="RangerCrossHuntStepCardEffect" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/cards/ranger_cross_hunt_step_card_effect.gd" id="1"]
+[resource]
+script = ExtResource("1")
+next_dagger_multiplier = 1.5

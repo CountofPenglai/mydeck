@@ -1,16 +1,36 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=6 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=25 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_ranger_data.tres" id="2_character_data"]
 [ext_resource type="Resource" path="res://resources/cards/battle_strike_stack.tres" id="3_card_stack"]
 [ext_resource type="Resource" path="res://resources/cards/piercing_shot_stack.tres" id="4_shot"]
-[ext_resource type="Resource" path="res://resources/items/training_bow.tres" id="5_weapon"]
+[ext_resource type="Resource" path="res://resources/items/ranger_dagger_crossbow.tres" id="5_weapon"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_perilous_assault_stack.tres" id="6_perilous"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_shadow_passage_stack.tres" id="7_shadow"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_overdrawn_inspiration_stack.tres" id="8_overdrawn"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_relentless_backslash_stack.tres" id="9_backslash"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_waiting_prey_stack.tres" id="10_waiting"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_hunting_ground_lockdown_stack.tres" id="11_lockdown"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_seamless_pursuit_stack.tres" id="12_pursuit"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_cross_hunt_step_stack.tres" id="13_cross_step"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_full_flavor_stack.tres" id="14_flavor"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_exotic_sampling_stack.tres" id="15_sampling"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_crossbow_tether_stack.tres" id="16_tether"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_desperate_string_stack.tres" id="17_string"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_steal_plan_stack.tres" id="18_plan"]
+[ext_resource type="Resource" path="res://resources/cards/hidden_blade_again_stack.tres" id="19_hidden_blade"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_tri_phase_dissection_stack.tres" id="20_dissection"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_dual_phase_hunt_stack.tres" id="21_dual_hunt"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_exotic_bottle_stack.tres" id="22_bottle"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_final_hunt_declaration_stack.tres" id="23_final_hunt"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_no_place_to_hunt_stack.tres" id="24_no_place"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_hunter_three_acts_stack.tres" id="25_three_acts"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 28
-deck = [ExtResource("3_card_stack"), ExtResource("4_shot")]
+deck = [ExtResource("3_card_stack"), ExtResource("4_shot"), ExtResource("6_perilous"), ExtResource("7_shadow"), ExtResource("8_overdrawn"), ExtResource("9_backslash"), ExtResource("10_waiting"), ExtResource("11_lockdown"), ExtResource("12_pursuit"), ExtResource("13_cross_step"), ExtResource("14_flavor"), ExtResource("15_sampling"), ExtResource("16_tether"), ExtResource("17_string"), ExtResource("18_plan"), ExtResource("19_hidden_blade"), ExtResource("20_dissection"), ExtResource("21_dual_hunt"), ExtResource("22_bottle"), ExtResource("23_final_hunt"), ExtResource("24_no_place"), ExtResource("25_three_acts")]
 weapon_equipment = ExtResource("5_weapon")
 weapon_face = 0
 extra_ap_bonus = 0

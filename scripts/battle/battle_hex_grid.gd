@@ -3,6 +3,14 @@ class_name BattleHexGrid
 
 const INVALID_CELL := Vector2i(-1, -1)
 const SQRT_THREE := 1.7320508075688772
+const AXIAL_DIRECTIONS: Array[Vector2i] = [
+	Vector2i(1, 0),
+	Vector2i(1, -1),
+	Vector2i(0, -1),
+	Vector2i(-1, 0),
+	Vector2i(-1, 1),
+	Vector2i(0, 1),
+]
 
 
 static func offset_to_axial(cell: Vector2i) -> Vector2i:
@@ -63,6 +71,14 @@ static func line(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 		var cell := axial_to_offset(_round_axial(interpolated))
 		if result.is_empty() or result.back() != cell:
 			result.append(cell)
+	return result
+
+
+static func neighbors(cell: Vector2i) -> Array[Vector2i]:
+	var axial := offset_to_axial(cell)
+	var result: Array[Vector2i] = []
+	for direction in AXIAL_DIRECTIONS:
+		result.append(axial_to_offset(axial + direction))
 	return result
 
 

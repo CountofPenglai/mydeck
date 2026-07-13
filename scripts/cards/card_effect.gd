@@ -8,6 +8,14 @@ func can_play(_context: Dictionary = {}) -> bool:
 	return true
 
 
+func can_pay_play_cost(_context: Dictionary = {}) -> bool:
+	return true
+
+
+func pay_play_cost(_context: Dictionary = {}) -> bool:
+	return true
+
+
 func get_valid_targets(_context: Dictionary = {}) -> Array:
 	return []
 
@@ -30,6 +38,14 @@ func play(_context: Dictionary = {}, _targets: Array = []) -> void:
 
 
 func on_zone_owner_card_ap_cost_paid(_owner: BattleUnitState, _zone_card: CardData, _played_card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_zone_owner_after_card_played(_owner: BattleUnitState, _zone_card: CardData, _played_card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_zone_owner_turn_end(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> void:
 	pass
 
 
@@ -90,6 +106,26 @@ func requires_draw_pile_choice(_context: Dictionary = {}) -> bool:
 
 
 func requires_ordered_discard_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func requires_ranger_recipe_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_ranger_recipe_options(_context: Dictionary = {}) -> Array[Dictionary]:
+	return []
+
+
+func can_activate_from_discard(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_discard_action_label(_context: Dictionary = {}) -> String:
+	return ""
+
+
+func activate_from_discard(_context: Dictionary = {}) -> bool:
 	return false
 
 

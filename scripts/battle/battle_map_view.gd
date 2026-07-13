@@ -1,6 +1,8 @@
 extends Control
 class_name BattleMapView
 
+const BattleSurfaceState = preload("res://scripts/battle/battle_surface_state.gd")
+
 const DRAG_THRESHOLD := 8.0
 const FIT_PADDING := 32.0
 const LEGAL_FILL := Color(0.52, 1.0, 0.6, 0.22)
@@ -138,6 +140,7 @@ func _draw() -> void:
 func _draw_map_space() -> void:
 	draw_set_transform(view_offset, 0.0, Vector2(view_zoom, view_zoom))
 	_draw_background()
+	_draw_element_surfaces()
 	_draw_static_zones()
 	_draw_target_preview()
 	_draw_units()
@@ -165,6 +168,17 @@ func _draw_static_zones() -> void:
 			_draw_hex_cell(cell, Color(0.85, 0.25, 0.18, 0.14), Color(0.9, 0.38, 0.25, 0.48))
 
 
+func _draw_element_surfaces() -> void:
+	if controller == null or controller.surface_state == null:
+		return
+	for cell in controller.map_data.get_all_cells():
+		var element: int = controller.surface_state.get_element(cell)
+		if element == BattleSurfaceState.Element.NONE:
+			continue
+		var fill: Color = BattleSurfaceState.color(element)
+		_draw_hex_cell(cell, fill, fill.lightened(0.24))
+
+
 func _draw_target_preview() -> void:
 	if battle_scene == null:
 		return
@@ -178,6 +192,8 @@ func _draw_target_preview() -> void:
 			_draw_basic_attack_preview()
 		BattleScene.InputMode.CARD_TARGET:
 			_draw_card_target_preview(preview)
+		BattleScene.InputMode.CARD_LANDING:
+			_draw_card_landing_preview(preview)
 
 
 func _draw_move_preview() -> void:
@@ -227,6 +243,22 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 func _draw_area_card_preview(unit: BattleUnitState, card: CardData, equipment_slot: String, play_mode: int, extra_context: Dictionary) -> void:
 	for cell in controller.map_data.get_all_cells():
 		if controller.can_preview_card_targets(unit, card, [cell], equipment_slot, play_mode, extra_context):
+			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
+
+
+func _draw_card_landing_preview(preview: Dictionary) -> void:
+	var unit := controller.current_unit
+	var card: CardData = preview.get("pending_card") as CardData
+	var target: BattleUnitState = preview.get("pending_unit_target") as BattleUnitState
+	if unit == null or card == null or target == null:
+		return
+	var equipment_slot := str(preview.get("pending_equipment_slot", ""))
+	var play_mode := int(preview.get("pending_play_mode", CardEnums.CardPlayMode.NORMAL))
+	var raw_context: Variant = preview.get("pending_extra_context", {})
+	var extra_context: Dictionary = (raw_context as Dictionary).duplicate() if raw_context is Dictionary else {}
+	for cell in controller.map_data.get_all_cells():
+		extra_context["landing_cell"] = cell
+		if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
 			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 
 

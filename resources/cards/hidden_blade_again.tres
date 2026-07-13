@@ -13,6 +13,7 @@ description = "进行一次武器打击。连击：自动弃置 1 张其他手�
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1
+allowed_classes = PackedInt32Array(1, 3)
 card_type = 0
 card_tags = 1
 damage_type = 3

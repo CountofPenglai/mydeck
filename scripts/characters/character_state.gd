@@ -18,6 +18,7 @@ class_name CharacterState
 @export_range(0, 1, 1) var off_hand_face: int = 0
 @export var inventory: Array[InventoryStack] = []
 @export var class_resources: Array[ResourcePoolState] = []
+@export var ranger_element_inventory: Dictionary = {}
 @export var extra_ap_bonus: int = 0
 @export_group("Attribute Bonuses")
 @export var strength_bonus: int = 0
@@ -201,7 +202,10 @@ func has_equipment_subcategory(subcategory: String) -> bool:
 
 
 func needs_weapon_choice() -> bool:
-	return false
+	var weapon := get_active_weapon_equipment()
+	return weapon != null \
+		and weapon.paired_component != null \
+		and weapon.paired_attack_mode == EquipmentData.PairedAttackMode.SELECT_ONE
 
 
 func get_attack_weapon_options() -> Array:
@@ -209,6 +213,9 @@ func get_attack_weapon_options() -> Array:
 	var primary_weapon := get_active_weapon_equipment()
 	if primary_weapon != null:
 		options.append(_make_equipment_option("weapon", primary_weapon, weapon_face))
+		if primary_weapon.paired_component != null \
+				and primary_weapon.paired_attack_mode == EquipmentData.PairedAttackMode.SELECT_ONE:
+			options.append(_make_equipment_option("paired", primary_weapon.paired_component, 0))
 	if options.is_empty():
 		options.append({
 			"slot": "unarmed",
@@ -243,7 +250,10 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 		profile.primary_range_type = primary_equipment.range_type
 
 	var secondary := get_active_off_hand_equipment()
-	if weapon_equipment != null and weapon_equipment.has_secondary_damage_segment(weapon_face) and secondary != null:
+	if primary_slot != "paired" \
+			and weapon_equipment != null \
+			and weapon_equipment.has_secondary_damage_segment(weapon_face) \
+			and secondary != null:
 		profile.add_offhand = true
 		profile.offhand_equipment = secondary
 		profile.offhand_base_damage = secondary.base_damage
@@ -257,6 +267,8 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 
 
 func get_equipment_for_attack_slot(slot: String) -> EquipmentData:
+	if slot == "paired":
+		return get_active_off_hand_equipment()
 	if slot in ["weapon", "weapon_alt", "main", "off"]:
 		return get_active_weapon_equipment()
 
@@ -408,7 +420,7 @@ func get_off_hand_label() -> String:
 
 
 func _make_equipment_option(slot: String, equipment: EquipmentData, face_index: int = 0) -> Dictionary:
-	var slot_label := "武器"
+	var slot_label := "副组件" if slot == "paired" else "武器"
 	if face_index == 1:
 		slot_label = "武器形态2"
 	return {
@@ -423,6 +435,8 @@ func _make_equipment_option(slot: String, equipment: EquipmentData, face_index: 
 
 
 func _resolve_primary_attack_slot(equipment_slot: String = "") -> String:
+	if equipment_slot == "paired" and get_active_off_hand_equipment() != null:
+		return "paired"
 	if equipment_slot in ["weapon", "weapon_alt", "main", "off"]:
 		return "weapon" if get_active_weapon_equipment() != null else "unarmed"
 	if get_active_weapon_equipment() != null:

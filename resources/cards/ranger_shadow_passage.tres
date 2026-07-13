@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_shadow_passage_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_shadow_passage_combo_condition.tres" id="4"]
+[resource]
+script = ExtResource("1")
+card_name = "猎影穿行"
+description = "选择范围 3 内且与敌人相邻的空格，特殊移动至该格并进入潜行。连击：其他手牌不少于 6 张。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 3
+card_type = 1
+target_type = 3
+ap_cost = 1
+override_range = true
+card_range = 3
+effect = ExtResource("3")
+has_combo = true
+combo_conditions = [ExtResource("4")]

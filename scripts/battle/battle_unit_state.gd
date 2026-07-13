@@ -2,6 +2,7 @@ extends Resource
 class_name BattleUnitState
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 
 enum Faction {
 	PLAYER,
@@ -35,6 +36,8 @@ var turn_serial: int = 0
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
 var druid_temporary_mana: int = 0
+var battle_controller: BattleController
+var ranger_state := RangerCombatState.new()
 
 func setup_player(id: int, state: CharacterState, default_token_radius: float) -> void:
 	unit_id = id
@@ -52,6 +55,9 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	active_card_damage_bonuses.clear()
 	turn_serial = 0
 	_reset_druid_state()
+	ranger_state.reset_for_battle()
+	if character_state != null:
+		ranger_state.load_element_inventory(character_state.ranger_element_inventory)
 
 
 func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> void:
@@ -71,6 +77,7 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	active_card_damage_bonuses.clear()
 	turn_serial = 0
 	_reset_druid_state()
+	ranger_state.reset_for_battle()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
@@ -87,6 +94,7 @@ func start_turn(config: BattleConfig) -> void:
 	current_ap = get_max_ap(config)
 	druid_prepare_used = false
 	druid_temporary_mana = 0
+	ranger_state.start_turn(turn_serial)
 
 
 func get_display_name() -> String:
@@ -115,9 +123,10 @@ func set_current_health(value: int) -> void:
 
 
 func apply_damage(amount: int) -> int:
-	var actual := maxi(0, amount)
-	set_current_health(get_current_health() - actual)
-	return actual
+	var requested := maxi(0, amount)
+	var before := get_current_health()
+	set_current_health(before - requested)
+	return before - get_current_health()
 
 
 func is_alive() -> bool:
@@ -144,23 +153,27 @@ func get_attack() -> int:
 func get_damage_bonus(context: Dictionary = {}) -> int:
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
+	var result := 0
 	if character_state != null:
-		return character_state.get_damage_bonus(merged_context)
-	if enemy_state != null:
-		return enemy_state.get_damage_bonus(merged_context)
-
-	return 0
+		result = character_state.get_damage_bonus(merged_context)
+	elif enemy_state != null:
+		result = enemy_state.get_damage_bonus(merged_context)
+	if battle_controller != null:
+		result += battle_controller.get_surface_damage_bonus(self)
+	return result
 
 
 func get_damage_reduction(context: Dictionary = {}) -> int:
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
+	var result := get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 	if character_state != null:
-		return character_state.get_damage_reduction(merged_context) + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
-	if enemy_state != null:
-		return enemy_state.get_damage_reduction() + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
-
-	return get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
+		result += character_state.get_damage_reduction(merged_context)
+	elif enemy_state != null:
+		result += enemy_state.get_damage_reduction()
+	if battle_controller != null:
+		result += battle_controller.get_surface_damage_reduction(self, merged_context)
+	return result
 
 
 func get_character_class() -> int:
@@ -168,6 +181,46 @@ func get_character_class() -> int:
 		return character_state.character_data.character_class
 
 	return CardEnums.CardClass.NEUTRAL
+
+
+func is_ranger() -> bool:
+	return get_character_class() == CardEnums.CardClass.RANGER
+
+
+func enter_stealth() -> bool:
+	if not is_ranger() or not is_alive():
+		return false
+	ranger_state.stealth_active = true
+	ranger_state.stealth_expires_turn_serial = turn_serial + 1
+	return true
+
+
+func leave_stealth() -> bool:
+	if not ranger_state.stealth_active:
+		return false
+	ranger_state.stealth_active = false
+	_notify_status_effects("on_ranger_stealth_ended", [], {
+		"controller": battle_controller,
+		"unit": self,
+	})
+	return true
+
+
+func is_stealthed() -> bool:
+	return ranger_state.stealth_active
+
+
+func collect_ranger_element(element: int, amount: int = 1) -> int:
+	if not is_ranger():
+		return 0
+	var added := ranger_state.add_element(element, amount)
+	sync_ranger_element_inventory()
+	return added
+
+
+func sync_ranger_element_inventory() -> void:
+	if character_state != null and is_ranger():
+		character_state.ranger_element_inventory = ranger_state.element_inventory.duplicate(true)
 
 
 func get_class_resource(resource_name: String) -> ResourcePoolState:
@@ -355,6 +408,28 @@ func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_card_ap_cost_paid", [card], event_context)
 
 
+func notify_after_card_played(card: CardData, context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	_notify_status_effects("on_after_card_played", [card], event_context)
+	_notify_zone_card_effects("on_zone_owner_after_card_played", [card], event_context)
+
+
+func notify_ranger_stealth_cancelled(context: Dictionary = {}) -> void:
+	_notify_status_effects("on_ranger_stealth_cancelled", [], _with_unit_context(context))
+
+
+func notify_enemy_movement_completed(enemy: BattleUnitState, context: Dictionary = {}) -> void:
+	_notify_status_effects("on_enemy_movement_completed", [enemy], _with_unit_context(context))
+
+
+func notify_enemy_card_completed(enemy: BattleUnitState, card: CardData, context: Dictionary = {}) -> void:
+	_notify_status_effects("on_enemy_card_completed", [enemy, card], _with_unit_context(context))
+
+
+func notify_zone_turn_end(context: Dictionary = {}) -> void:
+	_notify_zone_card_effects("on_zone_owner_turn_end", [], _with_unit_context(context))
+
+
 func get_status_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := 0
 	for status in statuses:
@@ -443,12 +518,21 @@ func get_starting_hand_size(config: BattleConfig) -> int:
 
 
 func get_attack_range(equipment_slot: String = "") -> int:
+	var result := 0
 	if character_state != null:
-		return character_state.get_attack_range(equipment_slot)
-	if enemy_state != null:
-		return enemy_state.get_attack_range(equipment_slot)
-
-	return 0
+		result = character_state.get_attack_range(equipment_slot)
+	elif enemy_state != null:
+		result = enemy_state.get_attack_range(equipment_slot)
+	if battle_controller != null:
+		result = battle_controller.modify_attack_range_for_surface(self, result, equipment_slot)
+	var profile := build_strike_profile_object(equipment_slot, {"skip_surface_range": true})
+	var range_context := {"equipment_slot": equipment_slot, "range_type": profile.primary_range_type}
+	for status in statuses:
+		if status != null:
+			result = status.modify_attack_range(self, result, range_context)
+	if not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
+		return 0
+	return maxi(0, result)
 
 
 func build_strike_profile_object(equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
@@ -817,6 +901,14 @@ func move_discard_card_to_hand(card: CardData) -> bool:
 	return true
 
 
+func move_draw_card_to_hand(card: CardData) -> bool:
+	if card == null or not draw_pile.has(card):
+		return false
+	draw_pile.erase(card)
+	hand.append(card)
+	return true
+
+
 func banish_discard_card(card: CardData) -> bool:
 	var index := discard_pile.find(card)
 	if index < 0:
@@ -1055,7 +1147,11 @@ func get_armor_stacks() -> int:
 
 
 func gain_armor(amount: int, context: Dictionary = {}) -> int:
-	var actual := maxi(0, amount)
+	var modified_amount := amount
+	for status in statuses:
+		if status != null:
+			modified_amount = status.modify_armor_gain(self, modified_amount, context)
+	var actual := maxi(0, modified_amount)
 	if actual <= 0:
 		return 0
 	var previous := get_armor_stacks()

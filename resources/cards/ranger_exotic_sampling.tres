@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_exotic_sampling_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "异域取样"
+description = "武器打击。匕首首次造成正数生命伤害后，按通用规则采集目标格，再额外采集游侠当前格；弩首次造成正数生命伤害后采集目标格一次。"
+artwork = ExtResource("2_art")
+rarity = 1
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 1
+effect = ExtResource("3_effect")

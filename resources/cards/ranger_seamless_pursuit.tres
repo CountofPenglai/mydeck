@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_seamless_pursuit_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_seamless_pursuit_combo_condition.tres" id="4"]
+[resource]
+script = ExtResource("1")
+card_name = "无缝追击"
+description = "选择武器模式并打击。连击：选择并弃置 2 张其他手牌；本回合下一张手牌以 0 AP 万能接续。"
+artwork = ExtResource("2")
+rarity = 1
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 1
+effect = ExtResource("3")
+has_combo = true
+combo_conditions = [ExtResource("4")]

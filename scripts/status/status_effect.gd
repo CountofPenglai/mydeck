@@ -86,6 +86,18 @@ func modify_move_ap_cost(_unit: BattleUnitState, current_cost: int, _context: Di
 	return current_cost
 
 
+func modify_healing_received(_unit: BattleUnitState, current_amount: int, _context: Dictionary = {}) -> int:
+	return current_amount
+
+
+func modify_armor_gain(_unit: BattleUnitState, current_amount: int, _context: Dictionary = {}) -> int:
+	return current_amount
+
+
+func modify_attack_range(_unit: BattleUnitState, current_range: int, _context: Dictionary = {}) -> int:
+	return current_range
+
+
 func on_move_ap_cost_paid(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 

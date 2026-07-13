@@ -24,6 +24,11 @@ enum FaceSwitchMode {
 	TRIGGERED,
 }
 
+enum PairedAttackMode {
+	COMBINED,
+	SELECT_ONE,
+}
+
 @export_group("Combat")
 @export var base_damage: int = 1
 @export_range(0, 12, 1) var attack_range: int = 1
@@ -47,6 +52,7 @@ enum FaceSwitchMode {
 
 @export_group("Paired Equipment")
 @export var paired_component: EquipmentData
+@export_enum("双段", "二选一") var paired_attack_mode: int = PairedAttackMode.COMBINED
 
 @export_group("Effects")
 @export var passive_effects: Array[Resource] = []
@@ -117,6 +123,7 @@ func get_active_components(face_index: int = 0) -> Array[EquipmentData]:
 func has_secondary_damage_segment(face_index: int = 0) -> bool:
 	var face := get_face(face_index)
 	return face != null \
+		and face.paired_attack_mode == PairedAttackMode.COMBINED \
 		and face.paired_component != null \
 		and face.paired_component.is_weapon() \
 		and face.paired_component.base_damage > 0

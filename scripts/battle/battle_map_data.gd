@@ -2,6 +2,7 @@ extends Resource
 class_name BattleMapData
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+const BattleElementCell = preload("res://scripts/battle/battle_element_cell.gd")
 
 @export var map_size: Vector2 = Vector2(900, 600)
 @export var background_texture: Texture2D
@@ -12,6 +13,8 @@ const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 @export var grid_origin: Vector2 = Vector2(50, 45)
 @export_range(1, 16, 1) var player_deployment_columns: int = 3
 @export_range(1, 16, 1) var enemy_spawn_columns: int = 3
+@export_group("Elements")
+@export var element_cells: Array[BattleElementCell] = []
 
 func is_valid_cell(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.x < grid_columns and cell.y >= 0 and cell.y < grid_rows
