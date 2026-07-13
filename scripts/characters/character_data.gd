@@ -12,8 +12,8 @@ class_name CharacterData
 @export var base_strength: int = 0
 @export var base_agility: int = 5
 @export var base_intelligence: int = 0
-@export var base_attack_range: float = 70.0
-@export var collision_radius: float = 24.0
+@export_range(0, 12, 1) var base_attack_range: int = 1
+@export var battle_token_radius: float = 24.0
 
 @export_group("Class Resources")
 @export var default_resource_pools: Array[ResourcePoolData] = []

@@ -12,31 +12,30 @@ func _init() -> void:
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:
 	var controller = context.get("controller")
 	var user = context.get("user")
-	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2):
+	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2i):
 		return false
 
-	return controller.can_unit_reach_position_with_ap_and_agility_modifier(user, targets[0], move_ap_budget, agility_modifier, write_log)
+	return controller.can_unit_reach_cell_with_ap_and_agility_modifier(user, targets[0], move_ap_budget, agility_modifier, write_log)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller = context.get("controller")
 	var user = context.get("user")
 	var card = context.get("card")
-	if controller == null or user == null or targets.is_empty() or not (targets[0] is Vector2):
+	if controller == null or user == null or targets.is_empty() or not (targets[0] is Vector2i):
 		return
 
-	var requested_position: Vector2 = targets[0]
-	var movement = controller.apply_movement_effect(user, requested_position, agility_modifier, false, move_ap_budget)
+	var requested_cell: Vector2i = targets[0]
+	var movement = controller.apply_movement_effect(user, requested_cell, agility_modifier, false, move_ap_budget)
 	if not bool(movement.get("success", false)):
 		return
 
-	var start_position: Vector2 = movement.get("start_position", user.position)
-	var end_position: Vector2 = movement.get("end_position", user.position)
-	var hits = controller.get_units_in_swept_circle(
+	var start_cell: Vector2i = movement.get("start_cell", user.cell)
+	var end_cell: Vector2i = movement.get("end_cell", user.cell)
+	var hits = controller.get_units_along_hex_line(
 		user,
-		start_position,
-		end_position,
-		user.radius,
+		start_cell,
+		end_cell,
 		BattleController.UnitFilter.OPPONENTS
 	)
 	for target in hits:

@@ -59,7 +59,7 @@ func get_max_health() -> int:
 
 func get_attack() -> int:
 	var profile := build_strike_profile_object()
-	return profile.primary_power + profile.damage_bonus
+	return profile.primary_base_damage + profile.primary_damage_bonus
 
 
 func get_damage_bonus(context: Dictionary = {}) -> int:
@@ -87,18 +87,19 @@ func build_strike_profile_object(_equipment_slot: String = "", context: Dictiona
 	profile.primary_damage_type = _resolve_damage_type(context)
 	profile.add_offhand = false
 	profile.offhand_equipment = null
-	profile.offhand_power = 0
-	var power := 1
-	var attack_range := 80.0
+	profile.offhand_base_damage = 0
+	profile.offhand_damage_bonus = 0
+	var base_damage := 1
+	var attack_range := 1
 	if enemy_data != null:
-		power = enemy_data.innate_power
+		base_damage = enemy_data.innate_base_damage
 		attack_range = enemy_data.base_attack_range
 
-	profile.primary_power = power
+	profile.primary_base_damage = base_damage
 	profile.primary_range = attack_range
 	var damage_context := context.duplicate()
 	damage_context["resolved_damage_type"] = profile.primary_damage_type
-	profile.damage_bonus = get_damage_bonus(damage_context)
+	profile.primary_damage_bonus = get_damage_bonus(damage_context)
 	return profile
 
 
@@ -123,16 +124,16 @@ func get_intelligence() -> int:
 	return enemy_data.base_intelligence + intelligence_bonus
 
 
-func get_collision_radius() -> float:
+func get_battle_token_radius() -> float:
 	if enemy_data == null:
 		return 0.0
 
-	return enemy_data.collision_radius
+	return enemy_data.battle_token_radius
 
 
-func get_attack_range(_equipment_slot: String = "") -> float:
+func get_attack_range(_equipment_slot: String = "") -> int:
 	if enemy_data == null:
-		return 0.0
+		return 0
 
 	return enemy_data.base_attack_range
 

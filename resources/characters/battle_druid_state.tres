@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=11 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_druid_data.tres" id="2_character_data"]
@@ -10,12 +10,15 @@
 [ext_resource type="Resource" path="res://resources/cards/druid_channeling_claws_stack.tres" id="8_claws"]
 [ext_resource type="Resource" path="res://resources/cards/druid_binding_enchantment_stack.tres" id="9_binding"]
 [ext_resource type="Resource" path="res://resources/cards/druid_forced_drain_stack.tres" id="10_drain"]
+[ext_resource type="Resource" path="res://resources/cards/druid_canopy_cycle_stack.tres" id="11_canopy"]
+[ext_resource type="Resource" path="res://resources/cards/druid_bloodwood_covenant_stack.tres" id="12_bloodwood"]
+[ext_resource type="Resource" path="res://resources/cards/druid_overgrowth_graft_stack.tres" id="13_graft"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 34
-deck = [ExtResource("3_strike"), ExtResource("4_moon"), ExtResource("5_shape"), ExtResource("6_insight"), ExtResource("8_claws"), ExtResource("9_binding"), ExtResource("10_drain")]
+deck = [ExtResource("3_strike"), ExtResource("4_moon"), ExtResource("5_shape"), ExtResource("6_insight"), ExtResource("8_claws"), ExtResource("9_binding"), ExtResource("10_drain"), ExtResource("11_canopy"), ExtResource("12_bloodwood"), ExtResource("13_graft")]
 weapon_equipment = ExtResource("7_staff")
 weapon_face = 0
 extra_ap_bonus = 0

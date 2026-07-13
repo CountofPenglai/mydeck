@@ -15,9 +15,9 @@ class_name CardData
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var target_type: int = CardEnums.TargetType.NONE
 @export_range(0, 99, 1) var ap_cost: int = 2
 @export_enum("标准", "附赠") var play_timing: int = CardEnums.PlayTiming.NORMAL
-@export var range_modifier: float = 0.0
+@export_range(-12, 12, 1) var range_modifier: int = 0
 @export var override_range: bool = false
-@export var card_range: float = 160.0
+@export_range(0, 12, 1) var card_range: int = 2
 @export var effect: CardEffect
 
 @export_group("Special Play")
@@ -35,8 +35,8 @@ class_name CardData
 @export_range(0, 99, 1) var inverted_ap_cost: int = 2
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var inverted_target_type: int = CardEnums.TargetType.NONE
 @export var inverted_override_range: bool = false
-@export var inverted_card_range: float = 160.0
-@export var inverted_range_modifier: float = 0.0
+@export_range(0, 12, 1) var inverted_card_range: int = 2
+@export_range(-12, 12, 1) var inverted_range_modifier: int = 0
 @export_range(0, 99, 1) var resonance_cost: int = 0
 @export var auto_pay_resonance: bool = true
 @export var is_twin_spell: bool = false
@@ -276,24 +276,24 @@ func get_play_timing_label() -> String:
 	return CardEnums.play_timing_label(play_timing)
 
 
-func get_effective_range(user = null, equipment_slot: String = "") -> float:
+func get_effective_range(user = null, equipment_slot: String = "") -> int:
 	var orientation := _resolve_druid_orientation(user, {})
 	if orientation == CardEnums.DruidOrientation.INVERTED:
 		if inverted_override_range:
 			return inverted_card_range
-		var inverted_base_range := 0.0
+		var inverted_base_range := 0
 		if user != null and user.has_method("get_attack_range"):
 			inverted_base_range = user.get_attack_range(equipment_slot)
-		return maxf(0.0, inverted_base_range + inverted_range_modifier)
+		return maxi(0, inverted_base_range + inverted_range_modifier)
 
 	if override_range:
 		return card_range
 
-	var base_range := 0.0
+	var base_range := 0
 	if user != null and user.has_method("get_attack_range"):
 		base_range = user.get_attack_range(equipment_slot)
 
-	return maxf(0.0, base_range + range_modifier)
+	return maxi(0, base_range + range_modifier)
 
 
 func get_ap_cost_for_context(context: Dictionary = {}) -> int:

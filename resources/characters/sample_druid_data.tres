@@ -14,6 +14,5 @@ base_max_health = 28
 base_strength = 1
 base_agility = 5
 base_intelligence = 2
-base_attack_range = 80.0
-collision_radius = 24.0
-
+base_attack_range = 1
+battle_token_radius = 24.0

@@ -2,7 +2,7 @@ extends CardEffect
 class_name GatherMomentumWhirlwindCardEffect
 
 @export_range(0, 99, 1) var momentum_gain: int = 3
-@export var attack_range_bonus: float = 1.0
+@export_range(0, 12, 1) var attack_range_bonus: int = 1
 @export_range(0, 99, 1) var damage_per_momentum: int = 2
 
 

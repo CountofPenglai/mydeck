@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_overgrowth_graft_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "法脉寄生"
+description = "正位：将本牌逆位置入目标角色的法力区。可以额外选择 1 张手牌：攻击牌移入其法力区，其他牌移入其附魔区；若如此做，抽 1 张牌。"
+artwork = ExtResource("2_scroll")
+rarity = 2
+card_class = 4
+card_type = 0
+card_tags = 2
+damage_type = 3
+target_type = 1
+ap_cost = 2
+override_range = true
+card_range = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "血潮连击"
+inverted_description = "逆位：进行一次打击；若第一击造成实际伤害，再对同一目标打击一次，并回复等同于两次实际伤害总和的生命。本牌在法力区时，每当区域持有者以其他方式获得法力，额外获得 1 点临时法力。"
+inverted_ap_cost = 2
+inverted_target_type = 1
+inverted_override_range = true
+inverted_card_range = 2

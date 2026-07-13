@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "野蛮斗殴"
-description = "对武器范围内所有敌人进行一次武器打击。余势：支付 2 AP，范围 +2。放逐区：每场战斗限一次，弃置所有手牌，将此牌移回弃牌堆，本回合下一次打击 +2 威力。"
+description = "对武器范围内所有敌人进行一次武器打击。余势：支付 2 AP，范围 +2。放逐区：每场战斗限一次，弃置所有手牌，将此牌移回弃牌堆，下一张牌伤害加值 +2。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1
@@ -18,9 +18,9 @@ damage_type = 3
 target_type = 5
 ap_cost = 2
 play_timing = 0
-range_modifier = 0.0
+range_modifier = 0
 override_range = false
-card_range = 160.0
+card_range = 2
 effect = ExtResource("3_effect")
 has_momentum = true
 momentum_conditions = [ExtResource("4_momentum_ap")]

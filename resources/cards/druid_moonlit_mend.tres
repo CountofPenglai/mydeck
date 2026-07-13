@@ -17,7 +17,7 @@ damage_type = 2
 target_type = 1
 ap_cost = 1
 override_range = true
-card_range = 220.0
+card_range = 3
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "暗月"
@@ -25,6 +25,5 @@ inverted_description = "逆位：选择一个单位。若为友方，恢复生�
 inverted_ap_cost = 2
 inverted_target_type = 1
 inverted_override_range = true
-inverted_card_range = 220.0
+inverted_card_range = 3
 resonance_cost = 1
-

@@ -30,10 +30,6 @@ func get_damage_reduction(_unit: BattleUnitState, _context: Dictionary = {}) -> 
 	return 0
 
 
-func get_strike_power_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
-	return 0
-
-
 func modify_card_ap_cost(_unit: BattleUnitState, _card: CardData, current_cost: int, _context: Dictionary = {}) -> int:
 	return current_cost
 
@@ -82,7 +78,7 @@ func on_armor_changed(_unit: BattleUnitState, _previous: int, _current: int, _co
 	pass
 
 
-func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: float, _context: Dictionary = {}) -> float:
+func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: int, _context: Dictionary = {}) -> int:
 	return current_distance
 
 

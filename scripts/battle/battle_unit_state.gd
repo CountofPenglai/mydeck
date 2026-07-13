@@ -1,6 +1,8 @@
 extends Resource
 class_name BattleUnitState
 
+const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+
 enum Faction {
 	PLAYER,
 	ENEMY,
@@ -12,7 +14,8 @@ var faction: int = Faction.PLAYER
 var character_state: CharacterState
 var enemy_state: EnemyState
 var position: Vector2 = Vector2.ZERO
-var radius: float = 24.0
+var cell: Vector2i = BattleHexGrid.INVALID_CELL
+var token_radius: float = 24.0
 var is_deployed: bool = false
 var current_ap: int = 0
 var draw_pile: Array[CardData] = []
@@ -25,36 +28,47 @@ var curse_zone: Array[CardData] = []
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
 var card_runtime_states: Dictionary = {}
+var equipment_runtime_states: Dictionary = {}
+var pending_next_card_damage_bonus: int = 0
+var active_card_damage_bonuses: Dictionary = {}
 var turn_serial: int = 0
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
 var druid_temporary_mana: int = 0
 
-func setup_player(id: int, state: CharacterState, unit_radius: float) -> void:
+func setup_player(id: int, state: CharacterState, default_token_radius: float) -> void:
 	unit_id = id
 	turn_order_index = id
 	faction = Faction.PLAYER
 	character_state = state
 	enemy_state = null
-	radius = _resolve_collision_radius(unit_radius)
+	token_radius = _resolve_token_radius(default_token_radius)
 	is_deployed = false
+	cell = BattleHexGrid.INVALID_CELL
 	battle_action_flags.clear()
 	card_runtime_states.clear()
+	equipment_runtime_states.clear()
+	pending_next_card_damage_bonus = 0
+	active_card_damage_bonuses.clear()
 	turn_serial = 0
 	_reset_druid_state()
 
 
-func setup_enemy(id: int, state: EnemyState, unit_radius: float, start_position: Vector2) -> void:
+func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> void:
 	unit_id = id
 	turn_order_index = id
 	faction = Faction.ENEMY
 	character_state = null
 	enemy_state = state
-	radius = _resolve_collision_radius(unit_radius)
-	position = start_position
+	token_radius = _resolve_token_radius(default_token_radius)
+	position = Vector2.ZERO
+	cell = BattleHexGrid.INVALID_CELL
 	is_deployed = true
 	battle_action_flags.clear()
 	card_runtime_states.clear()
+	equipment_runtime_states.clear()
+	pending_next_card_damage_bonus = 0
+	active_card_damage_bonuses.clear()
 	turn_serial = 0
 	_reset_druid_state()
 
@@ -121,7 +135,10 @@ func get_max_health() -> int:
 
 func get_attack() -> int:
 	var profile := build_strike_profile_object()
-	return profile.primary_power + profile.damage_bonus
+	var total := profile.primary_base_damage + profile.primary_damage_bonus
+	if profile.add_offhand:
+		total += profile.offhand_base_damage + profile.offhand_damage_bonus
+	return total
 
 
 func get_damage_bonus(context: Dictionary = {}) -> int:
@@ -139,7 +156,7 @@ func get_damage_reduction(context: Dictionary = {}) -> int:
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
 	if character_state != null:
-		return character_state.get_damage_reduction() + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
+		return character_state.get_damage_reduction(merged_context) + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 	if enemy_state != null:
 		return enemy_state.get_damage_reduction() + get_status_damage_reduction(merged_context) + get_zone_damage_reduction(merged_context)
 
@@ -179,6 +196,136 @@ func consume_class_resource(resource_name: String, amount: int) -> bool:
 		return character_state.consume_class_resource(resource_name, amount)
 
 	return false
+
+
+func get_equipment_runtime_state(equipment: EquipmentData, create: bool = true) -> EquipmentRuntimeState:
+	if equipment == null:
+		return null
+	var key := _equipment_runtime_key(equipment)
+	var runtime: EquipmentRuntimeState = equipment_runtime_states.get(key) as EquipmentRuntimeState
+	if runtime == null and create:
+		runtime = EquipmentRuntimeState.new()
+		runtime.equipment = equipment
+		equipment_runtime_states[key] = runtime
+	return runtime
+
+
+func snapshot_equipment_runtime_states() -> Dictionary:
+	var snapshot: Dictionary = {}
+	for key in equipment_runtime_states:
+		var runtime := equipment_runtime_states.get(key) as EquipmentRuntimeState
+		if runtime == null:
+			continue
+		snapshot[key] = {
+			"equipment": runtime.equipment,
+			"counters": runtime.counters.duplicate(true),
+			"flags": runtime.flags.duplicate(true),
+		}
+	return snapshot
+
+
+func restore_equipment_runtime_states(snapshot: Dictionary) -> void:
+	equipment_runtime_states.clear()
+	for key in snapshot:
+		var data: Dictionary = snapshot.get(key, {}) as Dictionary
+		var runtime := EquipmentRuntimeState.new()
+		runtime.equipment = data.get("equipment") as EquipmentData
+		runtime.counters = (data.get("counters", {}) as Dictionary).duplicate(true)
+		runtime.flags = (data.get("flags", {}) as Dictionary).duplicate(true)
+		equipment_runtime_states[key] = runtime
+
+
+func get_equipment_effect_damage_bonus(context: Dictionary = {}) -> int:
+	var total := 0
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			total += effect.get_damage_bonus(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context)
+	return total
+
+
+func get_equipment_effect_damage_reduction(context: Dictionary = {}) -> int:
+	var total := 0
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			total += effect.get_damage_reduction(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context)
+	return total
+
+
+func equipment_preserves_block(context: Dictionary = {}) -> bool:
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null and effect.preserves_block_on_turn_start(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context):
+			return true
+	return false
+
+
+func get_equipment_runtime_summary(context: Dictionary = {}) -> String:
+	var parts := PackedStringArray()
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		var summary := effect.get_runtime_summary(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context)
+		if not summary.is_empty() and not parts.has(summary):
+			parts.append(summary)
+	return " | ".join(parts)
+
+
+func get_equipment_actions(context: Dictionary = {}) -> Array[Dictionary]:
+	var actions: Array[Dictionary] = []
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		var root := entry.get("root") as EquipmentData
+		var component := entry.get("component") as EquipmentData
+		var runtime := entry.get("runtime") as EquipmentRuntimeState
+		if effect == null or not effect.has_activated_action(self, root, component, runtime, context):
+			continue
+		actions.append({
+			"effect": effect,
+			"root": root,
+			"component": component,
+			"runtime": runtime,
+			"label": effect.get_action_label(self, root, component, runtime, context),
+			"momentum_cost": effect.get_action_momentum_cost(self, root, component, runtime, context),
+			"enabled": effect.can_activate(self, root, component, runtime, context),
+		})
+	return actions
+
+
+func is_equipment_action_active(effect: EquipmentEffect) -> bool:
+	if effect == null:
+		return false
+	for entry in _get_equipment_effect_entries():
+		if entry.get("effect") == effect:
+			return true
+	return false
+
+
+func gain_next_card_damage_bonus(amount: int) -> int:
+	var actual := maxi(0, amount)
+	pending_next_card_damage_bonus += actual
+	return actual
+
+
+func bind_next_card_damage_bonus(card: CardData) -> void:
+	if card == null or pending_next_card_damage_bonus <= 0:
+		return
+	active_card_damage_bonuses[card.get_instance_id()] = pending_next_card_damage_bonus
+	pending_next_card_damage_bonus = 0
+
+
+func get_next_card_damage_bonus(context: Dictionary = {}) -> int:
+	var card := _get_context_card(context)
+	if card == null:
+		return 0
+	return int(active_card_damage_bonuses.get(card.get_instance_id(), 0))
+
+
+func finish_next_card_damage_bonus(card: CardData) -> void:
+	if card != null:
+		active_card_damage_bonuses.erase(card.get_instance_id())
 
 
 func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
@@ -247,15 +394,6 @@ func modify_incoming_damage(damage_context: DamageContext) -> void:
 	remove_expired_statuses()
 
 
-func get_status_strike_power_bonus(context: Dictionary = {}) -> int:
-	var bonus := 0
-	for status in statuses:
-		if status != null and status.has_method("get_strike_power_bonus"):
-			bonus += status.get_strike_power_bonus(self, context)
-
-	return bonus
-
-
 func get_agility() -> int:
 	if character_state != null:
 		return character_state.get_agility()
@@ -304,13 +442,13 @@ func get_starting_hand_size(config: BattleConfig) -> int:
 	return maxi(0, hand_size)
 
 
-func get_attack_range(equipment_slot: String = "") -> float:
+func get_attack_range(equipment_slot: String = "") -> int:
 	if character_state != null:
 		return character_state.get_attack_range(equipment_slot)
 	if enemy_state != null:
 		return enemy_state.get_attack_range(equipment_slot)
 
-	return 0.0
+	return 0
 
 
 func build_strike_profile_object(equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
@@ -324,14 +462,15 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	var profile := StrikeProfile.new()
 	profile.primary_slot = "unarmed"
 	profile.primary_equipment = null
-	profile.primary_power = 1
-	profile.primary_range = 0.0
+	profile.primary_base_damage = 1
+	profile.primary_range = 0
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.primary_damage_type = CardEnums.DamageType.STRENGTH
-	profile.damage_bonus = 0
+	profile.primary_damage_bonus = 0
 	profile.add_offhand = false
 	profile.offhand_equipment = null
-	profile.offhand_power = 0
+	profile.offhand_base_damage = 0
+	profile.offhand_damage_bonus = 0
 	return profile
 
 
@@ -374,9 +513,11 @@ func get_max_ap(config: BattleConfig) -> int:
 	return config.base_ap
 
 
-func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -> float:
+func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -> int:
 	var effective_agility := maxi(0, get_agility() + agility_modifier)
-	var distance := config.move_distance_per_ap + float(effective_agility) * config.move_distance_per_agility
+	var distance := config.base_move_cells_per_ap
+	if config.agility_per_move_cell > 0:
+		distance += floori(float(effective_agility) / float(config.agility_per_move_cell))
 	var context := {
 		"config": config,
 		"agility_modifier": agility_modifier,
@@ -386,12 +527,12 @@ func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -
 		if status != null and status.has_method("modify_move_distance_per_ap"):
 			distance = status.modify_move_distance_per_ap(self, distance, context)
 
-	return maxf(1.0, distance)
+	return maxi(1, distance)
 
 
-func get_move_ap_cost(distance: float, config: BattleConfig) -> int:
+func get_move_ap_cost(distance: int, config: BattleConfig) -> int:
 	var move_per_ap := get_move_distance_per_ap(config)
-	var cost := ceili(distance / move_per_ap)
+	var cost := ceili(float(distance) / float(move_per_ap))
 	var context := {
 		"config": config,
 		"distance": distance,
@@ -412,8 +553,18 @@ func notify_move_ap_cost_paid(context: Dictionary = {}) -> void:
 	remove_expired_statuses()
 
 
-func distance_to(other: BattleUnitState) -> float:
-	return maxf(0.0, position.distance_to(other.position) - radius - other.radius)
+func cell_distance_to(other: BattleUnitState) -> int:
+	if other == null:
+		return 2147483647
+	if cell == BattleHexGrid.INVALID_CELL or other.cell == BattleHexGrid.INVALID_CELL:
+		return 2147483647
+	return BattleHexGrid.distance(cell, other.cell)
+
+
+func set_hex_cell(new_cell: Vector2i, map_data: BattleMapData) -> void:
+	cell = new_cell
+	if map_data != null and map_data.is_valid_cell(new_cell):
+		position = map_data.cell_to_map(new_cell)
 
 
 func draw_cards(count: int, rng: RandomNumberGenerator, context: Dictionary = {}) -> int:
@@ -642,13 +793,17 @@ func discard_all_hand(context: Dictionary = {}) -> int:
 	return count
 
 
-func move_draw_card_to_discard(card: CardData) -> bool:
+func move_draw_card_to_discard(card: CardData, context: Dictionary = {}) -> bool:
 	var index := draw_pile.find(card)
 	if index < 0:
 		return false
 
 	draw_pile.remove_at(index)
 	discard_pile.append(card)
+	var discard_context := context.duplicate()
+	if not discard_context.has("reason"):
+		discard_context["reason"] = "draw_to_discard"
+	_notify_card_discarded(card, discard_context)
 	return true
 
 
@@ -672,13 +827,17 @@ func banish_discard_card(card: CardData) -> bool:
 	return true
 
 
-func move_exiled_card_to_discard(card: CardData) -> bool:
+func move_exiled_card_to_discard(card: CardData, context: Dictionary = {}) -> bool:
 	var index := exiled_pile.find(card)
 	if index < 0:
 		return false
 
 	exiled_pile.remove_at(index)
 	discard_pile.append(card)
+	var discard_context := context.duplicate()
+	if not discard_context.has("reason"):
+		discard_context["reason"] = "exile_to_discard"
+	_notify_card_discarded(card, discard_context)
 	return true
 
 
@@ -861,12 +1020,33 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_after_strike", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_strike", [], event_context)
+	_notify_equipment_effects("on_after_strike", [], event_context)
 
 
 func notify_equipment_switched(switch_result: Dictionary, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	event_context["switch_result"] = switch_result
 	_notify_zone_card_effects("on_zone_owner_equipment_switched", [switch_result], event_context)
+
+
+func notify_equipment_turn_start(context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_turn_start", [], _with_unit_context(context))
+
+
+func notify_equipment_turn_end(context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_turn_end", [], _with_unit_context(context))
+
+
+func notify_equipment_before_switch_out(equipment: EquipmentData, face_index: int, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_before_switch_out", [], _with_unit_context(context), equipment, face_index)
+
+
+func notify_equipment_switched_out(equipment: EquipmentData, face_index: int, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_switched_out", [], _with_unit_context(context), equipment, face_index)
+
+
+func notify_equipment_switched_in(equipment: EquipmentData, face_index: int, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_switched_in", [], _with_unit_context(context), equipment, face_index)
 
 
 func get_armor_stacks() -> int:
@@ -963,6 +1143,7 @@ func _notify_card_drawn(card: CardData, context: Dictionary = {}) -> void:
 	event_context["drawn_card"] = card
 	_notify_status_effects("on_card_drawn", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_drawn", [card], event_context)
+	_notify_equipment_effects("on_card_drawn", [card], event_context)
 
 
 func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
@@ -970,6 +1151,7 @@ func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
 	event_context["discarded_card"] = card
 	_notify_status_effects("on_card_discarded", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_discarded", [card], event_context)
+	_notify_equipment_effects("on_card_discarded", [card], event_context)
 
 
 func _notify_card_entered_special_zone(card: CardData, zone_name: String, context: Dictionary = {}) -> void:
@@ -1012,6 +1194,59 @@ func _invoke_status_hook(status: StatusEffect, method_name: String, args: Array)
 		return
 	status.callv(method_name, args)
 	remove_expired_statuses()
+
+
+func _get_equipment_effect_entries(root: EquipmentData = null, face_index: int = -1) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if character_state == null:
+		return result
+	var resolved_root := root if root != null else character_state.weapon_equipment
+	if resolved_root == null:
+		return result
+	var resolved_face := face_index if face_index >= 0 else character_state.weapon_face
+	var runtime := get_equipment_runtime_state(resolved_root)
+	for raw_entry in resolved_root.get_effect_entries(resolved_face):
+		result.append({
+			"effect": raw_entry.get("effect"),
+			"component": raw_entry.get("component"),
+			"root": resolved_root,
+			"runtime": runtime,
+		})
+	return result
+
+
+func _notify_equipment_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}, root: EquipmentData = null, face_index: int = -1) -> void:
+	for entry in _get_equipment_effect_entries(root, face_index):
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null or not effect.has_method(method_name):
+			continue
+		var args := [
+			self,
+			entry.get("root") as EquipmentData,
+			entry.get("component") as EquipmentData,
+			entry.get("runtime") as EquipmentRuntimeState,
+		]
+		args.append_array(extra_args)
+		args.append(context)
+		effect.callv(method_name, args)
+
+
+func _equipment_runtime_key(equipment: EquipmentData) -> String:
+	if equipment == null:
+		return ""
+	if not equipment.resource_path.is_empty():
+		return equipment.resource_path
+	return "instance:%d" % equipment.get_instance_id()
+
+
+func _get_context_card(context: Dictionary) -> CardData:
+	var card_value: Variant = context.get("card")
+	if card_value is CardData:
+		return card_value as CardData
+	var source_value: Variant = context.get("source")
+	if source_value is CardData:
+		return source_value as CardData
+	return null
 
 
 func _notify_zone_card_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
@@ -1109,12 +1344,12 @@ func _shuffle_cards(cards: Array[CardData], rng: RandomNumberGenerator) -> void:
 		cards[j] = temp
 
 
-func _resolve_collision_radius(default_radius: float) -> float:
+func _resolve_token_radius(default_radius: float) -> float:
 	var data_radius := 0.0
 	if character_state != null:
-		data_radius = character_state.get_collision_radius()
+		data_radius = character_state.get_battle_token_radius()
 	elif enemy_state != null:
-		data_radius = enemy_state.get_collision_radius()
+		data_radius = enemy_state.get_battle_token_radius()
 
 	if data_radius > 0.0:
 		return data_radius

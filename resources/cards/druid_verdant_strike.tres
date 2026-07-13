@@ -16,12 +16,11 @@ card_tags = 1
 damage_type = 3
 target_type = 1
 ap_cost = 2
-range_modifier = 30.0
+range_modifier = 1
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "根须回击"
 inverted_description = "逆位：对射程内一个敌方单位进行武器打击；随后按当前法力获得护甲。打出后进入法力区。"
 inverted_ap_cost = 1
 inverted_target_type = 1
-inverted_range_modifier = 10.0
-
+inverted_range_modifier = 1

@@ -97,6 +97,7 @@ func _test_armed_and_armored(controller: BattleController, warrior: BattleUnitSt
 	warrior.enchant_zone.clear()
 	warrior.discard_pile.clear()
 	warrior.card_runtime_states.clear()
+	_set_test_weapon_pair(warrior)
 	warrior.clear_armor({"controller": controller})
 	warrior.add_card_to_enchant_zone(card, {"controller": controller})
 	var first := controller.switch_weapon_from_inventory(warrior)
@@ -153,6 +154,8 @@ func _test_stand_immovable(controller: BattleController, warrior: BattleUnitStat
 	warrior.enchant_zone.clear()
 	warrior.discard_pile.clear()
 	warrior.card_runtime_states.clear()
+	_set_test_weapon_pair(warrior)
+	warrior.character_state.armor_equipment = load("res://resources/items/basic_shield.tres") as EquipmentData
 	warrior.clear_armor({"controller": controller})
 	warrior.set_current_health(warrior.get_max_health())
 	warrior.hand.append(card)
@@ -300,6 +303,19 @@ func _test_full_inventory_weapon_switch() -> void:
 		_fail("WARRIOR_HOOK: switch should succeed when consuming the source stack frees one slot")
 
 
+func _set_test_weapon_pair(warrior: BattleUnitState) -> void:
+	var training := load("res://resources/items/training_sword.tres") as EquipmentData
+	var heavy := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
+	warrior.character_state.weapon_equipment = training
+	warrior.character_state.weapon_face = 0
+	warrior.character_state.inventory.clear()
+	var stack := InventoryStack.new()
+	stack.item_data = heavy
+	stack.count = 1
+	warrior.character_state.inventory.append(stack)
+	warrior.equipment_runtime_states.clear()
+
+
 func _queue_outer_limit_effects(controller: BattleController) -> void:
 	for _i in range(32):
 		controller.enqueue_effect(Callable(self, "_count_limit_effect").bind(false))
@@ -331,9 +347,9 @@ func _prepare(controller: BattleController, warrior: BattleUnitState, ally: Batt
 	controller.current_unit = warrior
 	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 	warrior.turn_serial = 1
-	warrior.position = Vector2(200.0, 200.0)
-	ally.position = warrior.position + Vector2(30.0, 0.0)
-	enemy.position = warrior.position + Vector2(70.0, 0.0)
+	warrior.set_hex_cell(Vector2i(2, 4), controller.map_data)
+	ally.set_hex_cell(Vector2i(2, 5), controller.map_data)
+	enemy.set_hex_cell(Vector2i(3, 4), controller.map_data)
 
 
 func _reset_enemy(enemy: BattleUnitState) -> void:

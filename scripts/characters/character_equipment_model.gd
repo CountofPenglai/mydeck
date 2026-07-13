@@ -2,13 +2,6 @@ extends RefCounted
 class_name CharacterEquipmentModel
 
 
-static func refresh_enabled(state: CharacterState) -> void:
-	if state == null:
-		return
-	state.main_hand_enabled = state.weapon_equipment != null
-	state.off_hand_enabled = state.weapon_equipment != null and state.weapon_equipment.has_back_face()
-
-
 static func switch_equipment_from_inventory(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
 	if state == null:
 		return {"success": false}
@@ -24,8 +17,10 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 		return {"success": false}
 
 	var previous: EquipmentData = null
+	var previous_face := 0
 	if slot == "weapon":
 		previous = state.weapon_equipment
+		previous_face = state.weapon_face
 	elif slot == "armor":
 		previous = state.armor_equipment
 	elif slot == "accessory_1":
@@ -53,14 +48,13 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 	if previous != null:
 		add_inventory_item(state, previous)
 
-	refresh_enabled(state)
 	return {
 		"success": true,
 		"slot": slot,
 		"old_equipment": previous,
+		"old_face": previous_face,
 		"new_equipment": equipment,
-		"main_hand_enabled": state.main_hand_enabled,
-		"off_hand_enabled": state.off_hand_enabled,
+		"new_face": state.weapon_face if slot == "weapon" else 0,
 	}
 
 

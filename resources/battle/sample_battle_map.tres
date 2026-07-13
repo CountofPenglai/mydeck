@@ -7,6 +7,9 @@
 script = ExtResource("1_map")
 map_size = Vector2(900, 600)
 background_texture = ExtResource("2_bg")
-boundary_points = PackedVector2Array(28, 54, 862, 45, 890, 570, 38, 584)
-player_deployment_rect = Rect2(40, 160, 220, 280)
-enemy_spawn_rect = Rect2(640, 120, 220, 360)
+grid_columns = 12
+grid_rows = 9
+hex_size = 40.0
+grid_origin = Vector2(50, 45)
+player_deployment_columns = 3
+enemy_spawn_columns = 3

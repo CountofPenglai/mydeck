@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/iron_rock_pair_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_pair"]
+script = ExtResource("2_effect")
+switch_damage = 3
+
+[sub_resource type="Resource" id="RockBreaker"]
+script = ExtResource("1_equipment")
+item_name = "断岩"
+description = "回合结束时若未用本装备打击，获得1点势。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 3
+attack_range = 1
+damage_type = 0
+equip_slot = 0
+equip_category = 2
+allowed_classes = PackedInt32Array(1)
+rarity = 1
+subcategories = PackedStringArray("双持", "成对组件")
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "斩铁 / 断岩"
+description = "切入时对范围内所有敌人造成3点力量伤害。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 3
+attack_range = 1
+damage_type = 0
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(1)
+rarity = 1
+subcategories = PackedStringArray("双持", "武器", "T1")
+paired_component = SubResource("RockBreaker")
+trigger_effects = [SubResource("Effect_pair")]

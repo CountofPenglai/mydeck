@@ -5,6 +5,6 @@
 [resource]
 script = ExtResource("1_behavior")
 behavior_label = "远程状态机"
-min_preferred_range = 180.0
-max_preferred_range = 260.0
+min_preferred_range = 2
+max_preferred_range = 3
 state = 0

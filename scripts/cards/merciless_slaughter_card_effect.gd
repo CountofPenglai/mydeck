@@ -1,7 +1,7 @@
 extends CardEffect
 class_name MercilessSlaughterCardEffect
 
-@export_range(1, 99, 1) var execution_power_multiplier: int = 2
+@export_range(1, 99, 1) var execution_base_damage_multiplier: int = 2
 @export_range(0, 99, 1) var self_stun_stacks: int = 2
 
 
@@ -18,8 +18,8 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 		return false
 
 	var main_range := user.get_attack_range("weapon")
-	var distance := user.distance_to(target)
-	if distance > main_range + 0.001:
+	var distance := user.cell_distance_to(target)
+	if distance > main_range:
 		if write_log:
 			controller._emit_log("%s 距离 %.0f，超出武器射程 %.0f。" % [target.get_display_name(), distance, main_range])
 		return false
@@ -57,12 +57,12 @@ func _resolve_followup(controller: BattleController, user: BattleUnitState, targ
 
 	if target != null and target.is_alive():
 		var profile := user.build_strike_profile_object("weapon", {})
-		var execution_threshold := profile.primary_power * execution_power_multiplier
+		var execution_threshold := profile.primary_base_damage * execution_base_damage_multiplier
 		if target.get_current_health() <= execution_threshold:
 			target.set_current_health(0)
-			controller._emit_log("%s 的生命值不大于武器威力的 %d 倍，被无情屠杀消灭。" % [
+			controller._emit_log("%s 的生命值不大于武器基础伤害的 %d 倍，被无情屠杀消灭。" % [
 				target.get_display_name(),
-				execution_power_multiplier,
+				execution_base_damage_multiplier,
 			])
 
 	controller.switch_weapon_from_inventory(user)

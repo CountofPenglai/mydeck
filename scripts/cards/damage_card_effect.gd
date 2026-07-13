@@ -15,6 +15,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			var total_damage := damage_amount
 			if add_damage_bonus and user.has_method("get_damage_bonus"):
 				total_damage += user.get_damage_bonus({
+					"controller": controller,
 					"source": self,
 					"card": context.get("card"),
 					"target": target,

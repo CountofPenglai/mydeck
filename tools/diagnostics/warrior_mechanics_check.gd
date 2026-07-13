@@ -41,7 +41,7 @@ func _test_resources_and_runtime_identity(warrior: BattleUnitState) -> void:
 	var relentless_effect := load("res://resources/cards/relentless_effect.tres") as RelentlessCardEffect
 	if relentless == null or relentless.rarity != CardEnums.Rarity.EPIC:
 		_fail("WARRIOR_MECH: relentless is not epic")
-	if relentless_effect == null or relentless_effect.power_per_returned_card != 2:
+	if relentless_effect == null or relentless_effect.damage_bonus_per_returned_card != 2:
 		_fail("WARRIOR_MECH: relentless return bonus is not 2")
 
 	var battle_strikes: Array[CardData] = []
@@ -137,7 +137,7 @@ func _test_wound_forged_bulwark(controller: BattleController, warrior: BattleUni
 		_fail("WARRIOR_MECH: bulwark normal armor or expiry status incorrect")
 
 	_reset_enemy(enemy)
-	enemy.position = warrior.position + Vector2(80.0, 0.0)
+	enemy.set_hex_cell(Vector2i(warrior.cell.x + 1, warrior.cell.y), controller.map_data)
 	var before := enemy.get_current_health()
 	if not controller.play_card(warrior, card, [], {}, CardEnums.CardPlayMode.MOMENTUM):
 		_fail("WARRIOR_MECH: bulwark momentum play failed")
@@ -155,7 +155,7 @@ func _test_attack_defense_dance(controller: BattleController, warrior: BattleUni
 	_reset_card_zones(warrior)
 	warrior.clear_armor({"controller": controller})
 	_reset_enemy(enemy)
-	enemy.position = warrior.position + Vector2(70.0, 0.0)
+	enemy.set_hex_cell(Vector2i(warrior.cell.x + 1, warrior.cell.y), controller.map_data)
 	var card := template.duplicate() as CardData
 	warrior.hand.append(card)
 	warrior.current_ap = 10
@@ -175,7 +175,7 @@ func _test_attack_defense_dance(controller: BattleController, warrior: BattleUni
 	var fallback := template.duplicate() as CardData
 	warrior.hand.append(fallback)
 	warrior.current_ap = 10
-	var expected_armor := warrior.character_state.get_active_weapon_equipment().power
+	var expected_armor := warrior.character_state.get_active_weapon_equipment().base_damage
 	if not controller.play_card(warrior, fallback, [enemy]):
 		_fail("WARRIOR_MECH: dance fallback play failed")
 	if warrior.get_armor_stacks() != expected_armor:
@@ -197,9 +197,9 @@ func _prepare_combat(controller: BattleController, warrior: BattleUnitState, ene
 	controller.phase = BattleController.Phase.BATTLE
 	controller.current_unit = warrior
 	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
-	warrior.position = Vector2(200.0, 200.0)
+	warrior.set_hex_cell(Vector2i(2, 4), controller.map_data)
 	warrior.is_deployed = true
-	enemy.position = warrior.position + Vector2(70.0, 0.0)
+	enemy.set_hex_cell(Vector2i(3, 4), controller.map_data)
 	warrior.turn_serial = 1
 
 

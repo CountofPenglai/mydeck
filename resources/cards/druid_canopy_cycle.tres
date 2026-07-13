@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_canopy_cycle_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "蓄翠化形"
+description = "正位：抽 2 张牌。选择至多等同于当前法力的其他手牌，逆位置入法力区；至少放置一张则变身。"
+artwork = ExtResource("2_scroll")
+rarity = 1
+card_class = 4
+card_type = 1
+target_type = 4
+ap_cost = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "冬眠甲壳"
+inverted_description = "逆位：额外弃置 1 张手牌，将当前护甲翻倍。你的下回合开始时保留一半当前护甲并抽 2 张牌。"
+inverted_ap_cost = 2
+inverted_target_type = 4

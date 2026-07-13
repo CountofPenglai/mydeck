@@ -23,6 +23,8 @@ func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> v
 
 
 func on_turn_start(unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	if unit != null and unit.equipment_preserves_block(_context):
+		return
 	if unit != null and stacks > 0:
 		var controller = _context.get("controller")
 		if controller != null and controller.has_method("_emit_log"):

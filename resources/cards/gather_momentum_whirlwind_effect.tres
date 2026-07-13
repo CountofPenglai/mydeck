@@ -7,5 +7,5 @@ script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = false
 momentum_gain = 3
-attack_range_bonus = 1.0
+attack_range_bonus = 1
 damage_per_momentum = 2

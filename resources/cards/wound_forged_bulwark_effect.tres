@@ -6,4 +6,4 @@
 script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = false
-effect_range = 90.0
+effect_range = 1

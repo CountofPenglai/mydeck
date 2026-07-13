@@ -3,7 +3,7 @@ class_name WoundForgedBulwarkCardEffect
 
 const CLEAR_ARMOR_STATUS_SCRIPT := preload("res://scripts/status/clear_armor_next_turn_status.gd")
 
-@export var effect_range: float = 90.0
+@export_range(0, 12, 1) var effect_range: int = 1
 
 
 func get_target_type_for_mode(_context: Dictionary = {}, play_mode: int = CardEnums.CardPlayMode.NORMAL, _default_target_type: int = CardEnums.TargetType.NONE) -> int:

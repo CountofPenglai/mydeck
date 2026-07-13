@@ -6,7 +6,7 @@
 script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = true
-inner_range_modifier = -1.0
+inner_range_modifier = -1
 close_damage_multiplier = 1.5
 cripple_stacks = 2
 move_ap_discount = 1

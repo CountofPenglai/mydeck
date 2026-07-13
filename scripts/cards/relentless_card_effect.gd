@@ -2,7 +2,7 @@ extends CardEffect
 class_name RelentlessCardEffect
 
 @export_range(0, 99, 1) var banish_count: int = 3
-@export_range(0, 99, 1) var power_per_returned_card: int = 1
+@export_range(0, 99, 1) var damage_bonus_per_returned_card: int = 1
 
 
 func _init() -> void:
@@ -76,9 +76,9 @@ func _play_momentum(context: Dictionary, controller: BattleController, user: Bat
 
 	var target: BattleUnitState = targets[0] as BattleUnitState
 	var returned_count := user.shuffle_exiled_into_draw_pile(controller.rng)
-	var damage_modifier := returned_count * power_per_returned_card
+	var damage_modifier := returned_count * damage_bonus_per_returned_card
 	if returned_count > 0:
-		controller._emit_log("%s 将 %d 张放逐牌洗回牌库，本次打击获得 +%d 威力。" % [
+		controller._emit_log("%s 将 %d 张放逐牌洗回牌库，本次打击获得 +%d 伤害加值。" % [
 			user.get_display_name(),
 			returned_count,
 			damage_modifier,

@@ -37,10 +37,10 @@ func _switch_and_follow_up(controller: BattleController, user: BattleUnitState, 
 		return
 	var result := controller.switch_weapon_from_inventory(user)
 	var weapon := user.character_state.get_active_weapon_equipment() if user.character_state != null else null
-	var weapon_power := weapon.power if weapon != null else 1
+	var weapon_base_damage := weapon.base_damage if weapon != null else 1
 	var can_strike := bool(result.get("success", false)) and target != null and target.is_alive()
 	if can_strike:
-		can_strike = user.distance_to(target) <= user.get_attack_range("weapon") + 0.001
+		can_strike = user.cell_distance_to(target) <= user.get_attack_range("weapon")
 	if can_strike:
 		controller.enqueue_effect(
 			Callable(controller, "perform_strike"),
@@ -51,5 +51,5 @@ func _switch_and_follow_up(controller: BattleController, user: BattleUnitState, 
 		)
 		return
 
-	user.gain_armor(weapon_power, context)
-	controller._emit_log("%s 的攻守轮舞转入防守，获得 %d 护甲。" % [user.get_display_name(), weapon_power])
+	user.gain_armor(weapon_base_damage, context)
+	controller._emit_log("%s 的攻守轮舞转入防守，获得 %d 护甲。" % [user.get_display_name(), weapon_base_damage])

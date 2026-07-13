@@ -1,6 +1,8 @@
 extends RefCounted
 class_name BattleController
 
+const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+
 signal log_message(message: String)
 signal state_changed
 signal basic_attack_triggered(context: Dictionary)
@@ -47,7 +49,6 @@ var current_turn_index: int = -1
 var current_unit: BattleUnitState
 var turn_flow_state: int = TurnFlowState.IDLE
 var enemy_decision_count: int = 0
-var class_resource_actions_used := {}
 var cards_in_flight := {}
 var action_resolution_active: bool = false
 var internal_action_submission_depth: int = 0
@@ -90,7 +91,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		if character_state == null:
 			continue
 		var unit := BattleUnitState.new()
-		unit.setup_player(id, character_state, config.default_unit_radius)
+		unit.setup_player(id, character_state, config.default_token_radius)
 		id += 1
 		units.append(unit)
 		player_units.append(unit)
@@ -104,9 +105,14 @@ func setup(new_scenario: BattleScenario) -> void:
 		enemy_state.ensure_initialized(rng.randi())
 		enemy_state.current_health = enemy_state.get_max_health()
 		enemy_state.generate_deck(rng.randi())
-		var spawn_position := _find_enemy_spawn_position(enemy_state)
+		var spawn_cell_value: Variant = _find_enemy_spawn_cell()
+		if not (spawn_cell_value is Vector2i):
+			_emit_log("敌方出生区已满，跳过 %s。" % enemy_state.get_enemy_name())
+			continue
+		var spawn_cell: Vector2i = spawn_cell_value
 		var unit := BattleUnitState.new()
-		unit.setup_enemy(id, enemy_state, config.default_unit_radius, spawn_position)
+		unit.setup_enemy(id, enemy_state, config.default_token_radius)
+		unit.set_hex_cell(spawn_cell, map_data)
 		id += 1
 		units.append(unit)
 		enemy_units.append(unit)
@@ -129,7 +135,6 @@ func _reset_runtime_state() -> void:
 	current_unit = null
 	turn_flow_state = TurnFlowState.IDLE
 	enemy_decision_count = 0
-	class_resource_actions_used.clear()
 	cards_in_flight.clear()
 	action_resolution_active = false
 	internal_action_submission_depth = 0
@@ -167,7 +172,7 @@ func _create_runtime_enemy_state(template: EnemyState) -> EnemyState:
 	return state
 
 
-func deploy_player_unit(unit: BattleUnitState, position: Vector2) -> bool:
+func deploy_player_unit_at_cell(unit: BattleUnitState, cell: Vector2i) -> bool:
 	if is_resolving_actions():
 		return false
 	if phase != Phase.DEPLOYMENT:
@@ -178,12 +183,12 @@ func deploy_player_unit(unit: BattleUnitState, position: Vector2) -> bool:
 		_emit_log("只能部署玩家单位。")
 		return false
 
-	if not _is_position_valid_for_unit(unit, position, true):
+	if not _is_cell_valid_for_unit(unit, cell, true):
 		return false
 
-	unit.position = position
+	unit.set_hex_cell(cell, map_data)
 	unit.is_deployed = true
-	_emit_log("%s 部署到 (%.0f, %.0f)。" % [unit.get_display_name(), position.x, position.y])
+	_emit_log("%s 部署到格 (%d, %d)。" % [unit.get_display_name(), unit.cell.x, unit.cell.y])
 	state_changed.emit()
 	return true
 
@@ -279,12 +284,12 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 		return
 
 	unit.start_turn(config)
-	class_resource_actions_used.erase(unit.unit_id)
 	for battle_unit in units:
 		if battle_unit != null:
 			battle_unit.remove_expired_statuses()
 	_queue_unit_status_effects("on_turn_start", unit)
 	_queue_global_effects("on_turn_start", unit)
+	unit.notify_equipment_turn_start({"controller": self, "phase": "turn_start"})
 
 
 func _finish_turn_start_action(unit: BattleUnitState) -> void:
@@ -322,6 +327,7 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 	unit.current_ap = 0
 	_queue_unit_status_effects("on_turn_end", unit)
 	_queue_global_effects("on_turn_end", unit)
+	unit.notify_equipment_turn_end({"controller": self, "phase": "turn_end"})
 	enqueue_effect(
 		Callable(unit, "exile_expiring_temporary_cards"),
 		[self],
@@ -338,20 +344,20 @@ func _finish_turn_end_action(unit: BattleUnitState) -> void:
 		advance_turn()
 
 
-func move_current_unit_to(position: Vector2) -> bool:
-	return move_unit_to(current_unit, position)
+func move_current_unit_to_cell(cell: Vector2i) -> bool:
+	return move_unit_to_cell(current_unit, cell)
 
 
-func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
+func move_unit_to_cell(unit: BattleUnitState, cell: Vector2i) -> bool:
 	if not _can_submit_turn_action(unit, "移动"):
 		return false
 
-	if not _is_position_valid_for_unit(unit, position, false):
+	if not _is_cell_valid_for_unit(unit, cell, false):
 		return false
 
-	var distance := unit.position.distance_to(position)
+	var distance := map_data.get_distance(unit.cell, cell)
 	var ap_cost := unit.get_move_ap_cost(distance, config)
-	if distance <= 0.001:
+	if distance <= 0:
 		return true
 
 	if unit.current_ap < ap_cost:
@@ -360,21 +366,21 @@ func move_unit_to(unit: BattleUnitState, position: Vector2) -> bool:
 
 	return push_action_frame(BattleActionFrame.create(
 		Callable(self, "_resolve_direct_move_action"),
-		[unit, position],
+		[unit, cell],
 		0,
 		"%s 直接移动" % unit.get_display_name(),
-		{"unit": unit, "position": position, "ap_cost": ap_cost}
+		{"unit": unit, "cell": cell, "ap_cost": ap_cost}
 	))
 
 
-func _resolve_direct_move_action(unit: BattleUnitState, position: Vector2) -> void:
+func _resolve_direct_move_action(unit: BattleUnitState, cell: Vector2i) -> void:
 	if not _is_turn_action_execution_valid(unit):
 		return
-	if not _is_position_valid_for_unit(unit, position, false):
+	if not _is_cell_valid_for_unit(unit, cell, false):
 		return
 
-	var distance := unit.position.distance_to(position)
-	if distance <= 0.001:
+	var distance := map_data.get_distance(unit.cell, cell)
+	if distance <= 0:
 		return
 
 	var ap_cost := unit.get_move_ap_cost(distance, config)
@@ -385,12 +391,12 @@ func _resolve_direct_move_action(unit: BattleUnitState, position: Vector2) -> vo
 	unit.current_ap -= ap_cost
 	unit.notify_move_ap_cost_paid({
 		"controller": self,
-		"position": position,
+		"cell": cell,
 		"distance": distance,
 		"ap_cost": ap_cost,
 	})
-	unit.position = position
-	_emit_log("%s 移动到 (%.0f, %.0f)，消耗 %d AP。" % [unit.get_display_name(), position.x, position.y, ap_cost])
+	unit.set_hex_cell(cell, map_data)
+	_emit_log("%s 移动到格 (%d, %d)，消耗 %d AP。" % [unit.get_display_name(), unit.cell.x, unit.cell.y, ap_cost])
 	state_changed.emit()
 
 
@@ -526,13 +532,14 @@ func _resolve_card_play_frame(frame: BattleCardFrame) -> void:
 		frame.discard_after_play = false
 		_emit_log("%s 放逐弃牌堆中的 %s。" % [frame.user.get_display_name(), frame.card.card_name])
 
-	if play_mode == CardEnums.CardPlayMode.NORMAL:
-		frame.user.notify_card_ap_cost_paid(frame.card, {
-			"controller": self,
-			"card": frame.card,
-			"ap_cost": effective_ap_cost,
-			"druid_orientation": druid_orientation,
-		})
+	frame.user.notify_card_ap_cost_paid(frame.card, {
+		"controller": self,
+		"card": frame.card,
+		"ap_cost": effective_ap_cost,
+		"play_mode": play_mode,
+		"druid_orientation": druid_orientation,
+	})
+	frame.user.bind_next_card_damage_bonus(frame.card)
 
 	frame.resolved_successfully = true
 	enqueue_effect(
@@ -579,6 +586,7 @@ func _finish_card_play_frame(frame: BattleCardFrame) -> void:
 				"source_card": frame.card,
 				"card_context": frame.context,
 			})
+	frame.user.finish_next_card_damage_bonus(frame.card)
 	var actual_ap_cost := int(frame.context.extra.get("actual_ap_cost", frame.card.ap_cost))
 	_emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, actual_ap_cost])
 	state_changed.emit()
@@ -599,6 +607,9 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"enchant_zone": user.enchant_zone.duplicate(),
 		"curse_zone": user.curse_zone.duplicate(),
 		"card_runtime_states": user.card_runtime_states.duplicate(true),
+		"equipment_runtime_states": user.snapshot_equipment_runtime_states(),
+		"pending_next_card_damage_bonus": user.pending_next_card_damage_bonus,
+		"active_card_damage_bonuses": user.active_card_damage_bonuses.duplicate(true),
 		"statuses": _duplicate_resources(user.statuses),
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
@@ -636,6 +647,9 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	user.enchant_zone.assign(enchant_snapshot)
 	user.curse_zone.assign(curse_snapshot)
 	user.card_runtime_states = runtime_snapshot.duplicate(true)
+	user.restore_equipment_runtime_states(snapshot.get("equipment_runtime_states", {}) as Dictionary)
+	user.pending_next_card_damage_bonus = int(snapshot.get("pending_next_card_damage_bonus", 0))
+	user.active_card_damage_bonuses = (snapshot.get("active_card_damage_bonuses", {}) as Dictionary).duplicate(true)
 	var status_snapshot: Array = snapshot.get("statuses", []) as Array
 	user.statuses.assign(status_snapshot)
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
@@ -651,7 +665,6 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 		user.character_state.armor_equipment = snapshot.get("armor_equipment") as EquipmentData
 		user.character_state.accessory_equipment_1 = snapshot.get("accessory_equipment_1") as EquipmentData
 		user.character_state.accessory_equipment_2 = snapshot.get("accessory_equipment_2") as EquipmentData
-		CharacterEquipmentModel.refresh_enabled(user.character_state)
 
 
 func _rollback_card_payment(user: BattleUnitState, snapshot: Dictionary, effect_queue_size: int) -> void:
@@ -681,7 +694,7 @@ func basic_attack(attacker: BattleUnitState, target: BattleUnitState, equipment_
 		return false
 
 	var attack_range := attacker.get_attack_range(equipment_slot)
-	var distance := attacker.distance_to(target)
+	var distance := attacker.cell_distance_to(target)
 	if distance > attack_range:
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return false
@@ -706,7 +719,7 @@ func _resolve_basic_attack_action(attacker: BattleUnitState, target: BattleUnitS
 		return
 
 	var attack_range := attacker.get_attack_range(equipment_slot)
-	var distance := attacker.distance_to(target)
+	var distance := attacker.cell_distance_to(target)
 	if distance > attack_range:
 		_emit_log("距离 %.0f 超出 %s 的攻击距离 %.0f。" % [distance, attacker.get_display_name(), attack_range])
 		return
@@ -915,14 +928,14 @@ func _card_source_is_valid(user: BattleUnitState, card: CardData, play_mode: int
 			return false
 
 
-func can_unit_reach_position_with_ap(unit: BattleUnitState, position: Vector2, max_ap: int = 1, write_log: bool = false) -> bool:
+func can_unit_reach_cell_with_ap(unit: BattleUnitState, cell: Vector2i, max_ap: int = 1, write_log: bool = false, apply_ap_cost_modifiers: bool = true) -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
-	if not _is_position_valid_for_unit(unit, position, false, write_log):
+	if not _is_cell_valid_for_unit(unit, cell, false, write_log):
 		return false
 
-	var distance := unit.position.distance_to(position)
-	var ap_cost := unit.get_move_ap_cost(distance, config)
+	var distance := map_data.get_distance(unit.cell, cell)
+	var ap_cost := unit.get_move_ap_cost(distance, config) if apply_ap_cost_modifiers else ceili(float(distance) / float(unit.get_move_distance_per_ap(config)))
 	if ap_cost > max_ap:
 		if write_log:
 			_emit_log("%s 无法以 %d AP 移动到目标位置。" % [unit.get_display_name(), max_ap])
@@ -931,30 +944,30 @@ func can_unit_reach_position_with_ap(unit: BattleUnitState, position: Vector2, m
 	return true
 
 
-func can_unit_reach_position_with_ap_and_agility_modifier(unit: BattleUnitState, position: Vector2, max_ap: int = 1, agility_modifier: int = 0, write_log: bool = false) -> bool:
+func can_unit_reach_cell_with_ap_and_agility_modifier(unit: BattleUnitState, cell: Vector2i, max_ap: int = 1, agility_modifier: int = 0, write_log: bool = false) -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
 
 	var max_distance := get_ap_movement_distance(unit, max_ap, agility_modifier)
-	return can_unit_reach_position_with_distance(unit, position, max_distance, write_log)
+	return can_unit_reach_cell_with_distance(unit, cell, max_distance, write_log)
 
 
-func can_unit_reach_position_with_agility_modifier(unit: BattleUnitState, position: Vector2, agility_modifier: int = 0, write_log: bool = false) -> bool:
+func can_unit_reach_cell_with_agility_modifier(unit: BattleUnitState, cell: Vector2i, agility_modifier: int = 0, write_log: bool = false) -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
 
 	var max_distance := get_agility_movement_distance(unit, agility_modifier)
-	return can_unit_reach_position_with_distance(unit, position, max_distance, write_log)
+	return can_unit_reach_cell_with_distance(unit, cell, max_distance, write_log)
 
 
-func can_unit_reach_position_with_distance(unit: BattleUnitState, position: Vector2, max_distance: float, write_log: bool = false) -> bool:
+func can_unit_reach_cell_with_distance(unit: BattleUnitState, cell: Vector2i, max_distance: int, write_log: bool = false) -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
-	if not _is_position_valid_for_unit(unit, position, false, write_log):
+	if not _is_cell_valid_for_unit(unit, cell, false, write_log):
 		return false
 
-	var distance := unit.position.distance_to(position)
-	if distance > max_distance + 0.001:
+	var distance := map_data.get_distance(unit.cell, cell)
+	if distance > max_distance:
 		if write_log:
 			_emit_log("%s 无法移动到目标位置，距离 %.0f 超出可移动距离 %.0f。" % [
 				unit.get_display_name(),
@@ -966,74 +979,87 @@ func can_unit_reach_position_with_distance(unit: BattleUnitState, position: Vect
 	return true
 
 
-func get_agility_movement_distance(unit: BattleUnitState, agility_modifier: int = 0) -> float:
+func get_agility_movement_distance(unit: BattleUnitState, agility_modifier: int = 0) -> int:
 	if unit == null:
-		return 0.0
+		return 0
 
-	return maxf(0.0, float(unit.get_agility() + agility_modifier) * config.move_distance_per_agility)
+	if config.agility_per_move_cell <= 0:
+		return 0
+	return maxi(0, floori(float(unit.get_agility() + agility_modifier) / float(config.agility_per_move_cell)))
 
 
-func get_ap_movement_distance(unit: BattleUnitState, ap_budget: int, agility_modifier: int = 0) -> float:
+func get_ap_movement_distance(unit: BattleUnitState, ap_budget: int, agility_modifier: int = 0) -> int:
 	if unit == null:
-		return 0.0
+		return 0
 
-	return float(maxi(0, ap_budget)) * unit.get_move_distance_per_ap(config, agility_modifier)
+	return maxi(0, ap_budget) * unit.get_move_distance_per_ap(config, agility_modifier)
 
 
-func apply_card_movement_to(unit: BattleUnitState, position: Vector2, label: String = "卡牌移动") -> bool:
+func get_reachable_cells(unit: BattleUnitState, ap_budget: int = -1) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if unit == null or map_data == null or not map_data.is_valid_cell(unit.cell):
+		return result
+	var available_ap := unit.current_ap if ap_budget < 0 else ap_budget
+	for cell in map_data.get_all_cells():
+		var distance := map_data.get_distance(unit.cell, cell)
+		if unit.get_move_ap_cost(distance, config) > available_ap:
+			continue
+		if cell != unit.cell and not targeting.is_unit_cell_clear(unit, cell, false):
+			continue
+		result.append(cell)
+	return result
+
+
+func apply_card_movement_to_cell(unit: BattleUnitState, cell: Vector2i, label: String = "卡牌移动") -> bool:
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return false
-	if not _is_position_valid_for_unit(unit, position, false):
+	if not _is_cell_valid_for_unit(unit, cell, false):
 		return false
 
-	unit.position = position
-	_emit_log("%s 移动到 (%.0f, %.0f)（%s）。" % [unit.get_display_name(), position.x, position.y, label])
+	unit.set_hex_cell(cell, map_data)
+	_emit_log("%s 移动到格 (%d, %d)（%s）。" % [unit.get_display_name(), unit.cell.x, unit.cell.y, label])
 	state_changed.emit()
 	return true
 
 
-func apply_movement_effect(unit: BattleUnitState, target_position: Vector2, agility_modifier: int = 0, truncate_to_range: bool = true, ap_budget: int = -1) -> Dictionary:
+func apply_movement_effect(unit: BattleUnitState, target_cell: Vector2i, agility_modifier: int = 0, truncate_to_range: bool = true, ap_budget: int = -1) -> Dictionary:
 	var result := {
 		"success": false,
-		"start_position": Vector2.ZERO,
-		"end_position": Vector2.ZERO,
-		"requested_position": target_position,
-		"max_distance": 0.0,
+		"start_cell": BattleHexGrid.INVALID_CELL,
+		"end_cell": BattleHexGrid.INVALID_CELL,
+		"requested_cell": target_cell,
+		"max_distance": 0,
 	}
 	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
 		return result
 
-	var start_position := unit.position
-	var end_position := target_position
-	result["start_position"] = start_position
+	var start_cell := unit.cell
+	var end_cell := target_cell
+	result["start_cell"] = start_cell
 
-	if not targeting.is_unit_inside_map_bounds(unit, end_position, false):
-		if not truncate_to_range:
-			return result
-		end_position = clamp_to_map(end_position)
+	if not map_data.is_valid_cell(end_cell):
+		return result
 
 	var max_distance := get_agility_movement_distance(unit, agility_modifier)
 	if ap_budget >= 0:
 		max_distance = get_ap_movement_distance(unit, ap_budget, agility_modifier)
 	result["max_distance"] = max_distance
-	var direction := end_position - start_position
-	if not truncate_to_range and direction.length() > max_distance + 0.001:
+	var distance := map_data.get_distance(start_cell, end_cell)
+	if not truncate_to_range and distance > max_distance:
 		return result
-	if truncate_to_range and direction.length() > max_distance:
-		if direction.length() <= 0.001:
-			end_position = start_position
-		else:
-			end_position = start_position + direction.normalized() * max_distance
-			end_position = clamp_to_map(end_position)
+	if truncate_to_range and distance > max_distance:
+		var path := map_data.get_line(start_cell, end_cell)
+		end_cell = path[mini(max_distance, path.size() - 1)]
 
-	end_position = targeting.find_clear_endpoint_along_segment(unit, start_position, end_position)
-	if not targeting.is_unit_inside_map_bounds(unit, end_position, true) or not targeting.is_unit_position_clear(unit, end_position, true):
+	end_cell = targeting.find_clear_endpoint_along_hex_line(unit, start_cell, end_cell)
+	var end_position := map_data.cell_to_map(end_cell)
+	if not map_data.is_valid_cell(end_cell) or not targeting.is_unit_cell_clear(unit, end_cell, true):
 		return result
 
-	unit.position = end_position
+	unit.set_hex_cell(end_cell, map_data)
 	result["success"] = true
-	result["end_position"] = end_position
-	_emit_log("%s 移动到 (%.0f, %.0f)。" % [unit.get_display_name(), end_position.x, end_position.y])
+	result["end_cell"] = end_cell
+	_emit_log("%s 移动到格 (%d, %d)。" % [unit.get_display_name(), unit.cell.x, unit.cell.y])
 	state_changed.emit()
 	return result
 
@@ -1042,15 +1068,15 @@ func get_units_by_filter(source: BattleUnitState, filter: int) -> Array[BattleUn
 	return targeting.get_units_by_filter(source, filter)
 
 
-func get_units_in_swept_circle(source: BattleUnitState, start_position: Vector2, end_position: Vector2, sweep_radius: float, filter: int) -> Array[BattleUnitState]:
-	return targeting.get_units_in_swept_circle(source, start_position, end_position, sweep_radius, filter)
+func get_units_along_hex_line(source: BattleUnitState, start_cell: Vector2i, end_cell: Vector2i, filter: int) -> Array[BattleUnitState]:
+	return targeting.get_units_along_hex_line(source, start_cell, end_cell, filter)
 
 
-func get_units_in_range(source: BattleUnitState, range_distance: float, filter: int) -> Array[BattleUnitState]:
+func get_units_in_range(source: BattleUnitState, range_distance: int, filter: int) -> Array[BattleUnitState]:
 	return targeting.get_units_in_range(source, range_distance, filter)
 
 
-func get_units_in_attack_range(source: BattleUnitState, range_bonus: float = 0.0, filter: int = UnitFilter.OPPONENTS, equipment_slot: String = "") -> Array[BattleUnitState]:
+func get_units_in_attack_range(source: BattleUnitState, range_bonus: int = 0, filter: int = UnitFilter.OPPONENTS, equipment_slot: String = "") -> Array[BattleUnitState]:
 	return targeting.get_units_in_attack_range(source, range_bonus, filter, equipment_slot)
 
 
@@ -1075,6 +1101,16 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 
 	var old_equipment = result.get("old_equipment")
 	var new_equipment = result.get("new_equipment")
+	var switch_context := {
+		"controller": self,
+		"switch_result": result,
+		"action_id": get_current_action_id(),
+	}
+	if old_equipment != null:
+		unit.notify_equipment_before_switch_out(old_equipment, int(result.get("old_face", 0)), switch_context)
+		unit.notify_equipment_switched_out(old_equipment, int(result.get("old_face", 0)), switch_context)
+	if new_equipment != null:
+		unit.notify_equipment_switched_in(new_equipment, int(result.get("new_face", 0)), switch_context)
 	if old_equipment != null:
 		enqueue_trigger(Callable(self, "_emit_equipment_switched_out"), [result], 0, "切换掉当前装备", result)
 	if new_equipment != null:
@@ -1119,57 +1155,48 @@ func _find_inventory_weapon(unit: BattleUnitState) -> EquipmentData:
 	return null
 
 
-func can_use_warrior_momentum(unit: BattleUnitState) -> bool:
+func can_activate_equipment_action(unit: BattleUnitState, effect: EquipmentEffect) -> bool:
 	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or unit == null or current_unit != unit:
 		return false
-	if unit.faction != BattleUnitState.Faction.PLAYER:
+	if is_resolving_actions() or resolution_state_notification_active or not unit.is_equipment_action_active(effect):
 		return false
-	if unit.get_character_class() != CardEnums.CardClass.WARRIOR:
-		return false
-	if bool(class_resource_actions_used.get(unit.unit_id, false)):
-		return false
+	var context := {"controller": self, "unit": unit}
+	for action in unit.get_equipment_actions(context):
+		if action.get("effect") != effect:
+			continue
+		var cost := int(action.get("momentum_cost", 0))
+		return bool(action.get("enabled", false)) and unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) >= cost
+	return false
 
-	return unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) > 0
 
-
-func use_warrior_momentum(unit: BattleUnitState) -> bool:
-	if is_resolving_actions() or resolution_state_notification_active:
+func activate_equipment_action(unit: BattleUnitState, effect: EquipmentEffect) -> bool:
+	if not can_activate_equipment_action(unit, effect):
 		return false
-	if phase != Phase.BATTLE or unit == null or current_unit != unit:
-		return false
-	if unit.get_character_class() != CardEnums.CardClass.WARRIOR:
-		_emit_log("只有战士可以使用势。")
-		return false
-	if bool(class_resource_actions_used.get(unit.unit_id, false)):
-		_emit_log("%s 本回合已经使用过势。" % unit.get_display_name())
-		return false
-	if unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) <= 0:
-		_emit_log("%s 没有可消耗的势。" % unit.get_display_name())
-		return false
-
 	return push_action_frame(BattleActionFrame.create(
-		Callable(self, "_resolve_warrior_momentum_action"),
-		[unit],
+		Callable(self, "_resolve_equipment_action"),
+		[unit, effect],
 		0,
-		"%s 使用势" % unit.get_display_name(),
-		{"unit": unit, "resource": WARRIOR_MOMENTUM_RESOURCE}
+		"%s 使用武器行动" % unit.get_display_name(),
+		{"unit": unit, "equipment_effect": effect}
 	))
 
 
-func _resolve_warrior_momentum_action(unit: BattleUnitState) -> void:
-	if not can_use_warrior_momentum(unit):
+func _resolve_equipment_action(unit: BattleUnitState, effect: EquipmentEffect) -> void:
+	if unit == null or effect == null or not unit.is_equipment_action_active(effect):
 		return
-	if not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, 1):
+	var context := {"controller": self, "unit": unit, "action_id": get_current_action_id()}
+	for action in unit.get_equipment_actions(context):
+		if action.get("effect") != effect:
+			continue
+		var cost := int(action.get("momentum_cost", 0))
+		if not bool(action.get("enabled", false)):
+			return
+		if cost > 0 and not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, cost):
+			return
+		if effect.activate(unit, action.get("root") as EquipmentData, action.get("component") as EquipmentData, action.get("runtime") as EquipmentRuntimeState, context):
+			_emit_log("%s 使用 %s。" % [unit.get_display_name(), str(action.get("label", "武器行动"))])
+			state_changed.emit()
 		return
-
-	var status := OneShotDamageBonusStatus.new()
-	status.stacks = 1
-	status.bonus_amount = 2
-	unit.add_status(status)
-	class_resource_actions_used[unit.unit_id] = true
-	_emit_log("%s 消耗 1 点势，本回合每段伤害获得 +2 伤害加值。" % unit.get_display_name())
-	state_changed.emit()
-
 
 func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
 	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or unit == null or current_unit != unit:
@@ -1484,7 +1511,7 @@ func get_nearest_opponent(unit: BattleUnitState) -> BattleUnitState:
 	var nearest: BattleUnitState = null
 	var nearest_distance := INF
 	for other in get_opposing_units(unit):
-		var distance := unit.distance_to(other)
+		var distance := unit.cell_distance_to(other)
 		if distance < nearest_distance:
 			nearest = other
 			nearest_distance = distance
@@ -1516,11 +1543,11 @@ func get_alive_units() -> Array[BattleUnitState]:
 	return result
 
 
-func get_unit_at_position(position: Vector2) -> BattleUnitState:
+func get_unit_at_cell(selected_cell: Vector2i) -> BattleUnitState:
 	for unit in units:
 		if not unit.is_deployed or not unit.is_alive():
 			continue
-		if position.distance_to(unit.position) <= unit.radius:
+		if unit.cell == selected_cell:
 			return unit
 
 	return null
@@ -1623,11 +1650,11 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)
 
 	if target_type == CardEnums.TargetType.AREA:
-		if targets.size() != 1 or not (targets[0] is Vector2):
+		if targets.size() != 1 or not (targets[0] is Vector2i):
 			if write_log:
 				_emit_log("%s 需要一个位置目标。" % card.card_name)
 			return false
-		if not map_data.contains_map_position(targets[0]):
+		if not map_data.is_valid_cell(targets[0]):
 			if write_log:
 				_emit_log("目标位置超出地图边界。")
 			return false
@@ -1667,7 +1694,7 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 				_emit_log("%s 不能选择 %s 作为目标。" % [card.card_name, target.get_display_name()])
 			return false
 
-		var distance := user.distance_to(target)
+		var distance := user.cell_distance_to(target)
 		var card_range := card.get_effective_range(user, equipment_slot)
 		if distance > card_range:
 			if write_log:
@@ -1705,34 +1732,37 @@ func _get_card_target_type(user: BattleUnitState, card: CardData, equipment_slot
 	return card.get_target_type_for_mode(play_mode, context)
 
 
-func _is_position_valid_for_unit(unit: BattleUnitState, position: Vector2, deployment_only: bool, write_log: bool = true) -> bool:
-	if not targeting.is_unit_inside_map_bounds(unit, position, write_log):
+func _is_cell_valid_for_unit(unit: BattleUnitState, cell: Vector2i, deployment_only: bool, write_log: bool = true) -> bool:
+	if not targeting.is_unit_inside_map_bounds(unit, cell, write_log):
 		return false
 
-	if deployment_only and not map_data.contains_deployment_position(position):
+	if deployment_only and not map_data.is_player_deployment_cell(cell):
 		if write_log:
 			_emit_log("目标位置不在玩家部署区内。")
 		return false
 
-	return targeting.is_unit_position_clear(unit, position, write_log)
+	return targeting.is_unit_cell_clear(unit, cell, write_log)
 
 
-func _find_enemy_spawn_position(enemy_state: EnemyState) -> Vector2:
-	for _i in range(40):
-		var position := map_data.random_enemy_spawn_position(rng)
-		var fake := BattleUnitState.new()
-		fake.setup_enemy(-1, enemy_state, config.default_unit_radius, position)
-		if _is_spawn_position_valid(fake, position):
-			return position
+func _find_enemy_spawn_cell() -> Variant:
+	for _i in range(map_data.grid_columns * map_data.grid_rows * 2):
+		var cell := map_data.random_enemy_spawn_cell(rng)
+		if _is_spawn_cell_valid(cell):
+			return cell
 
-	return map_data.enemy_spawn_rect.get_center()
+	for cell in map_data.get_all_cells():
+		if not map_data.is_enemy_spawn_cell(cell):
+			continue
+		if _is_spawn_cell_valid(cell):
+			return cell
+	return null
 
 
-func _is_spawn_position_valid(unit: BattleUnitState, position: Vector2) -> bool:
-	if not map_data.contains_map_position(position):
+func _is_spawn_cell_valid(cell: Vector2i) -> bool:
+	if not map_data.is_valid_cell(cell):
 		return false
 
-	return targeting.is_unit_position_clear(unit, position, false)
+	return targeting.is_unit_cell_clear(null, cell, false)
 
 
 func _rebuild_turn_order() -> void:
@@ -1742,16 +1772,6 @@ func _rebuild_turn_order() -> void:
 			turn_order.append(unit)
 
 	turn_order.sort_custom(Callable(self, "_compare_turn_order"))
-
-
-func clamp_to_map(position: Vector2) -> Vector2:
-	if map_data.boundary_points.size() >= 3:
-		return _closest_boundary_point(position)
-
-	return Vector2(
-		clampf(position.x, 0.0, map_data.map_size.x),
-		clampf(position.y, 0.0, map_data.map_size.y)
-	)
 
 
 func _compare_turn_order(a: BattleUnitState, b: BattleUnitState) -> bool:
@@ -2012,19 +2032,3 @@ func _process_before_damage(target: BattleUnitState, damage_context: DamageConte
 			break
 
 	target.remove_expired_statuses()
-
-
-func _closest_boundary_point(position: Vector2) -> Vector2:
-	var closest := position
-	var closest_distance := INF
-	var point_count := map_data.boundary_points.size()
-	for index in range(point_count):
-		var start: Vector2 = map_data.boundary_points[index]
-		var end: Vector2 = map_data.boundary_points[(index + 1) % point_count]
-		var candidate := Geometry2D.get_closest_point_to_segment(position, start, end)
-		var distance := position.distance_to(candidate)
-		if distance < closest_distance:
-			closest = candidate
-			closest_distance = distance
-
-	return closest

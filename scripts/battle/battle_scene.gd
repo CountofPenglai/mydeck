@@ -96,9 +96,10 @@ func _ready() -> void:
 func handle_map_click(position: Vector2) -> void:
 	if _actions_locked():
 		return
+	var cell := controller.map_data.map_to_cell(position)
 
 	if controller.phase == BattleController.Phase.DEPLOYMENT:
-		_handle_deployment_click(position)
+		_handle_deployment_click(cell)
 		return
 
 	if controller.phase != BattleController.Phase.BATTLE:
@@ -106,14 +107,14 @@ func handle_map_click(position: Vector2) -> void:
 	if controller.current_unit == null or controller.current_unit.faction != BattleUnitState.Faction.PLAYER:
 		return
 
-	var clicked_unit := controller.get_unit_at_position(position)
+	var clicked_unit := controller.get_unit_at_cell(cell)
 	match input_mode:
 		InputMode.BASIC_ATTACK_TARGET:
 			_handle_basic_attack_target(clicked_unit)
 		InputMode.CARD_TARGET:
-			_handle_card_target(position, clicked_unit)
+			_handle_card_target(cell, clicked_unit)
 		InputMode.MOVE:
-			if controller.move_current_unit_to(position):
+			if controller.move_current_unit_to_cell(cell):
 				_clear_input()
 		_:
 			_append_log("请选择移动、攻击或一张手牌。")
@@ -132,10 +133,10 @@ func get_map_preview_context() -> Dictionary:
 	}
 
 
-func _handle_deployment_click(position: Vector2) -> void:
+func _handle_deployment_click(cell: Vector2i) -> void:
 	if selected_deploy_unit == null:
 		selected_deploy_unit = controller.get_first_undeployed_player()
-	if selected_deploy_unit != null and controller.deploy_player_unit(selected_deploy_unit, position):
+	if selected_deploy_unit != null and controller.deploy_player_unit_at_cell(selected_deploy_unit, cell):
 		selected_deploy_unit = controller.get_first_undeployed_player()
 	_refresh()
 
@@ -148,7 +149,7 @@ func _handle_basic_attack_target(clicked_unit: BattleUnitState) -> void:
 		_append_log("请选择一个敌方目标进行普通攻击。")
 
 
-func _handle_card_target(position: Vector2, clicked_unit: BattleUnitState) -> void:
+func _handle_card_target(cell: Vector2i, clicked_unit: BattleUnitState) -> void:
 	if pending_card == null:
 		_clear_input()
 		return
@@ -158,7 +159,7 @@ func _handle_card_target(position: Vector2, clicked_unit: BattleUnitState) -> vo
 	var play_context := pending_extra_context.duplicate()
 	play_context["equipment_slot"] = pending_equipment_slot
 	if target_type == CardEnums.TargetType.AREA:
-		played = controller.play_card(controller.current_unit, pending_card, [position], play_context, pending_play_mode)
+		played = controller.play_card(controller.current_unit, pending_card, [cell], play_context, pending_play_mode)
 	elif clicked_unit != null:
 		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
 	else:
@@ -266,11 +267,10 @@ func _select_deploy_unit(unit: BattleUnitState) -> void:
 	_refresh()
 
 
-func _on_class_resource_pressed(unit: BattleUnitState, resource_name: String) -> void:
+func _on_equipment_action_pressed(unit: BattleUnitState, effect: EquipmentEffect) -> void:
 	if _actions_locked():
 		return
-	if resource_name == BattleController.WARRIOR_MOMENTUM_RESOURCE:
-		controller.use_warrior_momentum(unit)
+	controller.activate_equipment_action(unit, effect)
 	_refresh()
 
 
@@ -566,15 +566,24 @@ func _refresh_class_resource_list() -> void:
 			var button := Button.new()
 			button.text = "%s：%s" % [unit.get_display_name(), pool_state.get_display_text()]
 			button.disabled = true
-
-			if pool_state.get_resource_name() == BattleController.WARRIOR_MOMENTUM_RESOURCE:
-				button.tooltip_text = "消耗 1 点势，获得本次一次性的 +2 伤害加值。每回合限一次。"
-				button.disabled = _actions_locked() or not controller.can_use_warrior_momentum(unit)
-				if not button.disabled:
-					button.text += "  使用"
-				button.pressed.connect(_on_class_resource_pressed.bind(unit, pool_state.get_resource_name()))
-
 			class_resource_list.add_child(button)
+
+		var equipment_summary := unit.get_equipment_runtime_summary({"controller": controller, "unit": unit})
+		if not equipment_summary.is_empty():
+			has_resources = true
+			var equipment_label := Label.new()
+			equipment_label.text = "%s：%s" % [unit.get_display_name(), equipment_summary]
+			class_resource_list.add_child(equipment_label)
+
+		if unit == controller.current_unit:
+			for action in unit.get_equipment_actions({"controller": controller, "unit": unit}):
+				has_resources = true
+				var action_button := Button.new()
+				action_button.text = str(action.get("label", "武器行动"))
+				var effect := action.get("effect") as EquipmentEffect
+				action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect)
+				action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect))
+				class_resource_list.add_child(action_button)
 
 	if not has_resources:
 		var label := Label.new()
@@ -882,7 +891,7 @@ func _current_unit_weapon_summary(unit: BattleUnitState) -> String:
 		return ""
 	if unit.faction == BattleUnitState.Faction.PLAYER:
 		return " | %s" % _strike_preview_text(unit)
-	return " | 威力 %d" % unit.get_attack()
+	return " | 攻击伤害 %d" % unit.get_attack()
 
 
 func _build_card_tooltip(card: CardData) -> String:
@@ -918,12 +927,12 @@ func _build_card_tooltip(card: CardData) -> String:
 
 func _strike_preview_text(unit: BattleUnitState) -> String:
 	var profile := unit.build_strike_profile_object(pending_equipment_slot)
-	var text := "伤害加值 %d / 武器威力 %d" % [
-		profile.damage_bonus,
-		profile.primary_power,
+	var text := "主手：基础伤害 %d / 伤害加值 %d" % [
+		profile.primary_base_damage,
+		profile.primary_damage_bonus,
 	]
 	if profile.add_offhand:
-		text += " / 额外段威力 %d" % profile.offhand_power
+		text += " / 副手：基础伤害 %d / 伤害加值 %d" % [profile.offhand_base_damage, profile.offhand_damage_bonus]
 	return text
 
 

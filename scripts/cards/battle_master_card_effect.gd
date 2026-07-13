@@ -9,20 +9,20 @@ class_name BattleMasterCardEffect
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:
 	var controller = context.get("controller")
 	var user = context.get("user")
-	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2):
+	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2i):
 		return false
 
-	return controller.can_unit_reach_position_with_ap(user, targets[0], move_ap_limit, write_log)
+	return controller.can_unit_reach_cell_with_ap(user, targets[0], move_ap_limit, write_log, false)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller = context.get("controller")
 	var user = context.get("user")
-	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2):
+	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2i):
 		return
 
 	controller.enqueue_effect(
-		Callable(controller, "apply_card_movement_to"),
+		Callable(controller, "apply_card_movement_to_cell"),
 		[user, targets[0], "战斗大师"],
 		effect_priority,
 		"战斗大师：移动",

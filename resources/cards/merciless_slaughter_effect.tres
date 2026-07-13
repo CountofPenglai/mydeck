@@ -6,5 +6,5 @@
 script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = false
-execution_power_multiplier = 2
+execution_base_damage_multiplier = 2
 self_stun_stacks = 2

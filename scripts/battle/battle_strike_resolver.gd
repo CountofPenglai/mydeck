@@ -25,17 +25,12 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		return 0
 
 	var profile_context := options.duplicate()
+	profile_context["controller"] = controller
 	profile_context["source"] = source
 	profile_context["target"] = target
 	profile_context["label"] = label
-	profile_context["consume_one_shot_damage_bonus"] = true
-	profile_context["consume_one_shot_power_bonus"] = true
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
-	var power_modifier := attacker.get_status_strike_power_bonus(profile_context)
-	if power_modifier != 0:
-		profile.primary_power = maxi(0, profile.primary_power + power_modifier)
-	attacker.remove_expired_statuses()
-	var primary_base_damage := maxi(0, profile.primary_power + profile.damage_bonus + damage_modifier)
+	var primary_base_damage := maxi(0, profile.primary_base_damage + profile.primary_damage_bonus + damage_modifier)
 	var primary_damage := _apply_damage_multiplier(primary_base_damage, damage_multiplier)
 	var actual_damage := controller.apply_damage(attacker, target, primary_damage, label)
 	var hit_results: Array[StrikeHitResult] = [
@@ -43,7 +38,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	]
 
 	if profile.add_offhand and target.is_alive():
-		var offhand_base_damage := maxi(0, profile.offhand_power + profile.damage_bonus + damage_modifier)
+		var offhand_base_damage := maxi(0, profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier)
 		var offhand_damage := _apply_damage_multiplier(offhand_base_damage, damage_multiplier)
 		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label)
 		actual_damage += offhand_actual
@@ -61,7 +56,6 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"damage_amount": primary_damage,
 		"base_damage_amount": primary_base_damage,
 		"damage_modifier": damage_modifier,
-		"power_modifier": power_modifier,
 		"damage_multiplier": damage_multiplier,
 		"actual_damage": actual_damage,
 		"label": label,

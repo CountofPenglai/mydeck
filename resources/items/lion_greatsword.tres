@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/lion_weapon_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_front"]
+script = ExtResource("2_effect")
+inverted_face = false
+
+[sub_resource type="Resource" id="Effect_back"]
+script = ExtResource("2_effect")
+inverted_face = true
+next_card_damage_bonus = 3
+
+[sub_resource type="Resource" id="LionRoar"]
+script = ExtResource("1_equipment")
+item_name = "翼狮咆哮"
+description = "备战1使下一张牌伤害加值+3；打击后按实际伤害获得护甲并倒转。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 7
+attack_range = 4
+damage_type = 0
+equip_slot = 0
+equip_category = 1
+allowed_classes = PackedInt32Array(1)
+rarity = 1
+subcategories = PackedStringArray("大剑", "武器", "T1", "逆位")
+trigger_effects = [SubResource("Effect_back")]
+activated_effects = [SubResource("Effect_back")]
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "怒狮大剑"
+description = "切入后可以倒转；正位打击后获得1点势。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 5
+attack_range = 2
+damage_type = 0
+equip_slot = 0
+equip_category = 1
+allowed_classes = PackedInt32Array(1)
+rarity = 1
+subcategories = PackedStringArray("大剑", "武器", "T1", "双面")
+back_face = SubResource("LionRoar")
+face_switch_mode = 2
+trigger_effects = [SubResource("Effect_front")]
+activated_effects = [SubResource("Effect_front")]

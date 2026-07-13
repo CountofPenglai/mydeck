@@ -6,5 +6,5 @@
 script = ExtResource("1_effect")
 effect_priority = 0
 uses_strike = false
-momentum_range_bonus = 2.0
-exile_power_bonus = 2
+momentum_range_bonus = 2
+exile_damage_bonus = 2

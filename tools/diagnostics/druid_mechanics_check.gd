@@ -71,8 +71,8 @@ func _test_moonlight_targets(controller: BattleController, druid: BattleUnitStat
 		_fail("DRUID_DIAG: moonlight target diagnostic resources missing")
 		return
 
-	ally.position = druid.position + Vector2(40.0, 0.0)
-	enemy.position = druid.position + Vector2(80.0, 0.0)
+	ally.set_hex_cell(Vector2i(druid.cell.x + 1, druid.cell.y), controller.map_data)
+	enemy.set_hex_cell(Vector2i(druid.cell.x + 2, druid.cell.y), controller.map_data)
 	if not controller.can_preview_card_targets(druid, moonlight, [ally]):
 		_fail("DRUID_DIAG: moonlight rejected an allied target")
 	if not controller.can_preview_card_targets(druid, moonlight, [enemy]):
@@ -102,11 +102,10 @@ func _test_moonlight_targets(controller: BattleController, druid: BattleUnitStat
 
 
 func _deploy_players(controller: BattleController) -> void:
-	var deploy_rect := controller.map_data.player_deployment_rect
 	for index in range(controller.player_units.size()):
 		var unit: BattleUnitState = controller.player_units[index]
-		var position := deploy_rect.position + Vector2(64.0 + float(index) * 72.0, deploy_rect.size.y * 0.5)
-		if not controller.deploy_player_unit(unit, position):
+		var cell := Vector2i(index % controller.map_data.player_deployment_columns, index + 2)
+		if not controller.deploy_player_unit_at_cell(unit, cell):
 			_fail("DRUID_DIAG: failed to deploy %s" % unit.get_display_name())
 
 

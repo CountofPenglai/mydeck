@@ -25,8 +25,8 @@ enum FaceSwitchMode {
 }
 
 @export_group("Combat")
-@export var power: int = 1
-@export var attack_range: float = 80.0
+@export var base_damage: int = 1
+@export_range(0, 12, 1) var attack_range: int = 1
 @export var range_type: int = WeaponRangeType.MELEE
 @export_enum("力量", "敏捷", "智力") var damage_type: int = CardEnums.DamageType.STRENGTH
 @export var damage_bonus: int = 0
@@ -44,6 +44,9 @@ enum FaceSwitchMode {
 @export_group("Double Face")
 @export var back_face: EquipmentData
 @export_enum("无", "手动", "触发") var face_switch_mode: int = FaceSwitchMode.NONE
+
+@export_group("Paired Equipment")
+@export var paired_component: EquipmentData
 
 @export_group("Effects")
 @export var passive_effects: Array[Resource] = []
@@ -98,6 +101,37 @@ func get_face(face_index: int) -> EquipmentData:
 
 func can_switch_face() -> bool:
 	return back_face != null and face_switch_mode != FaceSwitchMode.NONE
+
+
+func get_active_components(face_index: int = 0) -> Array[EquipmentData]:
+	var face := get_face(face_index)
+	var result: Array[EquipmentData] = []
+	if face == null:
+		return result
+	result.append(face)
+	if face.paired_component != null:
+		result.append(face.paired_component)
+	return result
+
+
+func has_secondary_damage_segment(face_index: int = 0) -> bool:
+	var face := get_face(face_index)
+	return face != null \
+		and face.paired_component != null \
+		and face.paired_component.is_weapon() \
+		and face.paired_component.base_damage > 0
+
+
+func get_effect_entries(face_index: int = 0) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var seen: Dictionary = {}
+	for component in get_active_components(face_index):
+		for effect in component.passive_effects + component.trigger_effects + component.activated_effects:
+			if not (effect is EquipmentEffect) or seen.has(effect.get_instance_id()):
+				continue
+			seen[effect.get_instance_id()] = true
+			entries.append({"effect": effect, "component": component})
+	return entries
 
 
 func get_range_type_label() -> String:

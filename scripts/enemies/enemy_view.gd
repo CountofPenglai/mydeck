@@ -46,7 +46,7 @@ func _refresh() -> void:
 	name_label.text = _enemy_state.get_enemy_name()
 	rank_label.text = "类别：" + _enemy_state.get_rank_label()
 	health_label.text = "生命：%d/%d" % [_enemy_state.current_health, _enemy_state.get_max_health()]
-	attack_label.text = "威力：%d" % _enemy_state.get_attack()
+	attack_label.text = "攻击伤害：%d" % _enemy_state.get_attack()
 	speed_label.text = "敏捷：%d" % _enemy_state.get_agility()
 	behavior_label.text = "战斗逻辑：" + _enemy_state.get_behavior_label()
 	portrait_rect.texture = data.portrait
@@ -59,7 +59,7 @@ func _show_empty_state() -> void:
 	name_label.text = "未绑定敌人"
 	rank_label.text = "类别：-"
 	health_label.text = "生命：-"
-	attack_label.text = "威力：-"
+	attack_label.text = "攻击伤害：-"
 	speed_label.text = "敏捷：-"
 	behavior_label.text = "战斗逻辑：-"
 	rule_summary_label.text = "卡组规则：-"

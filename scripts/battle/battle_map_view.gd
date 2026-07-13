@@ -3,7 +3,6 @@ class_name BattleMapView
 
 const DRAG_THRESHOLD := 8.0
 const FIT_PADDING := 32.0
-const AREA_PREVIEW_STEP := 28.0
 const LEGAL_FILL := Color(0.52, 1.0, 0.6, 0.22)
 const LEGAL_STROKE := Color(0.62, 1.0, 0.68, 0.82)
 const INVALID_DIM := Color(0.0, 0.0, 0.0, 0.18)
@@ -153,18 +152,17 @@ func _draw_background() -> void:
 		draw_rect(map_rect, Color(0.105, 0.12, 0.12, 1), true)
 	draw_rect(map_rect, Color(0.42, 0.48, 0.5, 1), false, 2.0)
 
-	if controller.map_data.boundary_points.size() >= 3:
-		for index in range(controller.map_data.boundary_points.size()):
-			var start: Vector2 = controller.map_data.boundary_points[index]
-			var end: Vector2 = controller.map_data.boundary_points[(index + 1) % controller.map_data.boundary_points.size()]
-			draw_line(start, end, Color(0.95, 0.85, 0.45, 0.75), 3.0, true)
+	for cell in controller.map_data.get_all_cells():
+		var polygon := controller.map_data.get_cell_polygon(cell)
+		draw_polyline(polygon + PackedVector2Array([polygon[0]]), Color(0.7, 0.74, 0.7, 0.34), 1.0, true)
 
 
 func _draw_static_zones() -> void:
-	draw_rect(controller.map_data.player_deployment_rect, Color(0.15, 0.45, 0.8, 0.18), true)
-	draw_rect(controller.map_data.player_deployment_rect, Color(0.25, 0.6, 0.95, 0.8), false, 2.0)
-	draw_rect(controller.map_data.enemy_spawn_rect, Color(0.85, 0.25, 0.18, 0.14), true)
-	draw_rect(controller.map_data.enemy_spawn_rect, Color(0.9, 0.38, 0.25, 0.75), false, 2.0)
+	for cell in controller.map_data.get_all_cells():
+		if controller.map_data.is_player_deployment_cell(cell):
+			_draw_hex_cell(cell, Color(0.15, 0.45, 0.8, 0.18), Color(0.25, 0.6, 0.95, 0.55))
+		elif controller.map_data.is_enemy_spawn_cell(cell):
+			_draw_hex_cell(cell, Color(0.85, 0.25, 0.18, 0.14), Color(0.9, 0.38, 0.25, 0.48))
 
 
 func _draw_target_preview() -> void:
@@ -187,12 +185,9 @@ func _draw_move_preview() -> void:
 	if unit == null:
 		return
 
-	var move_distance := float(unit.current_ap) * unit.get_move_distance_per_ap(controller.config)
-	if move_distance <= 0.0:
-		return
-
-	draw_circle(unit.position, move_distance, LEGAL_FILL)
-	draw_arc(unit.position, move_distance, 0.0, TAU, 96, LEGAL_STROKE, 2.0)
+	for cell in controller.get_reachable_cells(unit):
+		if cell != unit.cell:
+			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 
 
 func _draw_basic_attack_preview() -> void:
@@ -201,9 +196,9 @@ func _draw_basic_attack_preview() -> void:
 		return
 
 	var attack_range := unit.get_attack_range(str(battle_scene.pending_equipment_slot))
-	draw_arc(unit.position, attack_range + unit.radius, 0.0, TAU, 96, LEGAL_STROKE, 2.0)
+	_draw_range_cells(unit.cell, attack_range, false)
 	for target in controller.get_opposing_units(unit):
-		if unit.distance_to(target) <= attack_range + 0.001:
+		if unit.cell_distance_to(target) <= attack_range:
 			_draw_target_marker(target)
 
 
@@ -221,8 +216,8 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 
 	if target_type == CardEnums.TargetType.SINGLE:
 		var card_range := card.get_effective_range(unit, equipment_slot)
-		draw_arc(unit.position, card_range + unit.radius, 0.0, TAU, 96, LEGAL_STROKE, 2.0)
-		for target in controller.get_opposing_units(unit):
+		_draw_range_cells(unit.cell, card_range, false)
+		for target in controller.get_units_by_filter(unit, BattleController.UnitFilter.ALL):
 			if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
 				_draw_target_marker(target)
 	elif target_type == CardEnums.TargetType.AREA:
@@ -230,23 +225,14 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 
 
 func _draw_area_card_preview(unit: BattleUnitState, card: CardData, equipment_slot: String, play_mode: int, extra_context: Dictionary) -> void:
-	var map_size := controller.map_data.map_size
-	var step := AREA_PREVIEW_STEP
-	var cell_size := Vector2(step, step)
-	var y := step * 0.5
-	while y <= map_size.y:
-		var x := step * 0.5
-		while x <= map_size.x:
-			var candidate := Vector2(x, y)
-			if controller.can_preview_card_targets(unit, card, [candidate], equipment_slot, play_mode, extra_context):
-				draw_rect(Rect2(candidate - cell_size * 0.5, cell_size), LEGAL_FILL, true)
-			x += step
-		y += step
+	for cell in controller.map_data.get_all_cells():
+		if controller.can_preview_card_targets(unit, card, [cell], equipment_slot, play_mode, extra_context):
+			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 
 
 func _draw_target_marker(unit: BattleUnitState) -> void:
-	draw_circle(unit.position, unit.radius + 8.0, LEGAL_FILL)
-	draw_arc(unit.position, unit.radius + 8.0, 0.0, TAU, 48, LEGAL_STROKE, 3.0)
+	draw_circle(unit.position, unit.token_radius + 8.0, LEGAL_FILL)
+	draw_arc(unit.position, unit.token_radius + 8.0, 0.0, TAU, 48, LEGAL_STROKE, 3.0)
 
 
 func _draw_units() -> void:
@@ -259,18 +245,33 @@ func _draw_units() -> void:
 			color = Color(0.9, 0.28, 0.18, 1)
 
 		if unit == controller.current_unit:
-			draw_circle(unit.position, unit.radius + 6.0, Color(1.0, 0.9, 0.35, 0.45))
+			draw_circle(unit.position, unit.token_radius + 6.0, Color(1.0, 0.9, 0.35, 0.45))
 
-		var token_rect := Rect2(unit.position - Vector2(unit.radius, unit.radius), Vector2(unit.radius * 2.0, unit.radius * 2.0))
+		var token_rect := Rect2(unit.position - Vector2(unit.token_radius, unit.token_radius), Vector2(unit.token_radius * 2.0, unit.token_radius * 2.0))
 		var battle_texture := unit.get_battle_texture()
 		if battle_texture != null:
 			draw_texture_rect(battle_texture, token_rect, false)
-			draw_arc(unit.position, unit.radius, 0.0, TAU, 48, color, 3.0)
+			draw_arc(unit.position, unit.token_radius, 0.0, TAU, 48, color, 3.0)
 		else:
-			draw_circle(unit.position, unit.radius, color)
+			draw_circle(unit.position, unit.token_radius, color)
 
 		if unit == controller.current_unit:
-			draw_arc(unit.position, unit.get_attack_range() + unit.radius, 0.0, TAU, 64, Color(color.r, color.g, color.b, 0.24), 2.0)
+			_draw_range_cells(unit.cell, unit.get_attack_range(), false, Color(color.r, color.g, color.b, 0.24))
+
+
+func _draw_range_cells(origin_cell: Vector2i, cell_range: int, require_clear: bool, stroke: Color = LEGAL_STROKE) -> void:
+	for cell in controller.map_data.get_cells_in_range(origin_cell, cell_range):
+		if cell == origin_cell:
+			continue
+		if require_clear and not controller.targeting.is_unit_cell_clear(controller.current_unit, cell, false):
+			continue
+		_draw_hex_cell(cell, LEGAL_FILL, stroke)
+
+
+func _draw_hex_cell(cell: Vector2i, fill: Color, stroke: Color) -> void:
+	var polygon := controller.map_data.get_cell_polygon(cell)
+	draw_colored_polygon(polygon, fill)
+	draw_polyline(polygon + PackedVector2Array([polygon[0]]), stroke, 1.5, true)
 
 
 func _draw_screen_space_unit_labels() -> void:
@@ -286,7 +287,7 @@ func _draw_screen_space_unit_labels() -> void:
 
 func _draw_unit_label(unit: BattleUnitState, font: Font) -> void:
 	var screen_position := map_to_screen(unit.position)
-	var label_position := screen_position + Vector2(0.0, unit.radius * view_zoom + 8.0)
+	var label_position := screen_position + Vector2(0.0, unit.token_radius * view_zoom + 8.0)
 	var hand_count := unit.hand.size()
 	var text := "%d/%d  手牌 %d" % [unit.get_current_health(), unit.get_max_health(), hand_count]
 	var font_size := 13

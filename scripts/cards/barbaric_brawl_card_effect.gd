@@ -3,8 +3,8 @@ class_name BarbaricBrawlCardEffect
 
 const EXILE_ACTION_ID := "barbaric_brawl_exile_action"
 
-@export var momentum_range_bonus: float = 2.0
-@export_range(0, 99, 1) var exile_power_bonus: int = 2
+@export_range(0, 12, 1) var momentum_range_bonus: int = 2
+@export_range(0, 99, 1) var exile_damage_bonus: int = 2
 
 
 func get_target_type_for_mode(_context: Dictionary = {}, _play_mode: int = CardEnums.CardPlayMode.NORMAL, _default_target_type: int = CardEnums.TargetType.NONE) -> int:
@@ -61,7 +61,7 @@ func can_activate_from_exile(context: Dictionary = {}) -> bool:
 
 
 func get_exile_action_label(_context: Dictionary = {}) -> String:
-	return "每场战斗限一次：弃置所有手牌，移回弃牌堆，下一次打击 +%d 威力" % exile_power_bonus
+	return "每场战斗限一次：弃置所有手牌，移回弃牌堆，下一张牌伤害加值 +%d" % exile_damage_bonus
 
 
 func activate_from_exile(context: Dictionary = {}) -> void:
@@ -74,25 +74,22 @@ func activate_from_exile(context: Dictionary = {}) -> void:
 		return
 
 	var discarded_count := user.discard_all_hand(context)
-	if not user.move_exiled_card_to_discard(card):
+	if not user.move_exiled_card_to_discard(card, context):
 		return
 
-	var status := OneShotPowerBonusStatus.new()
-	status.stacks = 1
-	status.bonus_amount = exile_power_bonus
-	user.add_status(status)
+	user.gain_next_card_damage_bonus(exile_damage_bonus)
 	user.mark_battle_action_used(EXILE_ACTION_ID)
-	controller._emit_log("%s 弃置 %d 张手牌，将 %s 从放逐区移回弃牌堆，本回合下一次打击 +%d 威力。" % [
+	controller._emit_log("%s 弃置 %d 张手牌，将 %s 从放逐区移回弃牌堆，下一张牌伤害加值 +%d。" % [
 		user.get_display_name(),
 		discarded_count,
 		card.card_name,
-		exile_power_bonus,
+		exile_damage_bonus,
 	])
 
 
 func _get_targets(context: Dictionary, controller: BattleController, user: BattleUnitState) -> Array[BattleUnitState]:
 	var play_mode := int(context.get("play_mode", CardEnums.CardPlayMode.NORMAL))
-	var range_bonus := momentum_range_bonus if play_mode == CardEnums.CardPlayMode.MOMENTUM else 0.0
+	var range_bonus := momentum_range_bonus if play_mode == CardEnums.CardPlayMode.MOMENTUM else 0
 	return controller.get_units_in_attack_range(
 		user,
 		range_bonus,

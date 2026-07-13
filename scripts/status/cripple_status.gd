@@ -7,11 +7,11 @@ func _init() -> void:
 	display_name = "致残"
 
 
-func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: float, _context: Dictionary = {}) -> float:
+func modify_move_distance_per_ap(_unit: BattleUnitState, current_distance: int, _context: Dictionary = {}) -> int:
 	if stacks <= 0:
 		return current_distance
 
-	return current_distance * 0.5
+	return maxi(1, ceili(float(current_distance) * 0.5))
 
 
 func on_turn_start(_unit: BattleUnitState, _context: Dictionary = {}) -> void:

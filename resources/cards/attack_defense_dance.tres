@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "攻守轮舞"
-description = "以当前武器打击目标，然后尝试切换武器。目标在新武器范围内则再次打击，否则按新武器威力获得护甲；无武器可换时按当前武器威力获得护甲。"
+description = "以当前武器打击目标，然后尝试切换武器。目标在新武器范围内则再次打击，否则按新武器基础伤害获得护甲；无武器可换时按当前武器基础伤害获得护甲。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

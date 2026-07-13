@@ -39,12 +39,11 @@ func _ready() -> void:
 
 func _deploy_players(controller: BattleController) -> void:
 	print("DIAG: deploying players")
-	var deploy_rect := controller.map_data.player_deployment_rect
 	for index in range(controller.player_units.size()):
 		var unit: BattleUnitState = controller.player_units[index]
-		var position := deploy_rect.position + Vector2(64.0 + float(index) * 72.0, deploy_rect.size.y * 0.5)
-		if not controller.deploy_player_unit(unit, position):
-			_fail("DIAG: failed to deploy %s at %s" % [unit.get_display_name(), position])
+		var cell := Vector2i(index % controller.map_data.player_deployment_columns, index + 2)
+		if not controller.deploy_player_unit_at_cell(unit, cell):
+			_fail("DIAG: failed to deploy %s at %s" % [unit.get_display_name(), cell])
 
 
 func _start_battle(controller: BattleController) -> void:

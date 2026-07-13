@@ -26,9 +26,7 @@ class_name CharacterState
 @export_group("Combat Bonuses")
 @export var flat_damage_bonus: int = 0
 @export var damage_reduction: int = 0
-var main_hand_enabled: bool = true
-var off_hand_enabled: bool = true
-const UNARMED_POWER := 1
+const UNARMED_BASE_DAMAGE := 1
 const INVENTORY_LIMIT := 20
 const MAX_HEALTH_PER_STRENGTH := 3
 const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
@@ -39,7 +37,6 @@ func ensure_initialized() -> void:
 		return
 
 	_migrate_legacy_equipment()
-	_refresh_equipment_enabled()
 
 	if current_health < 0:
 		current_health = get_max_health()
@@ -116,7 +113,10 @@ func get_max_health() -> int:
 
 func get_attack() -> int:
 	var profile := build_strike_profile_object()
-	return profile.primary_power + profile.damage_bonus
+	var total := profile.primary_base_damage + profile.primary_damage_bonus
+	if profile.add_offhand:
+		total += profile.offhand_base_damage + profile.offhand_damage_bonus
+	return total
 
 
 func get_strength() -> int:
@@ -132,6 +132,10 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 	var unit = context.get("unit")
 	if unit != null and unit.has_method("get_status_damage_bonus"):
 		bonus += unit.get_status_damage_bonus(context)
+	if unit != null and unit.has_method("get_next_card_damage_bonus"):
+		bonus += unit.get_next_card_damage_bonus(context)
+	if unit != null and unit.has_method("get_equipment_effect_damage_bonus"):
+		bonus += unit.get_equipment_effect_damage_bonus(context)
 
 	return bonus
 
@@ -162,20 +166,24 @@ func get_intelligence_damage_bonus() -> int:
 	return get_intelligence() * DAMAGE_PER_ATTRIBUTE
 
 
-func get_damage_reduction() -> int:
-	return maxi(0, damage_reduction + _get_equipment_damage_reduction())
+func get_damage_reduction(context: Dictionary = {}) -> int:
+	var result := damage_reduction + _get_equipment_damage_reduction()
+	var unit = context.get("unit")
+	if unit != null and unit.has_method("get_equipment_effect_damage_reduction"):
+		result += unit.get_equipment_effect_damage_reduction(context)
+	return maxi(0, result)
 
 
-func get_collision_radius() -> float:
+func get_battle_token_radius() -> float:
 	if character_data == null:
 		return 0.0
 
-	return character_data.collision_radius
+	return character_data.battle_token_radius
 
 
-func get_attack_range(equipment_slot: String = "") -> float:
+func get_attack_range(equipment_slot: String = "") -> int:
 	if character_data == null:
-		return 0.0
+		return 0
 
 	var equipment := get_equipment_for_attack_slot(_resolve_primary_attack_slot(equipment_slot))
 	if equipment != null:
@@ -193,25 +201,22 @@ func has_equipment_subcategory(subcategory: String) -> bool:
 
 
 func needs_weapon_choice() -> bool:
-	return weapon_equipment != null and weapon_equipment.can_switch_face()
+	return false
 
 
 func get_attack_weapon_options() -> Array:
 	var options := []
-	var primary_weapon := get_weapon_face(0)
+	var primary_weapon := get_active_weapon_equipment()
 	if primary_weapon != null:
-		options.append(_make_equipment_option("weapon", primary_weapon, 0))
-	var alternate_weapon := get_weapon_face(1)
-	if alternate_weapon != null and alternate_weapon != primary_weapon:
-		options.append(_make_equipment_option("weapon_alt", alternate_weapon, 1))
+		options.append(_make_equipment_option("weapon", primary_weapon, weapon_face))
 	if options.is_empty():
 		options.append({
 			"slot": "unarmed",
 			"label": "空手",
 			"weapon": null,
 			"equipment": null,
-			"power": UNARMED_POWER,
-			"range": character_data.base_attack_range if character_data != null else 0.0,
+			"base_damage": UNARMED_BASE_DAMAGE,
+			"range": character_data.base_attack_range if character_data != null else 0,
 			"range_type": EquipmentData.WeaponRangeType.MELEE,
 		})
 
@@ -223,42 +228,48 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	var primary_equipment := get_equipment_for_attack_slot(primary_slot)
 	var profile := StrikeProfile.new()
 	profile.primary_slot = primary_slot
-	profile.primary_power = UNARMED_POWER
-	profile.primary_range = character_data.base_attack_range if character_data != null else 0.0
+	profile.primary_base_damage = UNARMED_BASE_DAMAGE
+	profile.primary_range = character_data.base_attack_range if character_data != null else 0
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.primary_damage_type = _resolve_damage_type(context, primary_equipment)
 	var damage_context := context.duplicate()
 	damage_context["resolved_damage_type"] = profile.primary_damage_type
 	damage_context["equipment"] = primary_equipment
-	profile.damage_bonus = get_damage_bonus(damage_context)
+	profile.primary_damage_bonus = get_damage_bonus(damage_context)
 	if primary_equipment != null:
 		profile.primary_equipment = primary_equipment
-		profile.primary_power = primary_equipment.power
+		profile.primary_base_damage = primary_equipment.base_damage
 		profile.primary_range = primary_equipment.attack_range
 		profile.primary_range_type = primary_equipment.range_type
+
+	var secondary := get_active_off_hand_equipment()
+	if weapon_equipment != null and weapon_equipment.has_secondary_damage_segment(weapon_face) and secondary != null:
+		profile.add_offhand = true
+		profile.offhand_equipment = secondary
+		profile.offhand_base_damage = secondary.base_damage
+		profile.offhand_damage_type = secondary.damage_type
+		var secondary_context := context.duplicate()
+		secondary_context["resolved_damage_type"] = secondary.damage_type
+		secondary_context["equipment"] = secondary
+		profile.offhand_damage_bonus = get_damage_bonus(secondary_context)
 
 	return profile
 
 
 func get_equipment_for_attack_slot(slot: String) -> EquipmentData:
-	if slot == "weapon":
-		return get_weapon_face(0)
-	if slot == "weapon_alt":
-		return get_weapon_face(1)
-	if slot == "main":
-		return get_weapon_face(0)
-	if slot == "off":
-		return get_weapon_face(1)
+	if slot in ["weapon", "weapon_alt", "main", "off"]:
+		return get_active_weapon_equipment()
 
 	return null
 
 
 func get_active_main_hand_equipment() -> EquipmentData:
-	return get_weapon_face(0)
+	return get_active_weapon_equipment()
 
 
 func get_active_off_hand_equipment() -> EquipmentData:
-	return get_weapon_face(1)
+	var weapon := get_active_weapon_equipment()
+	return weapon.paired_component if weapon != null else null
 
 
 func get_active_weapon_equipment() -> EquipmentData:
@@ -276,9 +287,8 @@ func get_weapon_face(face_index: int) -> EquipmentData:
 
 func get_equipped_items() -> Array[EquipmentData]:
 	var result: Array[EquipmentData] = []
-	var weapon := get_active_weapon_equipment()
-	if weapon != null:
-		result.append(weapon)
+	if weapon_equipment != null:
+		result.append_array(weapon_equipment.get_active_components(weapon_face))
 	if armor_equipment != null:
 		result.append(armor_equipment)
 	if accessory_equipment_1 != null:
@@ -327,27 +337,23 @@ func equip_weapon(equipment: EquipmentData) -> bool:
 	if equipment == null:
 		weapon_equipment = null
 		weapon_face = 0
-		_refresh_equipment_enabled()
 		return true
 	if not equipment.is_weapon():
 		return false
 
 	weapon_equipment = equipment
 	weapon_face = 0
-	_refresh_equipment_enabled()
 	return true
 
 
 func equip_armor(equipment: EquipmentData) -> bool:
 	if equipment == null:
 		armor_equipment = null
-		_refresh_equipment_enabled()
 		return true
 	if not equipment.is_armor():
 		return false
 
 	armor_equipment = equipment
-	_refresh_equipment_enabled()
 	return true
 
 
@@ -359,7 +365,6 @@ func equip_accessory(equipment: EquipmentData, slot_index: int) -> bool:
 			accessory_equipment_2 = null
 		else:
 			return false
-		_refresh_equipment_enabled()
 		return true
 	if not equipment.is_accessory():
 		return false
@@ -371,7 +376,6 @@ func equip_accessory(equipment: EquipmentData, slot_index: int) -> bool:
 	else:
 		return false
 
-	_refresh_equipment_enabled()
 	return true
 
 
@@ -382,7 +386,6 @@ func switch_equipment_from_inventory(preferred_equipment: EquipmentData = null) 
 func switch_equipment_face(slot: String) -> bool:
 	if (slot == "weapon" or slot == "main" or slot == "off") and weapon_equipment != null and weapon_equipment.can_switch_face():
 		weapon_face = 1 - weapon_face
-		_refresh_equipment_enabled()
 		return true
 	return false
 
@@ -392,7 +395,7 @@ func get_main_hand_label() -> String:
 	if equipment == null:
 		return "武器：无"
 
-	return "武器：%s 威力%d 射程%.0f %s" % [equipment.item_name, equipment.power, equipment.attack_range, equipment.get_damage_type_label()]
+	return "武器：%s 基础伤害%d 范围%d %s" % [equipment.item_name, equipment.base_damage, equipment.attack_range, equipment.get_damage_type_label()]
 
 
 func get_off_hand_label() -> String:
@@ -410,9 +413,9 @@ func _make_equipment_option(slot: String, equipment: EquipmentData, face_index: 
 		slot_label = "武器形态2"
 	return {
 		"slot": slot,
-		"label": "%s：%s 威力%d 射程%.0f %s" % [slot_label, equipment.item_name, equipment.power, equipment.attack_range, equipment.get_damage_type_label()],
+		"label": "%s：%s 基础伤害%d 范围%d %s" % [slot_label, equipment.item_name, equipment.base_damage, equipment.attack_range, equipment.get_damage_type_label()],
 		"equipment": equipment,
-		"power": equipment.power,
+		"base_damage": equipment.base_damage,
 		"range": equipment.attack_range,
 		"range_type": equipment.range_type,
 		"damage_type": equipment.damage_type,
@@ -420,22 +423,12 @@ func _make_equipment_option(slot: String, equipment: EquipmentData, face_index: 
 
 
 func _resolve_primary_attack_slot(equipment_slot: String = "") -> String:
-	if equipment_slot == "weapon":
-		return "weapon" if get_weapon_face(0) != null else "unarmed"
-	if equipment_slot == "weapon_alt":
-		return "weapon_alt" if get_weapon_face(1) != null else "unarmed"
-	if equipment_slot == "main":
-		return "weapon" if get_weapon_face(0) != null else "unarmed"
-	if equipment_slot == "off":
-		return "weapon_alt" if get_weapon_face(1) != null else "unarmed"
+	if equipment_slot in ["weapon", "weapon_alt", "main", "off"]:
+		return "weapon" if get_active_weapon_equipment() != null else "unarmed"
 	if get_active_weapon_equipment() != null:
-		return "weapon" if weapon_face == 0 else "weapon_alt"
+		return "weapon"
 
 	return "unarmed"
-
-
-func _refresh_equipment_enabled() -> void:
-	CharacterEquipmentModel.refresh_enabled(self)
 
 
 func _get_attribute_damage_bonus(context: Dictionary = {}) -> int:

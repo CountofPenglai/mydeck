@@ -173,8 +173,8 @@ func _test_turn_command_boundary() -> void:
 		_fail("FLOW_DIAG: command boundary units missing")
 		return
 	var inactive_ap := inactive_unit.current_ap
-	var inactive_position := inactive_unit.position
-	if controller.move_unit_to(inactive_unit, inactive_position):
+	var inactive_cell := inactive_unit.cell
+	if controller.move_unit_to_cell(inactive_unit, inactive_cell):
 		_fail("FLOW_DIAG: out-of-turn movement was accepted")
 	if controller.basic_attack(inactive_unit, opponent):
 		_fail("FLOW_DIAG: out-of-turn basic attack was accepted")
@@ -184,7 +184,7 @@ func _test_turn_command_boundary() -> void:
 			_fail("FLOW_DIAG: out-of-turn card preview was accepted")
 		if controller.play_card(inactive_unit, card, [opponent]):
 			_fail("FLOW_DIAG: out-of-turn card play was accepted")
-	if inactive_unit.current_ap != inactive_ap or inactive_unit.position != inactive_position:
+	if inactive_unit.current_ap != inactive_ap or inactive_unit.cell != inactive_cell:
 		_fail("FLOW_DIAG: rejected out-of-turn command changed unit state")
 
 	_test_duplicate_card_submission(controller, active_unit)
@@ -207,7 +207,7 @@ func _test_duplicate_card_submission(controller: BattleController, unit: BattleU
 		return
 	unit.hand.append(card)
 	unit.current_ap = 10
-	target.position = unit.position + Vector2(60.0, 0.0)
+	target.set_hex_cell(Vector2i(unit.cell.x + 1, unit.cell.y), controller.map_data)
 	_duplicate_card_results.clear()
 	controller.push_action_frame(BattleActionFrame.create(
 		Callable(self, "_submit_same_card_twice"),
@@ -259,11 +259,10 @@ func _attempt_reentrant_end_turn(controller: BattleController) -> void:
 
 
 func _deploy_players(controller: BattleController) -> void:
-	var deploy_rect := controller.map_data.player_deployment_rect
 	for index in range(controller.player_units.size()):
 		var unit: BattleUnitState = controller.player_units[index]
-		var position := deploy_rect.position + Vector2(64.0 + float(index) * 72.0, deploy_rect.size.y * 0.5)
-		if not controller.deploy_player_unit(unit, position):
+		var cell := Vector2i(index % controller.map_data.player_deployment_columns, index + 2)
+		if not controller.deploy_player_unit_at_cell(unit, cell):
 			_fail("FLOW_DIAG: failed to deploy %s" % unit.get_display_name())
 
 
