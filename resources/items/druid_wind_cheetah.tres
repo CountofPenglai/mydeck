@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/items/effects/druid_weapon_effect.gd" id="2"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3"]
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("2")
+weapon_kind = 1
+[sub_resource type="Resource" id="Cheetah"]
+script = ExtResource("1")
+item_name = "猎豹"
+description = "每回合首次武器打击后自动对同一目标追加一次打击。"
+icon = ExtResource("3")
+base_damage = 3
+attack_range = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 1
+allowed_classes = PackedInt32Array(4)
+subcategories = PackedStringArray("druid_weapon", "逆位", "野兽")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]
+[resource]
+script = ExtResource("1")
+item_name = "疾风魔杖 / 猎豹"
+description = "正位提高敏捷并以生命伤害换取抽牌，逆位连续追击。"
+icon = ExtResource("3")
+base_damage = 5
+attack_range = 3
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(4)
+subcategories = PackedStringArray("druid_weapon", "德鲁伊武器", "T0")
+back_face = SubResource("Cheetah")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]

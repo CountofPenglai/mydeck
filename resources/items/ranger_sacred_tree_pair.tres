@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/ranger_paired_weapon_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_tree"]
+script = ExtResource("2_effect")
+weapon_kind = 5
+
+[sub_resource type="Resource" id="SacredBow"]
+script = ExtResource("1_equipment")
+item_name = "圣树枝弓"
+description = "远程载荷完成后返还当前较少的配方原料。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 4
+attack_range = 4
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 2
+allowed_classes = PackedInt32Array(3)
+rarity = 2
+subcategories = PackedStringArray("远程", "武器", "模式组件")
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "圣树荆棘 / 圣树枝弓"
+description = "开战补充稀缺元素；近战载荷转化为抵挡，远程载荷回收原料。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 4
+attack_range = 2
+range_type = 0
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(3)
+rarity = 2
+subcategories = PackedStringArray("近战", "武器", "模式成对", "T2")
+paired_component = SubResource("SacredBow")
+paired_attack_mode = 1
+trigger_effects = [SubResource("Effect_tree")]

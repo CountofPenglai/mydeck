@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/ranger_paired_weapon_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_leaf"]
+script = ExtResource("2_effect")
+weapon_kind = 4
+
+[sub_resource type="Resource" id="ForestHunter"]
+script = ExtResource("1_equipment")
+item_name = "树海猎手"
+description = "潜行抵消敌方行动后自动反击合法来源。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 4
+attack_range = 3
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 2
+allowed_classes = PackedInt32Array(3)
+rarity = 1
+subcategories = PackedStringArray("远程", "武器", "模式组件")
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "叶影猎刀 / 树海猎手"
+description = "强化近战主动破隐，并在防御破隐后远程反击。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 3
+attack_range = 1
+range_type = 0
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(3)
+rarity = 1
+subcategories = PackedStringArray("近战", "武器", "模式成对", "T1")
+paired_component = SubResource("ForestHunter")
+paired_attack_mode = 1
+passive_effects = [SubResource("Effect_leaf")]
+trigger_effects = [SubResource("Effect_leaf")]

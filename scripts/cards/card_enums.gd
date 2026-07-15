@@ -20,6 +20,8 @@ enum CardClass {
 enum CardType {
 	ATTACK,
 	SKILL,
+	ENCHANTMENT,
+	CURSE,
 }
 
 enum CardTag {
@@ -59,6 +61,52 @@ enum DruidOrientation {
 	INVERTED,
 }
 
+enum CardZone {
+	NONE,
+	HAND,
+	DRAW,
+	DISCARD,
+	EXILE,
+	MANA,
+	ENCHANT,
+}
+
+enum ActionCategory {
+	MOVE,
+	ATTACK_CARD,
+	SKILL_CARD,
+	ENCHANTMENT_CARD,
+	CURSE_CARD,
+}
+
+
+static func action_category_for_card(card_type: int) -> int:
+	match card_type:
+		CardType.ATTACK:
+			return ActionCategory.ATTACK_CARD
+		CardType.ENCHANTMENT:
+			return ActionCategory.ENCHANTMENT_CARD
+		CardType.CURSE:
+			return ActionCategory.CURSE_CARD
+		_:
+			return ActionCategory.SKILL_CARD
+
+
+static func action_category_label(value: int) -> String:
+	match value:
+		ActionCategory.MOVE:
+			return "移动"
+		ActionCategory.ATTACK_CARD:
+			return "攻击牌"
+		ActionCategory.SKILL_CARD:
+			return "技能牌"
+		ActionCategory.ENCHANTMENT_CARD:
+			return "附魔牌"
+		ActionCategory.CURSE_CARD:
+			return "诅咒牌"
+		_:
+			return "未知行动"
+
 static func rarity_label(value: int) -> String:
 	match value:
 		Rarity.COMMON:
@@ -97,6 +145,10 @@ static func card_type_label(value: int) -> String:
 			return "攻击"
 		CardType.SKILL:
 			return "技能"
+		CardType.ENCHANTMENT:
+			return "附魔"
+		CardType.CURSE:
+			return "诅咒"
 		_:
 			return "未知"
 

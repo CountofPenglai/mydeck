@@ -53,6 +53,10 @@ func on_zone_owner_card_drawn(_owner: BattleUnitState, _zone_card: CardData, _dr
 	pass
 
 
+func on_self_drawn(_owner: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
 func on_zone_owner_card_discarded(_owner: BattleUnitState, _zone_card: CardData, _discarded_card: CardData, _context: Dictionary = {}) -> void:
 	pass
 
@@ -107,6 +111,18 @@ func requires_draw_pile_choice(_context: Dictionary = {}) -> bool:
 
 func requires_ordered_discard_choice(_context: Dictionary = {}) -> bool:
 	return false
+
+
+func requires_curse_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_curse_choice_options(_context: Dictionary = {}) -> Array[CurseInstance]:
+	return []
+
+
+func get_curse_choice_prompt(_context: Dictionary = {}) -> String:
+	return "选择一张诅咒"
 
 
 func requires_ranger_recipe_choice(_context: Dictionary = {}) -> bool:

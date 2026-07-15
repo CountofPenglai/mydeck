@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="InventoryStack" load_steps=3 format=3]
+[ext_resource type="Script" path="res://scripts/items/inventory_stack.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/items/ranger_sacred_tree_pair.tres" id="2"]
+[resource]
+script = ExtResource("1")
+item_data = ExtResource("2")
+count = 1

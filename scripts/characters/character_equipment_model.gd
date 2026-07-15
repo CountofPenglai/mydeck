@@ -6,14 +6,11 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 	if state == null:
 		return {"success": false}
 
-	var found := _find_inventory_equipment(state, preferred_equipment)
+	var found := preview_equipment_switch(state, preferred_equipment)
 	var equipment: EquipmentData = found.get("equipment")
 	var stack_index := int(found.get("stack_index", -1))
-	if equipment == null or stack_index < 0:
-		return {"success": false}
-
-	var slot := choose_switch_slot(state, equipment)
-	if slot.is_empty():
+	var slot := str(found.get("slot", ""))
+	if equipment == null or stack_index < 0 or slot.is_empty():
 		return {"success": false}
 
 	var previous: EquipmentData = null
@@ -55,6 +52,34 @@ static func switch_equipment_from_inventory(state: CharacterState, preferred_equ
 		"old_face": previous_face,
 		"new_equipment": equipment,
 		"new_face": state.weapon_face if slot == "weapon" else 0,
+	}
+
+
+static func preview_equipment_switch(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
+	if state == null:
+		return {"success": false}
+	var found := _find_inventory_equipment(state, preferred_equipment)
+	var equipment := found.get("equipment") as EquipmentData
+	var stack_index := int(found.get("stack_index", -1))
+	var slot := choose_switch_slot(state, equipment)
+	if equipment == null or stack_index < 0 or slot.is_empty():
+		return {"success": false}
+	var previous: EquipmentData = null
+	var previous_face := 0
+	match slot:
+		"weapon":
+			previous = state.weapon_equipment
+			previous_face = state.weapon_face
+		"armor": previous = state.armor_equipment
+		"accessory_1": previous = state.accessory_equipment_1
+		"accessory_2": previous = state.accessory_equipment_2
+	return {
+		"success": true,
+		"equipment": equipment,
+		"stack_index": stack_index,
+		"slot": slot,
+		"old_equipment": previous,
+		"old_face": previous_face,
 	}
 
 

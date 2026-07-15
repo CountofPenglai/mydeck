@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_unrest.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "unrest"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "unrest"
+display_name = "不休"
+is_boss_curse = false
+maturity_threshold = 4
+industry_description = "生命降至1，本回合不死，并获得2+D AP、抽D。"
+report_description = "死亡后战后转移给随机存活冒险者并加深。"
+fruit_description = "每战一次致命伤害降至1，获得3D护甲和D咒波；战后暂失2D最大生命。"
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

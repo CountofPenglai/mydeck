@@ -2,6 +2,7 @@ extends Control
 class_name BattleMapView
 
 const BattleSurfaceState = preload("res://scripts/battle/battle_surface_state.gd")
+const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 
 const DRAG_THRESHOLD := 8.0
 const FIT_PADDING := 32.0
@@ -211,10 +212,13 @@ func _draw_basic_attack_preview() -> void:
 	if unit == null:
 		return
 
-	var attack_range := unit.get_attack_range(str(battle_scene.pending_equipment_slot))
-	_draw_range_cells(unit.cell, attack_range, false)
+	var equipment_slot := str(battle_scene.pending_equipment_slot)
+	for cell in controller.map_data.get_all_cells():
+		var attack_range := controller.get_effective_attack_range_at_cell(unit, cell, equipment_slot)
+		if BattleHexGrid.distance(unit.cell, cell) <= attack_range:
+			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 	for target in controller.get_opposing_units(unit):
-		if unit.cell_distance_to(target) <= attack_range:
+		if unit.cell_distance_to(target) <= controller.get_effective_attack_range_against(unit, target, equipment_slot):
 			_draw_target_marker(target)
 
 
@@ -232,7 +236,17 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 
 	if target_type == CardEnums.TargetType.SINGLE:
 		var card_range := card.get_effective_range(unit, equipment_slot)
-		_draw_range_cells(unit.cell, card_range, false)
+		if card.effect != null and card.effect.uses_strike:
+			var profile := unit.build_strike_profile_object(equipment_slot)
+			var targetless_weapon_range := unit.get_attack_range(equipment_slot, {"controller": controller})
+			for cell in controller.map_data.get_all_cells():
+				var effective_range := card_range + controller.get_effective_attack_range_at_cell(unit, cell, equipment_slot) - targetless_weapon_range
+				if card.effect is RangerHuntMomentCardEffect and profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
+					effective_range = controller.get_effective_attack_range_at_cell(unit, cell, equipment_slot) + 2
+				if BattleHexGrid.distance(unit.cell, cell) <= effective_range:
+					_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
+		else:
+			_draw_range_cells(unit.cell, card_range, false)
 		for target in controller.get_units_by_filter(unit, BattleController.UnitFilter.ALL):
 			if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
 				_draw_target_marker(target)
@@ -276,19 +290,23 @@ func _draw_units() -> void:
 		if unit.faction == BattleUnitState.Faction.ENEMY:
 			color = Color(0.9, 0.28, 0.18, 1)
 
-		if unit == controller.current_unit:
-			draw_circle(unit.position, unit.token_radius + 6.0, Color(1.0, 0.9, 0.35, 0.45))
+		for occupied_cell in unit.get_occupied_cells():
+			var token_position := controller.map_data.cell_to_map(occupied_cell)
+			if unit == controller.current_unit:
+				draw_circle(token_position, unit.token_radius + 6.0, Color(1.0, 0.9, 0.35, 0.45))
 
-		var token_rect := Rect2(unit.position - Vector2(unit.token_radius, unit.token_radius), Vector2(unit.token_radius * 2.0, unit.token_radius * 2.0))
-		var battle_texture := unit.get_battle_texture()
-		if battle_texture != null:
-			draw_texture_rect(battle_texture, token_rect, false)
-			draw_arc(unit.position, unit.token_radius, 0.0, TAU, 48, color, 3.0)
-		else:
-			draw_circle(unit.position, unit.token_radius, color)
+			var token_rect := Rect2(token_position - Vector2(unit.token_radius, unit.token_radius), Vector2(unit.token_radius * 2.0, unit.token_radius * 2.0))
+			var battle_texture := unit.get_battle_texture()
+			if battle_texture != null:
+				draw_texture_rect(battle_texture, token_rect, false)
+				draw_arc(token_position, unit.token_radius, 0.0, TAU, 48, color, 3.0)
+			else:
+				draw_circle(token_position, unit.token_radius, color)
 
 		if unit == controller.current_unit:
 			_draw_range_cells(unit.cell, unit.get_attack_range(), false, Color(color.r, color.g, color.b, 0.24))
+			for origin in unit.get_alternate_range_origins({"controller": controller}):
+				_draw_range_cells(origin, unit.get_attack_range(), false, Color(color.r, color.g, color.b, 0.18))
 
 
 func _draw_range_cells(origin_cell: Vector2i, cell_range: int, require_clear: bool, stroke: Color = LEGAL_STROKE) -> void:

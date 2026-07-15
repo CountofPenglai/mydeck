@@ -1,0 +1,60 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=7 format=3]
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/items/effects/druid_weapon_effect.gd" id="2"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3"]
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("2")
+weapon_kind = 6
+[sub_resource type="Resource" id="Ring"]
+script = ExtResource("1")
+item_name = "夜明扳指"
+description = "承载法力区抽牌替代与星辉轮换。"
+icon = ExtResource("3")
+base_damage = 0
+attack_range = 0
+equip_slot = 0
+equip_category = 2
+[sub_resource type="Resource" id="Nymph"]
+script = ExtResource("1")
+item_name = "繁星若虫"
+description = "承载虫群投影与范围原点。"
+icon = ExtResource("3")
+base_damage = 0
+attack_range = 0
+equip_slot = 0
+equip_category = 2
+[sub_resource type="Resource" id="Firefly"]
+script = ExtResource("1")
+item_name = "无主流萤 / 繁星若虫"
+description = "基础伤害等于打击开始时可用法力，不能攻击距离1。"
+icon = ExtResource("3")
+base_damage = 0
+attack_range = 3
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 1
+allowed_classes = PackedInt32Array(4)
+rarity = 1
+subcategories = PackedStringArray("druid_weapon", "逆位", "投影")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]
+activated_effects = [SubResource("Effect")]
+[resource]
+script = ExtResource("1")
+item_name = "星辉猎弓·夜明扳指 / 无主流萤·繁星若虫"
+description = "以法力区驱动星辉轮换，逆位按可用法力攻击并留下虫群投影。"
+icon = ExtResource("3")
+base_damage = 3
+attack_range = 3
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(4)
+rarity = 1
+subcategories = PackedStringArray("druid_weapon", "德鲁伊武器", "T1")
+back_face = SubResource("Firefly")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]
+activated_effects = [SubResource("Effect")]

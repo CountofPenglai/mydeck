@@ -46,5 +46,7 @@ func find_units(controller: BattleController) -> Array[BattleUnitState]:
 func get_cell_distance_to(unit: BattleUnitState) -> int:
 	if unit == null:
 		return 2147483647
-
-	return BattleHexGrid.distance(origin_cell, unit.cell)
+	var distance := BattleHexGrid.distance(origin_cell, unit.cell)
+	for occupied in unit.get_occupied_cells():
+		distance = mini(distance, BattleHexGrid.distance(origin_cell, occupied))
+	return distance

@@ -7,7 +7,7 @@ const PENALTY_STATUS := preload("res://scripts/status/ranger_dagger_damage_penal
 
 
 func _init() -> void:
-	condition_name = "匕首本回合伤害加值 -2"
+	condition_name = "近战模式本回合伤害加值 -2"
 
 
 func can_pay(context: Dictionary = {}) -> bool:
@@ -27,14 +27,14 @@ func pay(context: Dictionary = {}) -> bool:
 			Callable(self, "_apply_penalty"),
 			[user],
 			0,
-			"回锋不止：匕首伤害衰减",
+			"回锋不止：近战伤害衰减",
 			context
 		)
 	return true
 
 
 func get_description() -> String:
-	return "匕首本回合伤害加值 -%d（可叠加）" % damage_penalty
+	return "近战模式本回合伤害加值 -%d（可叠加）" % damage_penalty
 
 
 func _apply_penalty(user: BattleUnitState) -> void:

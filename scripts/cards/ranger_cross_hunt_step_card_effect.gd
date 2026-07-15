@@ -80,7 +80,7 @@ func _resolve_cross_step(
 			Callable(self, "_grant_next_dagger_multiplier"),
 			[user],
 			-20,
-			"交错猎步：强化下次匕首"
+			"交错猎步：强化下次近战"
 		)
 	else:
 		controller.enqueue_effect(

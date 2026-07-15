@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Script" path="res://scripts/cards/curse_industry_card_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "greed"
+
+[resource]
+script = ExtResource("1_card")
+card_name = "贪欲之业"
+description = "磨空牌库，从任意单位弃牌堆选择2+D张加入手牌。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 0
+card_type = 3
+target_type = 0
+ap_cost = 0
+override_range = true
+card_range = 0
+effect = SubResource("Effect")

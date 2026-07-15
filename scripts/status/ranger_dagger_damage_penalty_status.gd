@@ -9,7 +9,7 @@ func _init() -> void:
 
 func get_damage_bonus(_unit: BattleUnitState, context: Dictionary = {}) -> int:
 	var equipment: EquipmentData = context.get("equipment") as EquipmentData
-	if equipment == null or not equipment.has_tag("匕首"):
+	if equipment == null or equipment.range_type != EquipmentData.WeaponRangeType.MELEE:
 		return 0
 	return -stacks
 

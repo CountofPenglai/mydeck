@@ -44,4 +44,4 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 
 func _has_dagger(user: BattleUnitState) -> bool:
 	var profile: StrikeProfile = user.build_strike_profile_object(DAGGER_SLOT)
-	return profile.primary_equipment != null and profile.primary_equipment.has_tag("匕首")
+	return profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE

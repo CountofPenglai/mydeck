@@ -82,6 +82,16 @@ static func neighbors(cell: Vector2i) -> Array[Vector2i]:
 	return result
 
 
+static func direction_index(origin: Vector2i, target: Vector2i) -> int:
+	if origin == target:
+		return -1
+	var path := line(origin, target)
+	if path.size() < 2:
+		return -1
+	var delta := offset_to_axial(path[1]) - offset_to_axial(origin)
+	return AXIAL_DIRECTIONS.find(delta)
+
+
 static func _round_axial(axial: Vector2) -> Vector2i:
 	var x := axial.x
 	var z := axial.y

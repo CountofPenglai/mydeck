@@ -6,7 +6,7 @@ class_name RangerNextDaggerMultiplierStatus
 
 func _init() -> void:
 	status_id = "ranger_next_dagger_multiplier"
-	display_name = "交错猎步：匕首强化"
+	display_name = "交错猎步：近战强化"
 
 
 func on_turn_end(_unit: BattleUnitState, _context: Dictionary = {}) -> void:

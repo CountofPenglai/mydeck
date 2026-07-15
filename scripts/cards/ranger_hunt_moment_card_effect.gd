@@ -19,8 +19,8 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 		return false
 
 	var equipment_slot: String = str(context.get("equipment_slot", ""))
-	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot, {})
-	var allowed_range: int = profile.primary_range
+	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot, {"controller": controller, "target": target})
+	var allowed_range: int = controller.get_effective_attack_range_against(user, target, equipment_slot)
 	if _is_crossbow(profile):
 		allowed_range += crossbow_range_bonus
 	var distance: int = user.cell_distance_to(target)
@@ -70,8 +70,8 @@ func _enter_stealth_after_dagger_kill(controller: BattleController, user: Battle
 
 
 func _is_dagger(profile: StrikeProfile) -> bool:
-	return profile != null and profile.primary_equipment != null and profile.primary_equipment.has_tag("匕首")
+	return profile != null and profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE
 
 
 func _is_crossbow(profile: StrikeProfile) -> bool:
-	return profile != null and profile.primary_equipment != null and profile.primary_equipment.has_tag("弩")
+	return profile != null and profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED

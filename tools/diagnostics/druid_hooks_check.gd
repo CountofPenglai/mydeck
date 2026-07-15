@@ -57,6 +57,7 @@ func _test_forced_drain_draw_hook(controller: BattleController, druid: BattleUni
 		return
 
 	druid.mana_zone.clear()
+	druid.druid_spent_mana = 0
 	druid.hand.clear()
 	druid.statuses.clear()
 	druid.discard_pile.clear()
@@ -79,6 +80,7 @@ func _test_special_zone_enter_hook(controller: BattleController, druid: BattleUn
 		return
 
 	druid.mana_zone.clear()
+	druid.druid_spent_mana = 0
 	druid.druid_temporary_mana = 0
 	druid.add_card_to_mana_zone(claws, {
 		"controller": controller,

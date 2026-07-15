@@ -25,19 +25,33 @@ var discard_pile: Array[CardData] = []
 var exiled_pile: Array[CardData] = []
 var mana_zone: Array[CardData] = []
 var enchant_zone: Array[CardData] = []
-var curse_zone: Array[CardData] = []
+var curse_zone: Array[CurseInstance] = []
+var curse_wave: int = 0
+var curse_runtime_states: Dictionary = {}
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
 var card_runtime_states: Dictionary = {}
 var equipment_runtime_states: Dictionary = {}
 var pending_next_card_damage_bonus: int = 0
 var active_card_damage_bonuses: Dictionary = {}
+var pending_next_attack_damage_bonus: int = 0
+var active_attack_lifesteal_cards: Dictionary = {}
 var turn_serial: int = 0
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
+var druid_spent_mana: int = 0
 var druid_temporary_mana: int = 0
+var druid_max_health_loss: int = 0
 var battle_controller: BattleController
 var ranger_state := RangerCombatState.new()
+var is_curse_proxy: bool = false
+var curse_proxy_owner: BattleUnitState
+var curse_proxy_name: String = ""
+var curse_proxy_health: int = 0
+var curse_proxy_max_health: int = 0
+var curse_proxy_mirrors_damage: bool = false
+var curse_proxy_hostile: bool = false
+var curse_proxy_depth: int = 1
 
 func setup_player(id: int, state: CharacterState, default_token_radius: float) -> void:
 	unit_id = id
@@ -53,7 +67,11 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	equipment_runtime_states.clear()
 	pending_next_card_damage_bonus = 0
 	active_card_damage_bonuses.clear()
+	pending_next_attack_damage_bonus = 0
+	active_attack_lifesteal_cards.clear()
 	turn_serial = 0
+	curse_wave = 0
+	curse_runtime_states.clear()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
 	if character_state != null:
@@ -75,7 +93,11 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	equipment_runtime_states.clear()
 	pending_next_card_damage_bonus = 0
 	active_card_damage_bonuses.clear()
+	pending_next_attack_damage_bonus = 0
+	active_attack_lifesteal_cards.clear()
 	turn_serial = 0
+	curse_wave = 0
+	curse_runtime_states.clear()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
 
@@ -84,6 +106,7 @@ func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> voi
 	if character_state != null:
 		character_state.ensure_initialized()
 		_prepare_deck(character_state.deck, rng, get_starting_hand_size(config))
+		_setup_curses_from_character_state(rng)
 	elif enemy_state != null:
 		enemy_state.ensure_initialized()
 		_prepare_deck(enemy_state.deck, rng, get_starting_hand_size(config))
@@ -93,11 +116,16 @@ func start_turn(config: BattleConfig) -> void:
 	turn_serial += 1
 	current_ap = get_max_ap(config)
 	druid_prepare_used = false
+	druid_spent_mana = 0
 	druid_temporary_mana = 0
+	druid_max_health_loss = 0
+	_reset_curse_turn_runtime()
 	ranger_state.start_turn(turn_serial)
 
 
 func get_display_name() -> String:
+	if is_curse_proxy:
+		return curse_proxy_name
 	if character_state != null:
 		return character_state.get_character_name()
 	if enemy_state != null:
@@ -107,6 +135,8 @@ func get_display_name() -> String:
 
 
 func get_current_health() -> int:
+	if is_curse_proxy:
+		return curse_proxy_health
 	if character_state != null:
 		return character_state.current_health
 	if enemy_state != null:
@@ -116,6 +146,9 @@ func get_current_health() -> int:
 
 
 func set_current_health(value: int) -> void:
+	if is_curse_proxy:
+		curse_proxy_health = clampi(value, 0, curse_proxy_max_health)
+		return
 	if character_state != null:
 		character_state.current_health = clampi(value, 0, get_max_health())
 	elif enemy_state != null:
@@ -134,15 +167,21 @@ func is_alive() -> bool:
 
 
 func get_max_health() -> int:
+	if is_curse_proxy:
+		return curse_proxy_max_health
+	var result := 0
 	if character_state != null:
-		return character_state.get_max_health()
-	if enemy_state != null:
-		return enemy_state.get_max_health()
-
-	return 0
+		result = character_state.get_max_health()
+	elif enemy_state != null:
+		result = enemy_state.get_max_health()
+	if result <= 0:
+		return 0
+	return maxi(1, result - druid_max_health_loss)
 
 
 func get_attack() -> int:
+	if is_curse_proxy:
+		return 3 + curse_proxy_depth
 	var profile := build_strike_profile_object()
 	var total := profile.primary_base_damage + profile.primary_damage_bonus
 	if profile.add_offhand:
@@ -160,7 +199,7 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 		result = enemy_state.get_damage_bonus(merged_context)
 	if battle_controller != null:
 		result += battle_controller.get_surface_damage_bonus(self)
-	return result
+	return result + get_curse_damage_bonus(merged_context)
 
 
 func get_damage_reduction(context: Dictionary = {}) -> int:
@@ -187,11 +226,30 @@ func is_ranger() -> bool:
 	return get_character_class() == CardEnums.CardClass.RANGER
 
 
+func setup_curse_proxy(id: int, owner: BattleUnitState, display_name: String, max_health: int, hostile: bool, mirrors_damage: bool, depth: int) -> void:
+	unit_id = id
+	turn_order_index = id
+	is_curse_proxy = true
+	curse_proxy_owner = owner
+	curse_proxy_name = display_name
+	curse_proxy_max_health = maxi(1, max_health)
+	curse_proxy_health = curse_proxy_max_health
+	curse_proxy_hostile = hostile
+	curse_proxy_mirrors_damage = mirrors_damage
+	curse_proxy_depth = maxi(1, depth)
+	faction = 1 - owner.faction if hostile else owner.faction
+	is_deployed = true
+	battle_controller = owner.battle_controller
+
+
 func enter_stealth() -> bool:
 	if not is_ranger() or not is_alive():
 		return false
 	ranger_state.stealth_active = true
 	ranger_state.stealth_expires_turn_serial = turn_serial + 1
+	_notify_all_equipment_runtime_effects("on_ranger_stealth_entered", [], _with_unit_context({
+		"controller": battle_controller,
+	}))
 	return true
 
 
@@ -273,6 +331,7 @@ func snapshot_equipment_runtime_states() -> Dictionary:
 			"equipment": runtime.equipment,
 			"counters": runtime.counters.duplicate(true),
 			"flags": runtime.flags.duplicate(true),
+			"data": runtime.data.duplicate(true),
 		}
 	return snapshot
 
@@ -285,6 +344,7 @@ func restore_equipment_runtime_states(snapshot: Dictionary) -> void:
 		runtime.equipment = data.get("equipment") as EquipmentData
 		runtime.counters = (data.get("counters", {}) as Dictionary).duplicate(true)
 		runtime.flags = (data.get("flags", {}) as Dictionary).duplicate(true)
+		runtime.data = (data.get("data", {}) as Dictionary).duplicate(true)
 		equipment_runtime_states[key] = runtime
 
 
@@ -333,18 +393,24 @@ func get_equipment_actions(context: Dictionary = {}) -> Array[Dictionary]:
 		var root := entry.get("root") as EquipmentData
 		var component := entry.get("component") as EquipmentData
 		var runtime := entry.get("runtime") as EquipmentRuntimeState
-		if effect == null or not effect.has_activated_action(self, root, component, runtime, context):
+		if effect == null:
 			continue
-		actions.append({
-			"effect": effect,
-			"root": root,
-			"component": component,
-			"runtime": runtime,
-			"label": effect.get_action_label(self, root, component, runtime, context),
-			"momentum_cost": effect.get_action_momentum_cost(self, root, component, runtime, context),
-			"enabled": effect.can_activate(self, root, component, runtime, context),
-		})
+		for raw_action in effect.get_activated_actions(self, root, component, runtime, context):
+			var action := raw_action.duplicate()
+			action["effect"] = effect
+			action["root"] = root
+			action["component"] = component
+			action["runtime"] = runtime
+			actions.append(action)
 	return actions
+
+
+func is_equipment_setup_ready(context: Dictionary = {}) -> bool:
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null and not effect.is_battle_setup_ready(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context):
+			return false
+	return true
 
 
 func is_equipment_action_active(effect: EquipmentEffect) -> bool:
@@ -362,11 +428,27 @@ func gain_next_card_damage_bonus(amount: int) -> int:
 	return actual
 
 
+func gain_next_attack_damage_bonus(amount: int, with_lifesteal: bool = false) -> int:
+	var actual := maxi(0, amount)
+	pending_next_attack_damage_bonus += actual
+	if with_lifesteal:
+		battle_action_flags["pending_next_attack_lifesteal"] = true
+	return actual
+
+
 func bind_next_card_damage_bonus(card: CardData) -> void:
-	if card == null or pending_next_card_damage_bonus <= 0:
+	if card == null:
 		return
-	active_card_damage_bonuses[card.get_instance_id()] = pending_next_card_damage_bonus
-	pending_next_card_damage_bonus = 0
+	var bonus := pending_next_card_damage_bonus
+	if card.is_attack_card():
+		bonus += pending_next_attack_damage_bonus
+		pending_next_attack_damage_bonus = 0
+		if bool(battle_action_flags.get("pending_next_attack_lifesteal", false)):
+			active_attack_lifesteal_cards[card.get_instance_id()] = true
+			battle_action_flags.erase("pending_next_attack_lifesteal")
+	if bonus > 0:
+		active_card_damage_bonuses[card.get_instance_id()] = bonus
+		pending_next_card_damage_bonus = 0
 
 
 func get_next_card_damage_bonus(context: Dictionary = {}) -> int:
@@ -379,6 +461,11 @@ func get_next_card_damage_bonus(context: Dictionary = {}) -> int:
 func finish_next_card_damage_bonus(card: CardData) -> void:
 	if card != null:
 		active_card_damage_bonuses.erase(card.get_instance_id())
+		active_attack_lifesteal_cards.erase(card.get_instance_id())
+
+
+func card_has_active_lifesteal(card: CardData) -> bool:
+	return card != null and bool(active_attack_lifesteal_cards.get(card.get_instance_id(), false))
 
 
 func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
@@ -402,20 +489,37 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 	return maxi(0, cost)
 
 
+func get_card_resonance_cost(card: CardData, context: Dictionary = {}) -> int:
+	if card == null:
+		return 0
+	var cost := maxi(0, card.resonance_cost)
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			cost = effect.modify_resonance_cost(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, card, cost, context)
+	return maxi(0, cost)
+
+
 func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_card_ap_cost_paid", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_ap_cost_paid", [card], event_context)
+	_notify_curse_effects("on_card_play_submitted", [card], event_context)
+	notify_action_category_used(CardEnums.action_category_for_card(card.card_type), event_context)
 
 
 func notify_after_card_played(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_after_card_played", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_card_played", [card], event_context)
+	_notify_curse_effects("on_after_card_played", [card], event_context)
+	_notify_equipment_effects("on_after_card_played", [card], event_context)
 
 
 func notify_ranger_stealth_cancelled(context: Dictionary = {}) -> void:
-	_notify_status_effects("on_ranger_stealth_cancelled", [], _with_unit_context(context))
+	var event_context := _with_unit_context(context)
+	_notify_status_effects("on_ranger_stealth_cancelled", [], event_context)
+	_notify_equipment_effects("on_ranger_stealth_cancelled", [], event_context)
 
 
 func notify_enemy_movement_completed(enemy: BattleUnitState, context: Dictionary = {}) -> void:
@@ -428,6 +532,61 @@ func notify_enemy_card_completed(enemy: BattleUnitState, card: CardData, context
 
 func notify_zone_turn_end(context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_turn_end", [], _with_unit_context(context))
+	_notify_curse_effects("on_turn_end", [], _with_unit_context(context))
+
+
+func notify_curse_battle_started(context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_battle_started", [], _with_unit_context(context))
+
+
+func notify_draw_phase_before(context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_draw_phase_before", [], _with_unit_context(context))
+
+
+func notify_action_phase_started(context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_action_phase_started", [], _with_unit_context(context))
+
+
+func notify_curse_battle_finished(victory: bool, context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_battle_finished", [victory], _with_unit_context(context))
+
+
+func notify_life_lost(amount: int, context: Dictionary = {}) -> void:
+	if amount <= 0:
+		return
+	_notify_curse_effects("on_after_life_lost", [amount], _with_unit_context(context))
+
+
+func notify_kill(target: BattleUnitState, context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_kill", [target], _with_unit_context(context))
+
+
+func notify_death(context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_death", [], _with_unit_context(context))
+
+
+func get_curse_actions(context: Dictionary = {}) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for curse in curse_zone:
+		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+			continue
+		for raw_action in curse.definition.effect.get_active_actions(self, curse, context):
+			var action := raw_action.duplicate(true)
+			action["curse"] = curse
+			result.append(action)
+	return result
+
+
+func can_activate_curse_action(curse: CurseInstance, action_id: String, context: Dictionary = {}) -> bool:
+	return curse != null and curse in curse_zone and curse.is_active_in_curse_zone() \
+		and curse.definition != null and curse.definition.effect != null \
+		and curse.definition.effect.can_activate_action(self, curse, action_id, context)
+
+
+func activate_curse_action(curse: CurseInstance, action_id: String, context: Dictionary = {}) -> bool:
+	if not can_activate_curse_action(curse, action_id, context):
+		return false
+	return curse.definition.effect.activate_action(self, curse, action_id, context)
 
 
 func get_status_damage_bonus(context: Dictionary = {}) -> int:
@@ -448,16 +607,92 @@ func get_status_damage_reduction(context: Dictionary = {}) -> int:
 	return reduction
 
 
+func get_curse_damage_bonus(context: Dictionary = {}) -> int:
+	var bonus := 0
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			bonus += curse.definition.effect.modify_damage_bonus(self, curse, context)
+	return bonus
+
+
+func get_curse_damage_reduction(context: Dictionary = {}) -> int:
+	var reduction := 0
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			reduction += curse.definition.effect.modify_damage_reduction(self, curse, context)
+	return reduction
+
+
+func modify_healing_received(amount: int, context: Dictionary = {}) -> int:
+	var result := maxi(0, amount)
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			result = curse.definition.effect.modify_healing_received(self, curse, result, context)
+	return maxi(0, result)
+
+
+func get_lethal_health_floor(context: Dictionary = {}) -> int:
+	var result := 0
+	for status in statuses:
+		if status != null and status.has_method("get_lethal_health_floor"):
+			result = maxi(result, int(status.get_lethal_health_floor(self, context)))
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			result = maxi(result, curse.definition.effect.get_lethal_health_floor(self, curse, context))
+	return maxi(0, result)
+
+
+func can_be_friendly_target(source: BattleUnitState, context: Dictionary = {}) -> bool:
+	if source == null or source.faction != faction or source == self:
+		return true
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if not curse.definition.effect.can_be_friendly_target(self, curse, source, context):
+				return false
+	return true
+
+
+func should_counter_hostile_card(source: BattleUnitState, card: CardData, context: Dictionary = {}) -> bool:
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if curse.definition.effect.should_counter_card(self, curse, source, card, context):
+				return true
+	return false
+
+
+func can_use_action_category(category: int, context: Dictionary = {}) -> bool:
+	for status in statuses:
+		if status != null and status.has_method("can_use_action_category") and not status.can_use_action_category(self, category, context):
+			return false
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if not curse.definition.effect.can_use_action_category(self, curse, category, context):
+				return false
+	return true
+
+
+func can_auto_reshuffle(context: Dictionary = {}) -> bool:
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if not curse.definition.effect.can_auto_reshuffle(self, curse, context):
+				return false
+	return true
+
+
+func notify_action_category_used(category: int, context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_action_category_used", [category], _with_unit_context(context))
+
+
 func get_zone_damage_reduction(context: Dictionary = {}) -> int:
 	var reduction := 0
-	for zone_name in ["mana", "enchant", "curse"]:
+	for zone_name in ["mana", "enchant"]:
 		var cards := _get_special_zone(zone_name)
 		for zone_card in cards.duplicate():
 			if zone_card == null or zone_card.effect == null:
 				continue
 			var event_context := _with_zone_context(zone_name, zone_card, context)
 			reduction += maxi(0, zone_card.effect.get_zone_owner_damage_reduction(self, zone_card, event_context))
-	return reduction
+	return reduction + get_curse_damage_reduction(context)
 
 
 func modify_incoming_damage(damage_context: DamageContext) -> void:
@@ -466,44 +701,73 @@ func modify_incoming_damage(damage_context: DamageContext) -> void:
 	for status in statuses.duplicate():
 		if status != null:
 			status.modify_incoming_damage(self, damage_context)
+	for curse in curse_zone.duplicate():
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			curse.definition.effect.modify_incoming_damage(self, curse, damage_context)
 	remove_expired_statuses()
 
 
-func get_agility() -> int:
-	if character_state != null:
-		return character_state.get_agility()
-	if enemy_state != null:
-		return enemy_state.get_agility()
+func modify_outgoing_damage(damage_context: DamageContext) -> void:
+	if damage_context == null:
+		return
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			effect.modify_outgoing_damage(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, damage_context)
 
-	return 0
+
+func is_flying() -> bool:
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null and effect.grants_flying(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, {"unit": self}):
+			return true
+	return false
+
+
+func get_agility() -> int:
+	var result := 0
+	if character_state != null:
+		result = character_state.get_agility()
+	elif enemy_state != null:
+		result = enemy_state.get_agility()
+	return _modify_equipment_attribute("agility", result)
 
 
 func get_strength() -> int:
+	var result := 0
 	if is_druid() and druid_transformed:
 		if character_state != null:
-			return character_state.get_intelligence()
-		if enemy_state != null:
-			return enemy_state.get_intelligence()
-	if character_state != null:
-		return character_state.get_strength()
-	if enemy_state != null:
-		return enemy_state.get_strength()
-
-	return 0
+			result = character_state.get_intelligence()
+		elif enemy_state != null:
+			result = enemy_state.get_intelligence()
+	elif character_state != null:
+		result = character_state.get_strength()
+	elif enemy_state != null:
+		result = enemy_state.get_strength()
+	return _modify_equipment_attribute("strength", result)
 
 
 func get_intelligence() -> int:
+	var result := 0
 	if is_druid() and druid_transformed:
 		if character_state != null:
-			return character_state.get_strength()
-		if enemy_state != null:
-			return enemy_state.get_strength()
-	if character_state != null:
-		return character_state.get_intelligence()
-	if enemy_state != null:
-		return enemy_state.get_intelligence()
+			result = character_state.get_strength()
+		elif enemy_state != null:
+			result = enemy_state.get_strength()
+	elif character_state != null:
+		result = character_state.get_intelligence()
+	elif enemy_state != null:
+		result = enemy_state.get_intelligence()
+	return _modify_equipment_attribute("intelligence", result)
 
-	return 0
+
+func _modify_equipment_attribute(attribute: String, current_value: int) -> int:
+	var result := current_value
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result = effect.modify_attribute(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, attribute, result, {"unit": self})
+	return result
 
 
 func get_starting_hand_size(config: BattleConfig) -> int:
@@ -517,19 +781,25 @@ func get_starting_hand_size(config: BattleConfig) -> int:
 	return maxi(0, hand_size)
 
 
-func get_attack_range(equipment_slot: String = "") -> int:
+func get_attack_range(equipment_slot: String = "", context: Dictionary = {}) -> int:
+	if not can_use_attack_mode(equipment_slot, context):
+		return 0
 	var result := 0
 	if character_state != null:
-		result = character_state.get_attack_range(equipment_slot)
+		result = character_state.get_attack_range(equipment_slot, get_active_weapon_face_index())
 	elif enemy_state != null:
 		result = enemy_state.get_attack_range(equipment_slot)
 	if battle_controller != null:
 		result = battle_controller.modify_attack_range_for_surface(self, result, equipment_slot)
 	var profile := build_strike_profile_object(equipment_slot, {"skip_surface_range": true})
-	var range_context := {"equipment_slot": equipment_slot, "range_type": profile.primary_range_type}
+	var range_context := context.merged({"equipment_slot": equipment_slot, "range_type": profile.primary_range_type})
 	for status in statuses:
 		if status != null:
 			result = status.modify_attack_range(self, result, range_context)
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result = effect.modify_attack_range(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, result, range_context)
 	if not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
 		return 0
 	return maxi(0, result)
@@ -539,7 +809,13 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
 	if character_state != null:
-		return character_state.build_strike_profile_object(equipment_slot, merged_context)
+		merged_context["weapon_face_override"] = get_active_weapon_face_index()
+		var profile := character_state.build_strike_profile_object(equipment_slot, merged_context)
+		for entry in _get_equipment_effect_entries():
+			var effect := entry.get("effect") as EquipmentEffect
+			if effect != null:
+				effect.modify_strike_profile(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, profile, merged_context)
+		return profile
 	if enemy_state != null:
 		return enemy_state.build_strike_profile_object(equipment_slot, merged_context)
 
@@ -560,16 +836,45 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 
 func needs_weapon_choice() -> bool:
 	if character_state != null:
-		return character_state.needs_weapon_choice()
+		return character_state.needs_weapon_choice(get_active_weapon_face_index())
 
 	return false
 
 
 func get_attack_weapon_options() -> Array:
 	if character_state != null:
-		return character_state.get_attack_weapon_options()
+		var available := []
+		for option in character_state.get_attack_weapon_options(get_active_weapon_face_index()):
+			if can_use_attack_mode(str(option.get("slot", ""))):
+				available.append(option)
+		return available
 
 	return []
+
+
+func can_use_attack_mode(equipment_slot: String, context: Dictionary = {}) -> bool:
+	if not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
+		return false
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null and not effect.can_use_attack_mode(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, equipment_slot, context):
+			return false
+	return true
+
+
+func get_active_weapon_face_index() -> int:
+	if character_state == null or character_state.weapon_equipment == null:
+		return 0
+	var root := character_state.weapon_equipment
+	if is_druid() and root.has_tag("druid_weapon") and root.has_back_face():
+		return 1 if druid_transformed else 0
+	return character_state.weapon_face
+
+
+func get_active_weapon_equipment() -> EquipmentData:
+	if character_state == null:
+		return null
+	return character_state.get_weapon_face(get_active_weapon_face_index())
 
 
 func has_equipment_subcategory(subcategory: String) -> bool:
@@ -610,13 +915,20 @@ func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -
 	for status in statuses:
 		if status != null and status.has_method("modify_move_distance_per_ap"):
 			distance = status.modify_move_distance_per_ap(self, distance, context)
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			distance = effect.modify_move_distance_per_ap(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, distance, context)
 
 	return maxi(1, distance)
 
 
 func get_move_ap_cost(distance: int, config: BattleConfig) -> int:
 	var move_per_ap := get_move_distance_per_ap(config)
-	var cost := ceili(float(distance) / float(move_per_ap))
+	var bonus := get_next_move_distance_bonus({"config": config, "distance": distance})
+	var cost := ceili(float(maxi(0, distance - bonus)) / float(move_per_ap))
+	if distance > 0:
+		cost = maxi(1, cost)
 	var context := {
 		"config": config,
 		"distance": distance,
@@ -625,14 +937,34 @@ func get_move_ap_cost(distance: int, config: BattleConfig) -> int:
 	for status in statuses:
 		if status != null and status.has_method("modify_move_ap_cost"):
 			cost = status.modify_move_ap_cost(self, cost, context)
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			cost = curse.definition.effect.modify_move_ap_cost(self, curse, cost, context)
 
 	return maxi(0, cost)
+
+
+func get_next_move_distance_bonus(context: Dictionary = {}) -> int:
+	var result := 0
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result += effect.get_next_move_distance_bonus(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context)
+	return maxi(0, result)
+
+
+func can_start_voluntary_movement() -> bool:
+	for status in statuses:
+		if status != null and status.has_method("can_start_voluntary_movement") and not status.can_start_voluntary_movement(self):
+			return false
+	return true
 
 
 func notify_move_ap_cost_paid(context: Dictionary = {}) -> void:
 	for status in statuses.duplicate():
 		if status != null and status.has_method("on_move_ap_cost_paid"):
 			status.on_move_ap_cost_paid(self, context)
+	notify_action_category_used(CardEnums.ActionCategory.MOVE, context)
 
 	remove_expired_statuses()
 
@@ -642,7 +974,69 @@ func cell_distance_to(other: BattleUnitState) -> int:
 		return 2147483647
 	if cell == BattleHexGrid.INVALID_CELL or other.cell == BattleHexGrid.INVALID_CELL:
 		return 2147483647
-	return BattleHexGrid.distance(cell, other.cell)
+	var distance := BattleHexGrid.distance(cell, other.cell)
+	for occupied in other.get_occupied_cells():
+		distance = mini(distance, BattleHexGrid.distance(cell, occupied))
+	return distance
+
+
+func get_range_distance_to(other: BattleUnitState, context: Dictionary = {}) -> int:
+	var distance := cell_distance_to(other)
+	if other == null:
+		return distance
+	for origin in get_alternate_range_origins(context):
+		distance = mini(distance, BattleHexGrid.distance(origin, other.cell))
+	return distance
+
+
+func get_alternate_range_origins(context: Dictionary = {}) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for status in statuses:
+		if status == null or status.should_remove():
+			continue
+		for origin in status.get_alternate_range_origins(self, context):
+			if origin != BattleHexGrid.INVALID_CELL and not result.has(origin):
+				result.append(origin)
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		for origin in effect.get_alternate_range_origins(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context):
+			if not result.has(origin):
+				result.append(origin)
+	for curse in curse_zone:
+		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+			continue
+		for origin in curse.definition.effect.get_alternate_range_origins(self, curse, context):
+			if origin != BattleHexGrid.INVALID_CELL and not result.has(origin):
+				result.append(origin)
+	return result
+
+
+func get_equipment_card_duplicate_targets(card: CardData, targets: Array, context: Dictionary = {}) -> Array:
+	var result: Array = []
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		for target in effect.get_card_duplicate_targets(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, card, targets, context):
+			if not result.has(target):
+				result.append(target)
+	return result
+
+
+func get_occupied_cells() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if cell != BattleHexGrid.INVALID_CELL:
+		result.append(cell)
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		for occupied in effect.get_additional_occupied_cells(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, {"unit": self}):
+			if occupied != BattleHexGrid.INVALID_CELL and not result.has(occupied):
+				result.append(occupied)
+	return result
 
 
 func set_hex_cell(new_cell: Vector2i, map_data: BattleMapData) -> void:
@@ -655,10 +1049,19 @@ func draw_cards(count: int, rng: RandomNumberGenerator, context: Dictionary = {}
 	return draw_cards_detailed(count, rng, context).size()
 
 
+func shuffle_draw_pile(rng: RandomNumberGenerator) -> void:
+	_shuffle_cards(draw_pile, rng)
+
+
 func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictionary = {}) -> Array[CardData]:
 	var drawn_cards: Array[CardData] = []
 	for _i in range(maxi(0, count)):
 		if draw_pile.is_empty() and not discard_pile.is_empty():
+			if not can_auto_reshuffle(context):
+				break
+			_notify_curse_effects("on_before_reshuffle", [], _with_unit_context(context))
+			if not is_alive():
+				break
 			draw_pile = discard_pile.duplicate()
 			discard_pile.clear()
 			_shuffle_cards(draw_pile, rng)
@@ -670,6 +1073,8 @@ func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictio
 		hand.append(drawn_card)
 		drawn_cards.append(drawn_card)
 		_notify_card_drawn(drawn_card, context)
+	if not drawn_cards.is_empty():
+		_notify_draw_action_completed(drawn_cards, context)
 
 	return drawn_cards
 
@@ -683,11 +1088,10 @@ func mill_cards(count: int, context: Dictionary = {}) -> Array[CardData]:
 		var card: CardData = draw_pile.pop_back() as CardData
 		if card == null:
 			continue
-		discard_pile.append(card)
 		milled.append(card)
 		var discard_context := context.duplicate()
 		discard_context["reason"] = "mill"
-		_notify_card_discarded(card, discard_context)
+		add_card_to_discard(card, discard_context)
 
 	return milled
 
@@ -710,6 +1114,20 @@ func discard_card(card: CardData, context: Dictionary = {}) -> bool:
 		return false
 
 	hand.remove_at(index)
+	add_card_to_discard(card, context)
+	return true
+
+
+func add_card_to_discard(card: CardData, context: Dictionary = {}) -> bool:
+	if card == null:
+		return false
+	var runtime_state := get_card_runtime_state(card, false)
+	if bool(runtime_state.get("exile_on_leave_hand", false)) or _should_exile_discarded_card(card, context):
+		exiled_pile.append(card)
+		clear_card_runtime_state(card)
+		if battle_controller != null:
+			battle_controller._emit_log("%s 的 %s 改为进入放逐区。" % [get_display_name(), card.card_name])
+		return true
 	discard_pile.append(card)
 	_notify_card_discarded(card, context)
 	return true
@@ -738,18 +1156,15 @@ func move_enchant_card_to_discard(card: CardData, context: Dictionary = {}) -> b
 		return false
 
 	enchant_zone.remove_at(index)
-	discard_pile.append(card)
 	clear_card_runtime_state(card)
-	_notify_card_discarded(card, context)
-	return true
+	return add_card_to_discard(card, context)
 
 
-func add_card_to_curse_zone(card: CardData, context: Dictionary = {}) -> void:
-	if card == null:
+func add_curse_to_zone(curse: CurseInstance, context: Dictionary = {}) -> void:
+	if curse == null or curse_zone.has(curse):
 		return
-
-	curse_zone.append(card)
-	_notify_card_entered_special_zone(card, "curse", context)
+	curse_zone.append(curse)
+	_notify_curse_state_changed(curse, context)
 
 
 func move_hand_card_to_mana(card: CardData, context: Dictionary = {}) -> bool:
@@ -772,18 +1187,54 @@ func move_hand_card_to_enchant(card: CardData, context: Dictionary = {}) -> bool
 	return true
 
 
-func move_hand_card_to_curse(card: CardData, context: Dictionary = {}) -> bool:
-	var index := hand.find(card)
-	if index < 0:
-		return false
+func get_curse(curse_id: String) -> CurseInstance:
+	for curse in curse_zone:
+		if curse != null and curse.get_curse_id() == curse_id:
+			return curse
+	return null
 
-	hand.remove_at(index)
-	add_card_to_curse_zone(card, context)
-	return true
+
+func gain_curse_wave(amount: int, context: Dictionary = {}) -> int:
+	var actual := maxi(0, amount)
+	if actual <= 0:
+		return 0
+	curse_wave += actual
+	_notify_curse_resource_changed("curse_wave", actual, context)
+	return actual
+
+
+func consume_curse_wave(amount: int, context: Dictionary = {}) -> int:
+	var actual := mini(curse_wave, maxi(0, amount))
+	if actual <= 0:
+		return 0
+	curse_wave -= actual
+	_notify_curse_resource_changed("curse_wave", -actual, context)
+	return actual
+
+
+func get_curse_runtime_state(curse: CurseInstance, create_if_missing: bool = true) -> Dictionary:
+	if curse == null:
+		return {}
+	var key := curse.get_curse_id()
+	if curse_runtime_states.has(key):
+		return curse_runtime_states[key] as Dictionary
+	if not create_if_missing:
+		return {}
+	var state: Dictionary = {}
+	curse_runtime_states[key] = state
+	return state
 
 
 func get_available_mana() -> int:
-	return mana_zone.size() + maxi(0, druid_temporary_mana)
+	return get_unspent_persistent_mana() + maxi(0, druid_temporary_mana)
+
+
+func get_mana_capacity() -> int:
+	return mana_zone.size()
+
+
+func get_unspent_persistent_mana() -> int:
+	return maxi(0, get_mana_capacity() - druid_spent_mana)
 
 
 func can_pay_mana(amount: int) -> bool:
@@ -794,13 +1245,14 @@ func can_pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
 	if amount <= 0:
 		return true
 
-	var available := get_available_mana()
+	var persistent_capacity := get_mana_capacity()
 	if excluded_card != null and mana_zone.find(excluded_card) >= 0:
-		available -= 1
+		persistent_capacity -= 1
+	var available := maxi(0, persistent_capacity - druid_spent_mana) + maxi(0, druid_temporary_mana)
 	return available >= amount
 
 
-func pay_mana(amount: int) -> bool:
+func pay_mana(amount: int, context: Dictionary = {}) -> bool:
 	if amount <= 0:
 		return true
 	if not can_pay_mana(amount):
@@ -810,14 +1262,14 @@ func pay_mana(amount: int) -> bool:
 	var temporary_paid := mini(druid_temporary_mana, remaining)
 	druid_temporary_mana -= temporary_paid
 	remaining -= temporary_paid
-	while remaining > 0 and not mana_zone.is_empty():
-		mana_zone.pop_back()
-		remaining -= 1
+	druid_spent_mana += remaining
+	remaining = 0
+	_notify_mana_paid(amount, context)
 
 	return remaining <= 0
 
 
-func pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
+func pay_mana_excluding_card(amount: int, excluded_card: CardData, context: Dictionary = {}) -> bool:
 	if amount <= 0:
 		return true
 	if not can_pay_mana_excluding_card(amount, excluded_card):
@@ -827,16 +1279,20 @@ func pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
 	var temporary_paid := mini(druid_temporary_mana, remaining)
 	druid_temporary_mana -= temporary_paid
 	remaining -= temporary_paid
-	for i in range(mana_zone.size() - 1, -1, -1):
-		if remaining <= 0:
-			break
-		var mana_card: CardData = mana_zone[i]
-		if mana_card == excluded_card:
-			continue
-		mana_zone.remove_at(i)
-		remaining -= 1
+	druid_spent_mana += remaining
+	remaining = 0
+	_notify_mana_paid(amount, context)
 
 	return remaining <= 0
+
+
+func remove_card_from_mana_zone(card: CardData) -> bool:
+	var index := mana_zone.find(card)
+	if index < 0:
+		return false
+	mana_zone.remove_at(index)
+	druid_spent_mana = mini(druid_spent_mana, get_mana_capacity())
+	return true
 
 
 func gain_temporary_mana(amount: int, context: Dictionary = {}) -> void:
@@ -856,8 +1312,58 @@ func is_druid_transformed() -> bool:
 	return is_druid() and druid_transformed
 
 
-func set_druid_transformed(value: bool) -> void:
-	druid_transformed = value if is_druid() else false
+func try_replace_druid_form_change(value: bool, context: Dictionary = {}) -> Dictionary:
+	if not is_druid() or value == druid_transformed or bool(context.get("bypass_form_replacement", false)):
+		return {}
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		var result := effect.try_replace_druid_form_change(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, value, context)
+		if bool(result.get("handled", false)):
+			return result
+	return {}
+
+
+func can_replace_druid_form_change(value: bool, context: Dictionary = {}) -> bool:
+	if not is_druid() or value == druid_transformed:
+		return false
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null and effect.can_replace_druid_form_change(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, value, context):
+			return true
+	return false
+
+
+func notify_druid_form_change_requested(value: bool, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_druid_form_change_requested", [value], _with_unit_context(context))
+
+
+func should_druid_card_enter_mana_after_play(card: CardData, current_value: bool, context: Dictionary = {}) -> bool:
+	var result := current_value
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result = effect.modify_druid_card_enters_mana_after_play(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, card, result, context)
+	return result
+
+
+func set_druid_transformed(value: bool, context: Dictionary = {}) -> void:
+	var previous := druid_transformed
+	var next_value := value if is_druid() else false
+	if previous == next_value:
+		return
+	var root := character_state.weapon_equipment if character_state != null else null
+	if root != null:
+		_notify_equipment_effects("on_druid_form_exiting", [previous], context.merged({"controller": battle_controller}), root, 1 if previous else 0)
+	druid_transformed = next_value
+	if root != null:
+		_notify_equipment_effects("on_druid_form_entered", [druid_transformed], context.merged({"controller": battle_controller}), root, 1 if druid_transformed else 0)
+		_notify_equipment_effects("on_druid_form_changed", [previous, druid_transformed], {
+			"controller": battle_controller,
+			"previous_form": previous,
+			"transformed": druid_transformed,
+		}.merged(context), root, 1 if druid_transformed else 0)
 
 
 func get_druid_card_orientation(card: CardData) -> int:
@@ -869,10 +1375,9 @@ func get_druid_card_orientation(card: CardData) -> int:
 
 func discard_all_hand(context: Dictionary = {}) -> int:
 	var count := hand.size()
-	for card in hand:
+	for card in hand.duplicate():
 		if card != null:
-			discard_pile.append(card)
-			_notify_card_discarded(card, context)
+			add_card_to_discard(card, context)
 	hand.clear()
 	return count
 
@@ -883,12 +1388,10 @@ func move_draw_card_to_discard(card: CardData, context: Dictionary = {}) -> bool
 		return false
 
 	draw_pile.remove_at(index)
-	discard_pile.append(card)
 	var discard_context := context.duplicate()
 	if not discard_context.has("reason"):
 		discard_context["reason"] = "draw_to_discard"
-	_notify_card_discarded(card, discard_context)
-	return true
+	return add_card_to_discard(card, discard_context)
 
 
 func move_discard_card_to_hand(card: CardData) -> bool:
@@ -925,12 +1428,18 @@ func move_exiled_card_to_discard(card: CardData, context: Dictionary = {}) -> bo
 		return false
 
 	exiled_pile.remove_at(index)
-	discard_pile.append(card)
 	var discard_context := context.duplicate()
 	if not discard_context.has("reason"):
 		discard_context["reason"] = "exile_to_discard"
-	_notify_card_discarded(card, discard_context)
-	return true
+	return add_card_to_discard(card, discard_context)
+
+
+func has_pending_curse_choice(context: Dictionary = {}) -> bool:
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if curse.definition.effect.has_pending_choice(self, curse, context):
+				return true
+	return false
 
 
 func banish_discard_cards(count: int, excluded_card: CardData = null) -> Array[CardData]:
@@ -1044,7 +1553,12 @@ func move_card_to_exile(card: CardData) -> bool:
 		clear_card_runtime_state(card)
 		return true
 
-	var zones: Array = [hand, draw_pile, discard_pile, mana_zone, enchant_zone, curse_zone]
+	if remove_card_from_mana_zone(card):
+		exiled_pile.append(card)
+		clear_card_runtime_state(card)
+		return true
+
+	var zones: Array = [hand, draw_pile, discard_pile, enchant_zone]
 	for zone_value in zones:
 		var zone: Array = zone_value as Array
 		var index: int = zone.find(card)
@@ -1088,12 +1602,16 @@ func notify_after_damage_dealt(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_after_damage_dealt", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_damage_dealt", [], event_context)
+	_notify_curse_effects("on_after_damage_dealt", [], event_context)
+	_notify_equipment_effects("on_after_damage_dealt", [], event_context)
 
 
 func notify_after_damage_taken(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_after_damage_taken", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_damage_taken", [], event_context)
+	_notify_curse_effects("on_after_damage_taken", [], event_context)
+	_notify_equipment_effects("on_after_damage_taken", [], event_context)
 
 
 func notify_after_heal_given(context: Dictionary = {}) -> void:
@@ -1115,6 +1633,62 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 	_notify_equipment_effects("on_after_strike", [], event_context)
 
 
+func notify_before_strike(context: Dictionary = {}) -> Dictionary:
+	var event_context := _with_unit_context(context)
+	_notify_equipment_effects("on_before_strike", [], event_context)
+	return event_context
+
+
+func notify_movement_completed(context: Dictionary = {}) -> void:
+	_notify_curse_effects("on_movement_completed", [], _with_unit_context(context))
+	_notify_equipment_effects("on_movement_completed", [], _with_unit_context(context))
+
+
+func notify_ranger_combo_milestone(threshold: int, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_ranger_combo_milestone", [threshold], _with_unit_context(context))
+
+
+func notify_ranger_elements_collected(added: int, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_ranger_elements_collected", [added], _with_unit_context(context))
+
+
+func notify_ranger_payload_completed(context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_ranger_payload_completed", [], _with_unit_context(context))
+
+
+func consume_equipment_preloaded_payload(context: Dictionary = {}) -> int:
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect == null:
+			continue
+		var payload := effect.consume_preloaded_payload_after_strike(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, context)
+		if payload != BattleSurfaceState.Element.NONE:
+			return payload
+	return BattleSurfaceState.Element.NONE
+
+
+func notify_equipment_battle_started(context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_battle_started", [], _with_unit_context(context))
+
+
+func modify_ranger_element_collection(current_amount: int, context: Dictionary = {}) -> int:
+	var result := current_amount
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result = effect.modify_ranger_element_collection(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, result, context)
+	return maxi(0, result)
+
+
+func modify_ranger_ambush_multiplier(current_multiplier: float, context: Dictionary = {}) -> float:
+	var result := current_multiplier
+	for entry in _get_equipment_effect_entries():
+		var effect := entry.get("effect") as EquipmentEffect
+		if effect != null:
+			result = effect.modify_ranger_ambush_multiplier(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, result, context)
+	return maxf(1.0, result)
+
+
 func notify_equipment_switched(switch_result: Dictionary, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	event_context["switch_result"] = switch_result
@@ -1123,6 +1697,10 @@ func notify_equipment_switched(switch_result: Dictionary, context: Dictionary = 
 
 func notify_equipment_turn_start(context: Dictionary = {}) -> void:
 	_notify_equipment_effects("on_turn_start", [], _with_unit_context(context))
+
+
+func notify_observed_unit_turn_start(started_unit: BattleUnitState, context: Dictionary = {}) -> void:
+	_notify_equipment_effects("on_unit_turn_started", [started_unit], _with_unit_context(context))
 
 
 func notify_equipment_turn_end(context: Dictionary = {}) -> void:
@@ -1193,6 +1771,7 @@ func _reset_druid_state() -> void:
 	curse_zone.clear()
 	druid_transformed = false
 	druid_prepare_used = false
+	druid_spent_mana = 0
 	druid_temporary_mana = 0
 
 
@@ -1239,7 +1818,22 @@ func _notify_card_drawn(card: CardData, context: Dictionary = {}) -> void:
 	event_context["drawn_card"] = card
 	_notify_status_effects("on_card_drawn", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_drawn", [card], event_context)
+	_notify_curse_effects("on_card_drawn", [card], event_context)
 	_notify_equipment_effects("on_card_drawn", [card], event_context)
+	if card != null and card.effect != null:
+		_dispatch_trigger(
+			Callable(card.effect, "on_self_drawn"),
+			[self, card, event_context],
+			card.effect.effect_priority,
+			"%s.on_self_drawn" % card.card_name,
+			event_context
+		)
+
+
+func _notify_draw_action_completed(cards: Array[CardData], context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	event_context["drawn_cards"] = cards.duplicate()
+	_notify_curse_effects("on_draw_action_completed", [cards], event_context)
 
 
 func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
@@ -1247,6 +1841,7 @@ func _notify_card_discarded(card: CardData, context: Dictionary = {}) -> void:
 	event_context["discarded_card"] = card
 	_notify_status_effects("on_card_discarded", [card], event_context)
 	_notify_zone_card_effects("on_zone_owner_card_discarded", [card], event_context)
+	_notify_curse_effects("on_card_discarded", [card], event_context)
 	_notify_equipment_effects("on_card_discarded", [card], event_context)
 
 
@@ -1267,6 +1862,17 @@ func _notify_mana_gained(amount: int, context: Dictionary = {}) -> void:
 	event_context["mana_gained"] = actual
 	_notify_status_effects("on_mana_gained", [actual], event_context)
 	_notify_zone_card_effects("on_zone_owner_mana_gained", [actual], event_context)
+	_notify_equipment_effects("on_mana_gained", [actual], event_context)
+
+
+func _notify_mana_paid(amount: int, context: Dictionary = {}) -> void:
+	var actual := maxi(0, amount)
+	if actual <= 0:
+		return
+	var event_context := _with_unit_context(context)
+	event_context["mana_paid"] = actual
+	event_context["controller"] = event_context.get("controller", battle_controller)
+	_notify_equipment_effects("on_mana_paid", [actual], event_context)
 
 
 func _notify_status_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
@@ -1299,7 +1905,7 @@ func _get_equipment_effect_entries(root: EquipmentData = null, face_index: int =
 	var resolved_root := root if root != null else character_state.weapon_equipment
 	if resolved_root == null:
 		return result
-	var resolved_face := face_index if face_index >= 0 else character_state.weapon_face
+	var resolved_face := face_index if face_index >= 0 else get_active_weapon_face_index()
 	var runtime := get_equipment_runtime_state(resolved_root)
 	for raw_entry in resolved_root.get_effect_entries(resolved_face):
 		result.append({
@@ -1327,11 +1933,27 @@ func _notify_equipment_effects(method_name: String, extra_args: Array = [], cont
 		effect.callv(method_name, args)
 
 
+func _notify_all_equipment_runtime_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
+	for runtime_value in equipment_runtime_states.values():
+		var runtime := runtime_value as EquipmentRuntimeState
+		if runtime == null or runtime.equipment == null:
+			continue
+		for raw_entry in runtime.equipment.get_effect_entries(0):
+			var effect := raw_entry.get("effect") as EquipmentEffect
+			if effect == null or not effect.has_method(method_name):
+				continue
+			if character_state != null and runtime.equipment != character_state.weapon_equipment \
+					and not effect.receives_inactive_runtime_event(method_name):
+				continue
+			var args := [self, runtime.equipment, raw_entry.get("component") as EquipmentData, runtime]
+			args.append_array(extra_args)
+			args.append(context)
+			effect.callv(method_name, args)
+
+
 func _equipment_runtime_key(equipment: EquipmentData) -> String:
 	if equipment == null:
 		return ""
-	if not equipment.resource_path.is_empty():
-		return equipment.resource_path
 	return "instance:%d" % equipment.get_instance_id()
 
 
@@ -1348,7 +1970,6 @@ func _get_context_card(context: Dictionary) -> CardData:
 func _notify_zone_card_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
 	_notify_zone_card_effects_in_zone(mana_zone, "mana", method_name, extra_args, context)
 	_notify_zone_card_effects_in_zone(enchant_zone, "enchant", method_name, extra_args, context)
-	_notify_zone_card_effects_in_zone(curse_zone, "curse", method_name, extra_args, context)
 
 
 func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String, method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
@@ -1369,7 +1990,33 @@ func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String
 		)
 
 
+func _notify_curse_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
+	for curse in curse_zone.duplicate():
+		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+			continue
+		var effect: CurseEffect = curse.definition.effect
+		if not effect.has_method(method_name):
+			continue
+		var event_context := context.duplicate()
+		event_context["curse"] = curse
+		event_context["curse_id"] = curse.get_curse_id()
+		event_context["curse_depth"] = curse.depth
+		var args := [self, curse]
+		args.append_array(extra_args)
+		args.append(event_context)
+		_dispatch_trigger(
+			Callable(effect, method_name),
+			args,
+			effect.effect_priority,
+			"%s.%s" % [curse.get_display_name(), method_name],
+			event_context
+		)
+
+
 func _dispatch_trigger(callback: Callable, args: Array, priority: int, label: String, context: Dictionary) -> void:
+	if bool(context.get("immediate", false)):
+		callback.callv(args)
+		return
 	var controller: BattleController = context.get("controller") as BattleController
 	if controller != null and controller.get_current_action_id() > 0:
 		controller.enqueue_trigger(callback, args, priority, label, context)
@@ -1400,8 +2047,6 @@ func _get_special_zone(zone_name: String) -> Array[CardData]:
 			return mana_zone
 		"enchant":
 			return enchant_zone
-		"curse":
-			return curse_zone
 		_:
 			return []
 
@@ -1424,9 +2069,53 @@ func _prepare_deck(stacks: Array[CardStack], rng: RandomNumberGenerator, startin
 			var runtime_card := stack.card_data.duplicate() as CardData
 			if runtime_card != null:
 				draw_pile.append(runtime_card)
+	if character_state != null:
+		for industry_card in character_state.create_industry_cards():
+			draw_pile.append(industry_card)
 
 	_shuffle_cards(draw_pile, rng)
 	draw_cards(starting_hand_size, rng)
+
+
+func _setup_curses_from_character_state(_rng: RandomNumberGenerator) -> void:
+	curse_zone.clear()
+	if character_state == null:
+		return
+	for curse in character_state.get_active_curses():
+		curse_zone.append(curse)
+
+
+func _reset_curse_turn_runtime() -> void:
+	for state_value in curse_runtime_states.values():
+		var state := state_value as Dictionary
+		if state == null:
+			continue
+		for key_value in state.keys().duplicate():
+			var key := str(key_value)
+			if key.begins_with("turn_"):
+				state.erase(key_value)
+
+
+func _notify_curse_state_changed(curse: CurseInstance, context: Dictionary = {}) -> void:
+	if curse == null:
+		return
+	var controller: BattleController = context.get("controller", battle_controller) as BattleController
+	if controller != null:
+		controller.state_changed.emit()
+
+
+func _notify_curse_resource_changed(_resource_id: String, _delta: int, context: Dictionary = {}) -> void:
+	var controller: BattleController = context.get("controller", battle_controller) as BattleController
+	if controller != null:
+		controller.state_changed.emit()
+
+
+func _should_exile_discarded_card(card: CardData, context: Dictionary = {}) -> bool:
+	for curse in curse_zone:
+		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+			if curse.definition.effect.should_exile_discarded_card(self, curse, card, context):
+				return true
+	return false
 
 
 func _shuffle_cards(cards: Array[CardData], rng: RandomNumberGenerator) -> void:

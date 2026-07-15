@@ -48,16 +48,30 @@ func get_units_in_range(source: BattleUnitState, range_distance: int, filter: in
 func get_units_in_attack_range(source: BattleUnitState, range_bonus: int = 0, filter: int = BattleController.UnitFilter.OPPONENTS, equipment_slot: String = "") -> Array[BattleUnitState]:
 	if source == null:
 		return []
-	return get_units_in_range(source, maxi(0, source.get_attack_range(equipment_slot) + range_bonus), filter)
+	var result: Array[BattleUnitState] = []
+	var attack_range := maxi(0, source.get_attack_range(equipment_slot) + range_bonus)
+	for unit in get_units_by_filter(source, filter):
+		if source.get_range_distance_to(unit, {"controller": controller, "equipment_slot": equipment_slot}) <= attack_range:
+			result.append(unit)
+	result.sort_custom(func(a: BattleUnitState, b: BattleUnitState) -> bool:
+		var left := source.get_range_distance_to(a, {"controller": controller, "equipment_slot": equipment_slot})
+		var right := source.get_range_distance_to(b, {"controller": controller, "equipment_slot": equipment_slot})
+		return left < right or (left == right and a.unit_id < b.unit_id)
+	)
+	return result
 
 
 func is_unit_cell_clear(unit: BattleUnitState, target_cell: Vector2i, write_log: bool = false) -> bool:
 	if controller == null or controller.map_data == null:
 		return false
+	if unit != null and target_cell != unit.cell and unit.get_occupied_cells().has(target_cell):
+		if write_log:
+			controller._emit_log("目标格已被自身的另一身体占据。")
+		return false
 	for other in controller.units:
 		if other == unit or not other.is_deployed or not other.is_alive():
 			continue
-		if target_cell == other.cell:
+		if other.get_occupied_cells().has(target_cell):
 			if write_log:
 				controller._emit_log("目标格已被 %s 占据。" % other.get_display_name())
 			return false

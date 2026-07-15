@@ -10,7 +10,7 @@ class_name CardData
 @export_enum("普通", "稀有", "史诗", "传说") var rarity: int = CardEnums.Rarity.COMMON
 @export_enum("中立", "战士", "法师", "游侠", "德鲁伊", "术士") var card_class: int = CardEnums.CardClass.NEUTRAL
 @export var allowed_classes: PackedInt32Array = []
-@export_enum("攻击", "技能") var card_type: int = CardEnums.CardType.SKILL
+@export_enum("攻击", "技能", "附魔", "诅咒") var card_type: int = CardEnums.CardType.SKILL
 @export_flags("Physical", "Magical") var card_tags: int = 0
 @export_enum("力量", "敏捷", "智力", "武器") var damage_type: int = CardEnums.DamageType.STRENGTH
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var target_type: int = CardEnums.TargetType.NONE
@@ -20,6 +20,8 @@ class_name CardData
 @export var override_range: bool = false
 @export_range(0, 12, 1) var card_range: int = 2
 @export var effect: CardEffect
+
+var bound_curse_instance: CurseInstance
 
 @export_group("Special Play")
 @export var has_momentum: bool = false
@@ -113,6 +115,18 @@ func requires_ordered_discard_choice(context: Dictionary = {}) -> bool:
 		return false
 
 	return effect.requires_ordered_discard_choice(context)
+
+
+func requires_curse_choice(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_curse_choice(context)
+
+
+func get_curse_choice_options(context: Dictionary = {}) -> Array[CurseInstance]:
+	return effect.get_curse_choice_options(context) if effect != null else []
+
+
+func get_curse_choice_prompt(context: Dictionary = {}) -> String:
+	return effect.get_curse_choice_prompt(context) if effect != null else "选择一张诅咒"
 
 
 func requires_ranger_recipe_choice(context: Dictionary = {}) -> bool:
@@ -211,6 +225,10 @@ func activate_from_enchant(context: Dictionary = {}) -> void:
 
 func is_attack_card() -> bool:
 	return card_type == CardEnums.CardType.ATTACK
+
+
+func is_curse_card() -> bool:
+	return card_type == CardEnums.CardType.CURSE
 
 
 func has_card_tag(tag: int) -> bool:

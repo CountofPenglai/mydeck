@@ -94,21 +94,24 @@ func is_concealing(cell: Vector2i) -> bool:
 
 
 func get_component_elements(element: int) -> Array[int]:
+	var result: Array[int] = []
 	match element:
 		Element.STEAM:
-			return [Element.FIRE, Element.WATER]
+			result.assign([Element.FIRE, Element.WATER])
 		Element.LAVA:
-			return [Element.FIRE, Element.EARTH]
+			result.assign([Element.FIRE, Element.EARTH])
 		Element.BLAZE:
-			return [Element.FIRE, Element.AIR]
+			result.assign([Element.FIRE, Element.AIR])
 		Element.POISON_BOG:
-			return [Element.WATER, Element.EARTH]
+			result.assign([Element.WATER, Element.EARTH])
 		Element.ICE:
-			return [Element.WATER, Element.AIR]
+			result.assign([Element.WATER, Element.AIR])
 		Element.SANDSTORM:
-			return [Element.EARTH, Element.AIR]
+			result.assign([Element.EARTH, Element.AIR])
 		_:
-			return [element] if BASE_ELEMENTS.has(element) else []
+			if BASE_ELEMENTS.has(element):
+				result.append(element)
+	return result
 
 
 static func reaction_for(first: int, second: int) -> int:

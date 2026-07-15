@@ -23,20 +23,36 @@ func perform_strike_with_multiplier(attacker: BattleUnitState, target: BattleUni
 func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, target: BattleUnitState, source = null, damage_modifier: int = 0, damage_multiplier: float = 1.0, label: String = "打击", equipment_slot: String = "", options: Dictionary = {}) -> int:
 	if controller == null or attacker == null or target == null or not attacker.is_alive() or not target.is_alive():
 		return 0
+	if not attacker.can_use_attack_mode(equipment_slot, {"controller": controller, "target": target, "source": source}):
+		return 0
 
 	var profile_context := options.duplicate()
 	profile_context["controller"] = controller
 	profile_context["source"] = source
 	profile_context["target"] = target
 	profile_context["label"] = label
+	profile_context["equipment_slot"] = equipment_slot
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
+	profile_context = attacker.notify_before_strike(profile_context)
 	var resolved_multiplier := damage_multiplier
 	if options.has("ranger_attack_multiplier"):
-		resolved_multiplier *= float(options.get("ranger_attack_multiplier", 1.0))
+		if bool(options.get("skip_ranger_ambush", false)):
+			resolved_multiplier *= float(options.get("ranger_attack_multiplier", 1.0))
+		elif not attacker.is_stealthed():
+			resolved_multiplier *= float(options.get("ranger_attack_multiplier", 1.0))
+		else:
+			resolved_multiplier *= controller.consume_ranger_stealth_for_attack(
+				attacker,
+				float(options.get("ranger_attack_multiplier", 1.0)),
+				profile_context
+			)
+	elif bool(options.get("equipment_automatic", false)) and attacker.is_stealthed():
+		attacker.leave_stealth()
 	elif not bool(options.get("skip_ranger_ambush", false)):
 		resolved_multiplier *= controller.consume_ranger_stealth_for_attack(
 			attacker,
-			float(options.get("ranger_ambush_override", 0.0))
+			float(options.get("ranger_ambush_override", 0.0)),
+			profile_context
 		)
 	var primary_weapon_damage := int(options.get("primary_base_damage_override", profile.primary_base_damage))
 	var primary_base_damage := maxi(0, primary_weapon_damage + profile.primary_damage_bonus + damage_modifier)
@@ -47,6 +63,8 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"equipment_slot": equipment_slot,
 		"source_card": source,
 		"ignore_ranged_surface_reduction": bool(options.get("ignore_ranged_surface_reduction", false)),
+		"ignore_armor": bool(profile_context.get("ignore_armor", false)),
+		"surface_element": int(profile_context.get("surface_element", BattleSurfaceState.Element.NONE)),
 	}
 	var actual_damage := controller.apply_damage(attacker, target, primary_damage, label, damage_metadata)
 	var hit_results: Array[StrikeHitResult] = [
@@ -85,7 +103,10 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 		"strike_profile_object": profile,
 		"attack_results": attack_results,
 		"attack_result_objects": hit_results,
+		"equipment_slot": profile.primary_slot,
+		"strike_options": options,
 	}
+	trigger_context.merge(profile_context)
 	attacker.notify_after_strike(trigger_context)
 	controller.resolve_ranger_after_strike(trigger_context)
 	controller.enqueue_trigger(Callable(controller, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)

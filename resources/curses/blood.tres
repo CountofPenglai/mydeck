@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_blood.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "blood"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "blood"
+display_name = "鲜血"
+is_boss_curse = false
+maturity_threshold = 3
+industry_description = "失去3+2D生命；对范围3敌人造成8+4D固定伤害并吸血。"
+report_description = "治疗转护甲；每次行动首次非诅咒生命伤害后额外失去D+1生命。"
+fruit_description = "治疗转护甲；每回合一次失去2D生命，使下一张攻击牌每段+2D伤害并吸血。"
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

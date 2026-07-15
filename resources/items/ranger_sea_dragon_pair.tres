@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/ranger_paired_weapon_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_dragon"]
+script = ExtResource("2_effect")
+weapon_kind = 3
+
+[sub_resource type="Resource" id="DragonCrossbow"]
+script = ExtResource("1_equipment")
+item_name = "海龙骨重弩"
+description = "高伤远程组件，打击后冷却至下个自身回合结束。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 7
+attack_range = 4
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 2
+allowed_classes = PackedInt32Array(3)
+rarity = 1
+subcategories = PackedStringArray("远程", "武器", "模式组件")
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "潜鳞猎刀 / 海龙骨重弩"
+description = "以潜行和连击重装高伤重弩。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 2
+attack_range = 1
+range_type = 0
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(3)
+rarity = 1
+subcategories = PackedStringArray("近战", "武器", "模式成对", "T1")
+paired_component = SubResource("DragonCrossbow")
+paired_attack_mode = 1
+passive_effects = [SubResource("Effect_dragon")]
+trigger_effects = [SubResource("Effect_dragon")]

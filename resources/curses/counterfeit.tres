@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_counterfeit.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "counterfeit"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "counterfeit"
+display_name = "赝作"
+is_boss_curse = false
+maturity_threshold = 3
+industry_description = "加深另一诅咒，复制非诅咒手牌；副本费用-D并临时放逐。"
+report_description = "每回合前D次额外抽牌成为离手放逐的赝品。"
+fruit_description = "每回合一次消耗2D咒波，复制本回合最后一张非诅咒牌，费用-1并临时放逐。"
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

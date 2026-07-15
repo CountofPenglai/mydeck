@@ -14,6 +14,8 @@ enum InputMode {
 	BASIC_ATTACK_TARGET,
 	CARD_TARGET,
 	CARD_LANDING,
+	CURSE_TARGET,
+	CURSE_CELL,
 }
 
 @export var scenario: BattleScenario
@@ -61,6 +63,15 @@ var _ranger_recipe_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _ranger_enemy_hand_target: BattleUnitState
 var _ap_orb_layer: Control
 var _druid_prepare_hand_choice_active: bool = false
+var _curse_popup: PopupPanel
+var _curse_list: VBoxContainer
+var _curse_choice_popup: PopupPanel
+var _curse_choice_list: VBoxContainer
+var _curse_choice_card: CardData
+var _curse_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
+var _curse_choice_extra_context: Dictionary = {}
+var _pending_curse: CurseInstance
+var _pending_curse_action_id: String = ""
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -75,6 +86,7 @@ var _druid_prepare_hand_choice_active: bool = false
 @onready var deck_button: TextureButton = %DeckButton
 @onready var discard_button: TextureButton = %DiscardButton
 @onready var discard_label: Label = %DiscardLabel
+@onready var curse_button: Button = %CurseButton
 @onready var ap_label: Label = %APLabel
 @onready var log_label: RichTextLabel = %LogLabel
 
@@ -89,6 +101,7 @@ func _ready() -> void:
 	attack_button.pressed.connect(_on_attack_pressed)
 	deck_button.pressed.connect(_on_deck_pressed)
 	discard_button.pressed.connect(_on_discard_pressed)
+	curse_button.pressed.connect(_show_curse_popup)
 	_create_ap_orb_layer()
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
@@ -96,6 +109,8 @@ func _ready() -> void:
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
 	_create_ranger_blend_popup()
+	_create_curse_popup()
+	_create_curse_choice_popup()
 	var startup_scenario := scenario
 	if startup_scenario == null:
 		startup_scenario = DEFAULT_SCENARIO
@@ -129,6 +144,10 @@ func handle_map_click(position: Vector2) -> void:
 		InputMode.MOVE:
 			if controller.move_current_unit_to_cell(cell):
 				_clear_input()
+		InputMode.CURSE_TARGET:
+			_resolve_pending_curse_action({"target": clicked_unit})
+		InputMode.CURSE_CELL:
+			_resolve_pending_curse_action({"target_cell": cell})
 		_:
 			_append_log("请选择移动、攻击或一张手牌。")
 	_refresh()
@@ -306,10 +325,10 @@ func _select_deploy_unit(unit: BattleUnitState) -> void:
 	_refresh()
 
 
-func _on_equipment_action_pressed(unit: BattleUnitState, effect: EquipmentEffect) -> void:
+func _on_equipment_action_pressed(unit: BattleUnitState, effect: EquipmentEffect, action_id: String = "default") -> void:
 	if _actions_locked():
 		return
-	controller.activate_equipment_action(unit, effect)
+	controller.activate_equipment_action(unit, effect, action_id)
 	_refresh()
 
 
@@ -348,6 +367,11 @@ func _select_discard_card(card: CardData) -> void:
 	var play_mode := CardEnums.CardPlayMode.MOMENTUM
 	if _needs_draw_pile_choice(card, play_mode):
 		_show_draw_pile_choice(card, play_mode)
+		_refresh()
+		return
+	var discard_choice_context := _build_card_choice_context(card, play_mode)
+	if card.requires_curse_choice(discard_choice_context):
+		_show_curse_choice(card, play_mode, {})
 		_refresh()
 		return
 	if _needs_ordered_discard_choice(card, play_mode):
@@ -426,6 +450,10 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 		_show_draw_pile_choice(card, play_mode)
 		_refresh()
 		return
+	if card.requires_curse_choice(choice_context):
+		_show_curse_choice(card, play_mode, {})
+		_refresh()
+		return
 	if _needs_ordered_discard_choice(card, play_mode):
 		_show_ordered_discard_choice(card, play_mode)
 		_refresh()
@@ -461,6 +489,8 @@ func _clear_input() -> void:
 	pending_extra_context.clear()
 	pending_unit_target = null
 	_druid_prepare_hand_choice_active = false
+	_pending_curse = null
+	_pending_curse_action_id = ""
 
 
 func _select_druid_prepare_card(card: CardData) -> void:
@@ -490,6 +520,8 @@ func _hide_action_popups() -> void:
 		_draw_choice_popup.hide()
 	if _ordered_discard_popup != null:
 		_ordered_discard_popup.hide()
+	if _curse_choice_popup != null:
+		_curse_choice_popup.hide()
 
 
 func _create_ap_orb_layer() -> void:
@@ -574,12 +606,15 @@ func _refresh() -> void:
 	attack_button.disabled = not is_player_turn
 	deck_button.disabled = not is_player_turn
 	discard_button.disabled = not is_player_turn
+	curse_button.disabled = controller.current_unit == null
 	end_turn_button.disabled = not is_player_turn
 	_refresh_deploy_list()
 	_refresh_class_resource_list()
 	_refresh_hand_list(is_player_turn)
 	_refresh_discard_button()
 	_refresh_discard_popup()
+	_refresh_curse_button()
+	_refresh_curse_popup()
 	map_view.queue_redraw()
 	var current := controller.current_unit
 	if not _actions_locked() and current != null and current.is_ranger() \
@@ -609,9 +644,10 @@ func _refresh_class_resource_list() -> void:
 		if unit.is_druid():
 			has_resources = true
 			var druid_label := Label.new()
-			druid_label.text = "%s：法力 %d | 附魔 %d | 诅咒 %d | %s" % [
+			druid_label.text = "%s：法力 %d/%d | 附魔 %d | 诅咒 %d | %s" % [
 				unit.get_display_name(),
 				unit.get_available_mana(),
+				unit.get_mana_capacity(),
 				unit.enchant_zone.size(),
 				unit.curse_zone.size(),
 				"变身" if unit.druid_transformed else "正位",
@@ -647,7 +683,7 @@ func _refresh_class_resource_list() -> void:
 			if unit == controller.current_unit and unit.is_stealthed() and unit.ranger_state.prepared_blend == BattleSurfaceState.Element.NONE:
 				var blend_button := Button.new()
 				blend_button.text = "调配特调"
-				blend_button.tooltip_text = "消耗两枚不同基础元素，为匕首或弩装填一份特调。"
+				blend_button.tooltip_text = "消耗两枚不同基础元素，为近战或远程模式装填一份特调。"
 				blend_button.disabled = _actions_locked() or unit.ranger_state.get_element_type_count() < 2
 				blend_button.pressed.connect(_show_ranger_blend_popup.bind(unit))
 				class_resource_list.add_child(blend_button)
@@ -655,7 +691,7 @@ func _refresh_class_resource_list() -> void:
 				var prepared_label := Label.new()
 				prepared_label.text = "已装填：%s（%s）" % [
 					BattleSurfaceState.label(unit.ranger_state.prepared_blend),
-					"匕首" if unit.ranger_state.prepared_weapon_slot == "weapon" else "弩",
+					"近战" if unit.ranger_state.prepared_weapon_slot == "weapon" else "远程",
 				]
 				class_resource_list.add_child(prepared_label)
 
@@ -676,14 +712,16 @@ func _refresh_class_resource_list() -> void:
 			equipment_label.text = "%s：%s" % [unit.get_display_name(), equipment_summary]
 			class_resource_list.add_child(equipment_label)
 
-		if unit == controller.current_unit:
-			for action in unit.get_equipment_actions({"controller": controller, "unit": unit}):
+		if unit == controller.current_unit or controller.phase == BattleController.Phase.DEPLOYMENT:
+			var action_context := {"controller": controller, "unit": unit, "phase": "deployment" if controller.phase == BattleController.Phase.DEPLOYMENT else "battle"}
+			for action in unit.get_equipment_actions(action_context):
 				has_resources = true
 				var action_button := Button.new()
 				action_button.text = str(action.get("label", "武器行动"))
 				var effect := action.get("effect") as EquipmentEffect
-				action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect)
-				action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect))
+				var action_id := str(action.get("action_id", "default"))
+				action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect, action_id)
+				action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect, action_id))
 				class_resource_list.add_child(action_button)
 
 	if not has_resources:
@@ -757,6 +795,17 @@ func _refresh_discard_button() -> void:
 		exile_count = unit.exiled_pile.size()
 		enchant_count = unit.enchant_zone.size()
 	discard_label.text = "弃牌 %d\n放逐 %d · 附魔 %d" % [discard_count, exile_count, enchant_count]
+
+
+func _refresh_curse_button() -> void:
+	var unit := controller.current_unit
+	if unit == null:
+		curse_button.text = "诅咒区"
+		return
+	var load_text := "-"
+	if unit.character_state != null:
+		load_text = "%d/%d" % [unit.character_state.get_curse_load(), unit.character_state.get_curse_load_limit()]
+	curse_button.text = "诅咒区 %d · 负荷 %s · 咒波 %d" % [_get_display_curses(unit).size(), load_text, unit.curse_wave]
 
 
 func _refresh_discard_popup() -> void:
@@ -1225,7 +1274,8 @@ func _show_ranger_blend_popup(unit: BattleUnitState) -> void:
 		row.add_child(recipe_label)
 		for slot in ["weapon", "paired"]:
 			var button := Button.new()
-			button.text = "匕首" if slot == "weapon" else "弩"
+			button.text = "近战" if slot == "weapon" else "远程"
+			button.disabled = not unit.can_use_attack_mode(slot)
 			button.pressed.connect(_on_ranger_blend_selected.bind(unit, blend, slot))
 			row.add_child(button)
 		_ranger_blend_list.add_child(row)
@@ -1579,6 +1629,10 @@ func _on_draw_pile_choice_pressed(draw_card: CardData) -> void:
 func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> void:
 	if card == null:
 		return
+	if card.requires_curse_choice(_build_card_choice_context(card, play_mode, extra_context)) and not extra_context.has("selected_curse"):
+		_show_curse_choice(card, play_mode, extra_context)
+		_refresh()
+		return
 
 	if _needs_ordered_discard_choice(card, play_mode, extra_context):
 		_show_ordered_discard_choice(card, play_mode, extra_context)
@@ -1597,6 +1651,210 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 
 	pending_extra_context = extra_context.duplicate()
 	_begin_card_targeting(card, play_mode)
+	_refresh()
+
+
+func _build_card_choice_context(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> Dictionary:
+	var context := extra_context.duplicate()
+	context["controller"] = controller
+	context["user"] = controller.current_unit
+	context["card"] = card
+	context["play_mode"] = play_mode
+	context["equipment_slot"] = pending_equipment_slot
+	return context
+
+
+func _create_curse_choice_popup() -> void:
+	_curse_choice_popup = PopupPanel.new()
+	_curse_choice_popup.title = "选择诅咒"
+	_curse_choice_popup.exclusive = true
+	add_child(_curse_choice_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_curse_choice_popup.add_child(margin)
+	_curse_choice_list = VBoxContainer.new()
+	_curse_choice_list.custom_minimum_size = Vector2(340, 120)
+	_curse_choice_list.add_theme_constant_override("separation", 6)
+	margin.add_child(_curse_choice_list)
+
+
+func _show_curse_choice(card: CardData, play_mode: int, extra_context: Dictionary) -> void:
+	_curse_choice_card = card
+	_curse_choice_play_mode = play_mode
+	_curse_choice_extra_context = extra_context.duplicate()
+	_clear_children(_curse_choice_list)
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var title := Label.new()
+	title.text = card.get_curse_choice_prompt(context)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_curse_choice_list.add_child(title)
+	for curse in card.get_curse_choice_options(context):
+		var button := Button.new()
+		button.text = curse.get_summary()
+		button.tooltip_text = curse.definition.get_description_for_state(curse.state) if curse.definition != null else ""
+		button.pressed.connect(_on_curse_choice_selected.bind(curse))
+		_curse_choice_list.add_child(button)
+	_curse_choice_popup.popup_centered()
+
+
+func _on_curse_choice_selected(curse: CurseInstance) -> void:
+	var card := _curse_choice_card
+	var play_mode := _curse_choice_play_mode
+	var extra_context := _curse_choice_extra_context.duplicate()
+	extra_context["selected_curse"] = curse
+	_curse_choice_card = null
+	_curse_choice_play_mode = CardEnums.CardPlayMode.NORMAL
+	_curse_choice_extra_context.clear()
+	_curse_choice_popup.hide()
+	_continue_card_with_extra_context(card, play_mode, extra_context)
+
+
+func _create_curse_popup() -> void:
+	_curse_popup = PopupPanel.new()
+	_curse_popup.title = "诅咒区"
+	_curse_popup.exclusive = false
+	add_child(_curse_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_curse_popup.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(520, 420)
+	margin.add_child(scroll)
+	_curse_list = VBoxContainer.new()
+	_curse_list.add_theme_constant_override("separation", 10)
+	scroll.add_child(_curse_list)
+
+
+func _show_curse_popup() -> void:
+	_refresh_curse_popup(true)
+	_curse_popup.popup_centered()
+
+
+func _refresh_curse_popup(force: bool = false) -> void:
+	if _curse_popup == null or _curse_list == null or (not force and not _curse_popup.visible):
+		return
+	_clear_children(_curse_list)
+	for unit in controller.units:
+		if unit == null:
+			continue
+		var display_curses := _get_display_curses(unit)
+		if display_curses.is_empty() and unit.curse_wave <= 0:
+			continue
+		var heading := Label.new()
+		var load_text := ""
+		if unit.character_state != null:
+			load_text = " · 负荷 %d/%d" % [unit.character_state.get_curse_load(), unit.character_state.get_curse_load_limit()]
+		heading.text = "%s%s · 咒波 %d" % [unit.get_display_name(), load_text, unit.curse_wave]
+		heading.add_theme_font_size_override("font_size", 17)
+		_curse_list.add_child(heading)
+		if display_curses.is_empty():
+			var empty := Label.new()
+			empty.text = "无常驻诅咒"
+			_curse_list.add_child(empty)
+		for curse in display_curses:
+			if curse == null:
+				continue
+			var summary := Label.new()
+			summary.text = curse.get_summary()
+			summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_curse_list.add_child(summary)
+			var description := Label.new()
+			description.text = curse.definition.get_description_for_state(curse.state) if curse.definition != null else ""
+			description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			description.modulate = Color(0.82, 0.82, 0.82)
+			_curse_list.add_child(description)
+	if controller.current_unit != null and controller.current_unit.faction == BattleUnitState.Faction.PLAYER:
+		var actions := controller.current_unit.get_curse_actions({"controller": controller, "phase": "action"})
+		if not actions.is_empty():
+			var action_title := Label.new()
+			action_title.text = "诅咒行动"
+			action_title.add_theme_font_size_override("font_size", 16)
+			_curse_list.add_child(action_title)
+			for action in actions:
+				var curse := action.get("curse") as CurseInstance
+				var action_id := str(action.get("id", ""))
+				var button := Button.new()
+				button.text = str(action.get("label", "诅咒行动"))
+				button.disabled = _actions_locked()
+				button.pressed.connect(_on_curse_action_pressed.bind(curse, action_id, str(action.get("selection", "none"))))
+				_curse_list.add_child(button)
+
+
+func _get_display_curses(unit: BattleUnitState) -> Array[CurseInstance]:
+	var result: Array[CurseInstance] = []
+	if unit == null:
+		return result
+	if unit.character_state != null:
+		for curse in unit.character_state.curse_instances:
+			if curse != null and curse.state != CurseInstance.State.INDUSTRY:
+				result.append(curse)
+	else:
+		result.append_array(unit.curse_zone)
+	return result
+
+
+func _on_curse_action_pressed(curse: CurseInstance, action_id: String, selection: String) -> void:
+	var unit := controller.current_unit
+	if unit == null or curse == null:
+		return
+	match selection:
+		"enemy":
+			_pending_curse = curse
+			_pending_curse_action_id = action_id
+			input_mode = InputMode.CURSE_TARGET
+			_curse_popup.hide()
+			_append_log("选择诅咒行动的敌方目标。")
+		"cell":
+			_pending_curse = curse
+			_pending_curse_action_id = action_id
+			input_mode = InputMode.CURSE_CELL
+			_curse_popup.hide()
+			_append_log("选择诅咒行动的目标格。")
+		"hand_disease":
+			var diseases: Array[CardData] = []
+			for card in unit.hand:
+				if card != null and card.card_name == "病症":
+					diseases.append(card)
+			_show_curse_action_card_choices(curse, action_id, diseases)
+		"hand":
+			_show_curse_action_card_choices(curse, action_id, unit.hand)
+		"discard":
+			_show_curse_action_card_choices(curse, action_id, unit.discard_pile)
+		_:
+			controller.activate_curse_action(unit, curse, action_id)
+			_refresh()
+
+
+func _show_curse_action_card_choices(curse: CurseInstance, action_id: String, cards: Array[CardData]) -> void:
+	_clear_children(_curse_list)
+	var title := Label.new()
+	title.text = "选择一张牌"
+	_curse_list.add_child(title)
+	for card in cards:
+		var button := Button.new()
+		button.text = card.card_name
+		button.tooltip_text = _build_card_tooltip(card)
+		button.pressed.connect(_on_curse_action_card_selected.bind(curse, action_id, card))
+		_curse_list.add_child(button)
+
+
+func _on_curse_action_card_selected(curse: CurseInstance, action_id: String, card: CardData) -> void:
+	controller.activate_curse_action(controller.current_unit, curse, action_id, {"selected_card": card})
+	_refresh_curse_popup(true)
+
+
+func _resolve_pending_curse_action(context: Dictionary) -> void:
+	if _pending_curse == null or _pending_curse_action_id.is_empty():
+		_clear_input()
+		return
+	if controller.activate_curse_action(controller.current_unit, _pending_curse, _pending_curse_action_id, context):
+		_clear_input()
 	_refresh()
 
 
@@ -1657,7 +1915,14 @@ func _show_weapon_choice(next_mode: int, card: CardData = null, play_mode: int =
 	title.text = "选择本次打击使用的武器"
 	_weapon_choice_list.add_child(title)
 
-	for option in controller.current_unit.get_attack_weapon_options():
+	var options := controller.current_unit.get_attack_weapon_options()
+	if options.size() == 1:
+		_on_weapon_choice_pressed(str(options[0].get("slot", "")))
+		return
+	if options.is_empty():
+		_append_log("当前没有可用的武器模式。")
+		return
+	for option in options:
 		var button := Button.new()
 		button.text = str(option.get("label", "武器"))
 		button.pressed.connect(_on_weapon_choice_pressed.bind(str(option.get("slot", ""))))

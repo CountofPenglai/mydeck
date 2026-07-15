@@ -4,6 +4,7 @@ class_name EquipmentRuntimeState
 var equipment: EquipmentData
 var counters: Dictionary = {}
 var flags: Dictionary = {}
+var data: Dictionary = {}
 
 
 func get_counter(key: String, default_value: int = 0) -> int:
@@ -28,3 +29,11 @@ func get_flag(key: String, default_value: bool = false) -> bool:
 
 func set_flag(key: String, value: bool) -> void:
 	flags[key] = value
+
+
+func get_data(key: String, default_value: Variant = null) -> Variant:
+	return data.get(key, default_value)
+
+
+func set_data(key: String, value: Variant) -> void:
+	data[key] = value

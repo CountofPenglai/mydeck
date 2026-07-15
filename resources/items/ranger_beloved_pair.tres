@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" path="res://scripts/items/effects/ranger_paired_weapon_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+
+[sub_resource type="Resource" id="Effect_beloved"]
+script = ExtResource("2_effect")
+weapon_kind = 6
+
+[sub_resource type="Resource" id="Beloved"]
+script = ExtResource("1_equipment")
+item_name = "游荡者的挚爱"
+description = "使用战前有序预装特调弹；弹尽后报废。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 5
+attack_range = 4
+range_type = 1
+damage_type = 1
+equip_slot = 0
+equip_category = 2
+allowed_classes = PackedInt32Array(3)
+rarity = 2
+subcategories = PackedStringArray("远程", "武器", "模式组件")
+
+[resource]
+script = ExtResource("1_equipment")
+item_name = "折弦短刃 / 游荡者的挚爱"
+description = "近战复制预装弹；弹仓耗尽后近战永久强化并进入潜行。"
+icon = ExtResource("3_icon")
+max_stack = 1
+base_damage = 2
+attack_range = 1
+range_type = 0
+damage_type = 1
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(3)
+rarity = 2
+subcategories = PackedStringArray("近战", "武器", "模式成对", "T2")
+paired_component = SubResource("Beloved")
+paired_attack_mode = 1
+passive_effects = [SubResource("Effect_beloved")]
+trigger_effects = [SubResource("Effect_beloved")]
+activated_effects = [SubResource("Effect_beloved")]

@@ -44,11 +44,11 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	controller.perform_strike(user, target, card, "窃取预案", equipment_slot)
 	if target.hand.is_empty():
 		return
-	var selected := _selected_enemy_card(context, target, mode == "dagger")
+	var selected := _selected_enemy_card(context, target, mode == "melee")
 	if selected == null:
 		return
 
-	if mode == "dagger":
+	if mode == "melee":
 		var copied := selected.duplicate(true) as CardData
 		if copied == null:
 			return
@@ -94,8 +94,4 @@ func _get_weapon_mode(user: BattleUnitState, equipment_slot: String, context: Di
 	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot, context)
 	if profile.primary_equipment == null:
 		return ""
-	if profile.primary_equipment.has_tag("匕首"):
-		return "dagger"
-	if profile.primary_equipment.has_tag("弩"):
-		return "crossbow"
-	return ""
+	return "melee" if profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE else "ranged"

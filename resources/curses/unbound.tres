@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_unbound.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "unbound"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "unbound"
+display_name = "无羁"
+is_boss_curse = true
+maturity_threshold = 4
+industry_description = "结束回合，跳过下一敌人的抽牌与行动，获得2+D AP额外行动阶段。"
+report_description = "本场使用过的行动类别持续封锁；全部封锁后清空并眩晕。"
+fruit_description = "每阶段最多使用两类且不能沿用上一阶段；首次使用类别获得咒波，第二类再得2 AP。"
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

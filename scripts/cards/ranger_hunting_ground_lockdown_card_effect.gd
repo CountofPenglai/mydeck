@@ -29,4 +29,4 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 		"猎场封锁：进入潜行",
 		context
 	)
-	controller._emit_log("%s 以%s模式封锁猎场。" % [user.get_display_name(), "匕首" if equipment_slot != "paired" else "弩"])
+	controller._emit_log("%s 以%s模式封锁猎场。" % [user.get_display_name(), "近战" if equipment_slot != "paired" else "远程"])

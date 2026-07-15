@@ -10,6 +10,8 @@ func _init() -> void:
 func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> void:
 	if unit == null or damage_context == null or stacks <= 0 or damage_context.amount <= 0:
 		return
+	if bool(damage_context.metadata.get("ignore_armor", false)):
+		return
 
 	var previous := stacks
 	var absorbed := damage_context.reduce_amount(stacks)

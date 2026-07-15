@@ -76,11 +76,11 @@ func _test_card_resources() -> void:
 func _test_weapon_modes(ranger: BattleUnitState) -> void:
 	var options := ranger.get_attack_weapon_options()
 	if options.size() != 2:
-		_fail("RANGER_DIAG: dagger/crossbow did not expose two modes")
+		_fail("RANGER_DIAG: melee/ranged weapon did not expose two modes")
 	if ranger.build_strike_profile_object("weapon").primary_range != 1:
-		_fail("RANGER_DIAG: dagger range is not 1")
+		_fail("RANGER_DIAG: melee range is not 1")
 	if ranger.build_strike_profile_object("paired").primary_range != 3:
-		_fail("RANGER_DIAG: crossbow range is not 3")
+		_fail("RANGER_DIAG: ranged range is not 3")
 
 
 func _test_combo_rollover(controller: BattleController, ranger: BattleUnitState) -> void:

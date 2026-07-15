@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=25 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=32 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_ranger_data.tres" id="2_character_data"]
@@ -25,6 +25,13 @@
 [ext_resource type="Resource" path="res://resources/cards/ranger_final_hunt_declaration_stack.tres" id="23_final_hunt"]
 [ext_resource type="Resource" path="res://resources/cards/ranger_no_place_to_hunt_stack.tres" id="24_no_place"]
 [ext_resource type="Resource" path="res://resources/cards/ranger_hunter_three_acts_stack.tres" id="25_three_acts"]
+[ext_resource type="Resource" path="res://resources/items/ranger_marrow_origin_pair_stack.tres" id="26_marrow"]
+[ext_resource type="Resource" path="res://resources/items/ranger_blood_volley_pair_stack.tres" id="27_blood"]
+[ext_resource type="Resource" path="res://resources/items/ranger_sea_dragon_pair_stack.tres" id="28_dragon"]
+[ext_resource type="Resource" path="res://resources/items/ranger_leaf_hunter_pair_stack.tres" id="29_leaf"]
+[ext_resource type="Resource" path="res://resources/items/ranger_sacred_tree_pair_stack.tres" id="30_tree"]
+[ext_resource type="Resource" path="res://resources/items/ranger_beloved_pair_stack.tres" id="31_beloved"]
+[ext_resource type="Resource" path="res://resources/items/ranger_wind_hunter_pair_stack.tres" id="32_wind"]
 
 [resource]
 script = ExtResource("1_character_state")
@@ -33,4 +40,5 @@ current_health = 28
 deck = [ExtResource("3_card_stack"), ExtResource("4_shot"), ExtResource("6_perilous"), ExtResource("7_shadow"), ExtResource("8_overdrawn"), ExtResource("9_backslash"), ExtResource("10_waiting"), ExtResource("11_lockdown"), ExtResource("12_pursuit"), ExtResource("13_cross_step"), ExtResource("14_flavor"), ExtResource("15_sampling"), ExtResource("16_tether"), ExtResource("17_string"), ExtResource("18_plan"), ExtResource("19_hidden_blade"), ExtResource("20_dissection"), ExtResource("21_dual_hunt"), ExtResource("22_bottle"), ExtResource("23_final_hunt"), ExtResource("24_no_place"), ExtResource("25_three_acts")]
 weapon_equipment = ExtResource("5_weapon")
 weapon_face = 0
+inventory = [ExtResource("26_marrow"), ExtResource("27_blood"), ExtResource("28_dragon"), ExtResource("29_leaf"), ExtResource("30_tree"), ExtResource("31_beloved"), ExtResource("32_wind")]
 extra_ap_bonus = 0

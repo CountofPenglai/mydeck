@@ -37,6 +37,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 
 func _uses_ranger_weapon(user: BattleUnitState, equipment_slot: String, context: Dictionary) -> bool:
 	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot, context)
-	return profile.primary_equipment != null and (
-		profile.primary_equipment.has_tag("匕首") or profile.primary_equipment.has_tag("弩")
-	)
+	return profile.primary_equipment != null and profile.primary_range_type in [
+		EquipmentData.WeaponRangeType.MELEE,
+		EquipmentData.WeaponRangeType.RANGED,
+	]

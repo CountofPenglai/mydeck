@@ -182,7 +182,7 @@ func _get_ambush_targets(triggering_enemy: BattleUnitState) -> Array[BattleUnitS
 	if trigger_kind == TriggerKind.WAIT_FOR_MOVEMENT:
 		result.append(triggering_enemy)
 		return result
-	var is_dagger := _selected_mode_has_tag("匕首")
+	var is_dagger := _selected_mode_is_melee()
 	for enemy: BattleUnitState in _controller.get_opposing_units(_owner):
 		if is_dagger:
 			if _owner.cell_distance_to(enemy) <= 1:
@@ -198,14 +198,14 @@ func _get_ambush_targets(triggering_enemy: BattleUnitState) -> Array[BattleUnitS
 func _is_target_in_selected_range(target: BattleUnitState) -> bool:
 	if target == null or not target.is_alive() or target.faction == _owner.faction:
 		return false
-	return _owner.cell_distance_to(target) <= _owner.get_attack_range(equipment_slot)
+	return _owner.cell_distance_to(target) <= _controller.get_effective_attack_range_against(_owner, target, equipment_slot)
 
 
-func _selected_mode_has_tag(tag: String) -> bool:
+func _selected_mode_is_melee() -> bool:
 	if _owner == null:
 		return false
 	var profile: StrikeProfile = _owner.build_strike_profile_object(equipment_slot)
-	return profile.primary_equipment != null and profile.primary_equipment.has_tag(tag)
+	return profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE
 
 
 func _queue_cleanup(reason: String) -> void:

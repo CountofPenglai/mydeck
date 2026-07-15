@@ -59,9 +59,10 @@ func _resolve_weapon_strike(
 		var status: StatusEffect = user.get_status(NEXT_DAGGER_STATUS_ID)
 		if status != null and status.stacks > 0:
 			var status_multiplier := float(status.get("damage_multiplier"))
-			resolved_options["ranger_attack_multiplier"] = float(
-				resolved_options.get("ranger_attack_multiplier", 1.0)
-			) * status_multiplier
+			resolved_options["ranger_attack_multiplier"] = maxf(
+				float(resolved_options.get("ranger_attack_multiplier", 1.0)),
+				status_multiplier
+			)
 			status.stacks = 0
 			user.remove_expired_statuses()
 	controller.perform_strike_with_options(
@@ -80,11 +81,11 @@ func _is_dagger_slot(user: BattleUnitState, equipment_slot: String) -> bool:
 	if user == null:
 		return false
 	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot)
-	return profile.primary_equipment != null and profile.primary_equipment.has_tag("匕首")
+	return profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE
 
 
 func _is_crossbow_slot(user: BattleUnitState, equipment_slot: String) -> bool:
 	if user == null:
 		return false
 	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot)
-	return profile.primary_equipment != null and profile.primary_equipment.has_tag("弩")
+	return profile.primary_equipment != null and profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED

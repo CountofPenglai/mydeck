@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="EquipmentData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/items/effects/druid_weapon_effect.gd" id="2"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="3"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("2")
+weapon_kind = 0
+
+[sub_resource type="Resource" id="Bear"]
+script = ExtResource("1")
+item_name = "巨熊"
+description = "每回合首次武器打击按护甲获得伤害加值，打击后按手牌数获得护甲。"
+icon = ExtResource("3")
+base_damage = 3
+attack_range = 1
+damage_type = 0
+equip_slot = 0
+equip_category = 1
+allowed_classes = PackedInt32Array(4)
+subcategories = PackedStringArray("druid_weapon", "逆位", "野兽")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]
+
+[resource]
+script = ExtResource("1")
+item_name = "蛮力魔杖 / 巨熊"
+description = "正位强化贴身力量打击，逆位以护甲和手牌维持攻防。"
+icon = ExtResource("3")
+base_damage = 4
+attack_range = 2
+damage_type = 0
+equip_slot = 0
+equip_category = 0
+allowed_classes = PackedInt32Array(4)
+subcategories = PackedStringArray("druid_weapon", "德鲁伊武器", "T0")
+back_face = SubResource("Bear")
+passive_effects = [SubResource("Effect")]
+trigger_effects = [SubResource("Effect")]

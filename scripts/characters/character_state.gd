@@ -20,6 +20,14 @@ class_name CharacterState
 @export var class_resources: Array[ResourcePoolState] = []
 @export var ranger_element_inventory: Dictionary = {}
 @export var extra_ap_bonus: int = 0
+@export_group("Curses")
+@export var curse_instances: Array[CurseInstance] = []
+@export_range(1, 12, 1) var base_curse_load_limit: int = 3
+@export var curse_load_limit_bonus: int = 0
+@export var sealed_curse_id: String = ""
+@export var distortion_progress: int = 0
+@export var persistent_max_health_modifier: int = 0
+@export var adventure_damage_bonus: int = 0
 @export_group("Attribute Bonuses")
 @export var strength_bonus: int = 0
 @export var agility_bonus: int = 0
@@ -38,6 +46,7 @@ func ensure_initialized() -> void:
 		return
 
 	_migrate_legacy_equipment()
+	_normalize_curses()
 
 	if current_health < 0:
 		current_health = get_max_health()
@@ -109,7 +118,7 @@ func get_max_health() -> int:
 		return 0
 
 	var level_growth := maxi(0, level - 1) * get_strength() * HEALTH_GROWTH_PER_STRENGTH_LEVEL
-	return character_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth
+	return maxi(1, character_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth + persistent_max_health_modifier)
 
 
 func get_attack() -> int:
@@ -129,7 +138,7 @@ func get_strength() -> int:
 
 func get_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := _get_attribute_damage_bonus(context)
-	bonus += flat_damage_bonus + _get_equipment_damage_bonus()
+	bonus += flat_damage_bonus + adventure_damage_bonus + _get_equipment_damage_bonus()
 	var unit = context.get("unit")
 	if unit != null and unit.has_method("get_status_damage_bonus"):
 		bonus += unit.get_status_damage_bonus(context)
@@ -182,11 +191,11 @@ func get_battle_token_radius() -> float:
 	return character_data.battle_token_radius
 
 
-func get_attack_range(equipment_slot: String = "") -> int:
+func get_attack_range(equipment_slot: String = "", face_index: int = -1) -> int:
 	if character_data == null:
 		return 0
 
-	var equipment := get_equipment_for_attack_slot(_resolve_primary_attack_slot(equipment_slot))
+	var equipment := get_equipment_for_attack_slot(_resolve_primary_attack_slot(equipment_slot), face_index)
 	if equipment != null:
 		return equipment.attack_range
 
@@ -201,18 +210,19 @@ func has_equipment_subcategory(subcategory: String) -> bool:
 	return false
 
 
-func needs_weapon_choice() -> bool:
-	var weapon := get_active_weapon_equipment()
+func needs_weapon_choice(face_index: int = -1) -> bool:
+	var weapon := get_weapon_face(_resolve_weapon_face_index(face_index))
 	return weapon != null \
 		and weapon.paired_component != null \
 		and weapon.paired_attack_mode == EquipmentData.PairedAttackMode.SELECT_ONE
 
 
-func get_attack_weapon_options() -> Array:
+func get_attack_weapon_options(face_index: int = -1) -> Array:
 	var options := []
-	var primary_weapon := get_active_weapon_equipment()
+	var resolved_face := _resolve_weapon_face_index(face_index)
+	var primary_weapon := get_weapon_face(resolved_face)
 	if primary_weapon != null:
-		options.append(_make_equipment_option("weapon", primary_weapon, weapon_face))
+		options.append(_make_equipment_option("weapon", primary_weapon, resolved_face))
 		if primary_weapon.paired_component != null \
 				and primary_weapon.paired_attack_mode == EquipmentData.PairedAttackMode.SELECT_ONE:
 			options.append(_make_equipment_option("paired", primary_weapon.paired_component, 0))
@@ -231,8 +241,9 @@ func get_attack_weapon_options() -> Array:
 
 
 func build_strike_profile_object(equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
+	var resolved_face := _resolve_weapon_face_index(int(context.get("weapon_face_override", -1)))
 	var primary_slot := _resolve_primary_attack_slot(equipment_slot)
-	var primary_equipment := get_equipment_for_attack_slot(primary_slot)
+	var primary_equipment := get_equipment_for_attack_slot(primary_slot, resolved_face)
 	var profile := StrikeProfile.new()
 	profile.primary_slot = primary_slot
 	profile.primary_base_damage = UNARMED_BASE_DAMAGE
@@ -249,10 +260,10 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 		profile.primary_range = primary_equipment.attack_range
 		profile.primary_range_type = primary_equipment.range_type
 
-	var secondary := get_active_off_hand_equipment()
+	var secondary := get_off_hand_equipment_for_face(resolved_face)
 	if primary_slot != "paired" \
 			and weapon_equipment != null \
-			and weapon_equipment.has_secondary_damage_segment(weapon_face) \
+			and weapon_equipment.has_secondary_damage_segment(resolved_face) \
 			and secondary != null:
 		profile.add_offhand = true
 		profile.offhand_equipment = secondary
@@ -266,11 +277,11 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	return profile
 
 
-func get_equipment_for_attack_slot(slot: String) -> EquipmentData:
+func get_equipment_for_attack_slot(slot: String, face_index: int = -1) -> EquipmentData:
 	if slot == "paired":
-		return get_active_off_hand_equipment()
+		return get_off_hand_equipment_for_face(_resolve_weapon_face_index(face_index))
 	if slot in ["weapon", "weapon_alt", "main", "off"]:
-		return get_active_weapon_equipment()
+		return get_weapon_face(_resolve_weapon_face_index(face_index))
 
 	return null
 
@@ -280,12 +291,20 @@ func get_active_main_hand_equipment() -> EquipmentData:
 
 
 func get_active_off_hand_equipment() -> EquipmentData:
-	var weapon := get_active_weapon_equipment()
+	return get_off_hand_equipment_for_face(weapon_face)
+
+
+func get_off_hand_equipment_for_face(face_index: int) -> EquipmentData:
+	var weapon := get_weapon_face(face_index)
 	return weapon.paired_component if weapon != null else null
 
 
 func get_active_weapon_equipment() -> EquipmentData:
 	return get_weapon_face(weapon_face)
+
+
+func _resolve_weapon_face_index(face_index: int) -> int:
+	return weapon_face if face_index < 0 else clampi(face_index, 0, 1)
 
 
 func get_weapon_face(face_index: int) -> EquipmentData:
@@ -420,7 +439,7 @@ func get_off_hand_label() -> String:
 
 
 func _make_equipment_option(slot: String, equipment: EquipmentData, face_index: int = 0) -> Dictionary:
-	var slot_label := "副组件" if slot == "paired" else "武器"
+	var slot_label := "远程模式" if equipment.range_type == EquipmentData.WeaponRangeType.RANGED else "近战模式"
 	if face_index == 1:
 		slot_label = "武器形态2"
 	return {
@@ -549,3 +568,168 @@ func _class_resources_need_reset() -> bool:
 			return true
 
 	return false
+
+
+func get_curse(curse_id: String) -> CurseInstance:
+	for curse in curse_instances:
+		if curse != null and curse.get_curse_id() == curse_id:
+			return curse
+	return null
+
+
+func acquire_curse(definition: CurseDefinition) -> CurseInstance:
+	if definition == null or not definition.is_valid_definition():
+		return null
+	var existing := get_curse(definition.curse_id)
+	if existing != null:
+		existing.deepen()
+		return existing
+	var instance := CurseInstance.new()
+	instance.definition = definition
+	curse_instances.append(instance)
+	return instance
+
+
+func get_active_curses() -> Array[CurseInstance]:
+	var result: Array[CurseInstance] = []
+	for curse in curse_instances:
+		if curse != null and curse.is_active_in_curse_zone():
+			result.append(curse)
+	return result
+
+
+func create_industry_cards() -> Array[CardData]:
+	var result: Array[CardData] = []
+	for curse in curse_instances:
+		if curse == null or curse.state != CurseInstance.State.INDUSTRY or curse.definition == null:
+			continue
+		var template := curse.definition.industry_card
+		if template == null:
+			continue
+		var card := template.duplicate(true) as CardData
+		if card == null:
+			continue
+		card.bound_curse_instance = curse
+		result.append(card)
+	return result
+
+
+func get_curse_load_limit() -> int:
+	var result := maxi(0, base_curse_load_limit + curse_load_limit_bonus)
+	var universal_love := get_curse("universal_love")
+	if universal_love != null and universal_love.state == CurseInstance.State.FRUIT and not universal_love.sealed:
+		result += 2 * universal_love.depth
+	return result
+
+
+func get_curse_load() -> int:
+	var result := 0
+	for curse in curse_instances:
+		if curse != null and not (curse.get_curse_id() == "counterfeit" and curse.state == CurseInstance.State.FRUIT and distortion_progress >= 2):
+			result += curse.get_load_cost()
+	return result
+
+
+func is_curse_overloaded() -> bool:
+	return get_curse_load() > get_curse_load_limit()
+
+
+func get_next_distortion_threshold() -> int:
+	var milestones: Array[int] = [2, 5, 8, 11]
+	var threshold: int = milestones.back() + 3
+	for milestone in milestones:
+		if distortion_progress < milestone:
+			threshold = milestone
+			break
+	var counterfeit := get_curse("counterfeit")
+	if counterfeit != null and counterfeit.state == CurseInstance.State.REPORT and not counterfeit.sealed:
+		threshold += counterfeit.depth
+	return threshold
+
+
+func seal_curse(curse: CurseInstance, run_state: PartyRunState, resolves_overload: bool = false) -> bool:
+	if curse == null or curse not in curse_instances or curse.state == CurseInstance.State.INDUSTRY:
+		return false
+	if not sealed_curse_id.is_empty() or run_state == null or not run_state.pay_ritual(2, resolves_overload):
+		return false
+	curse.sealed = true
+	sealed_curse_id = curse.get_curse_id()
+	return true
+
+
+func unseal_curse() -> bool:
+	if sealed_curse_id.is_empty():
+		return false
+	var curse := get_curse(sealed_curse_id)
+	if curse != null:
+		curse.sealed = false
+	sealed_curse_id = ""
+	return true
+
+
+func transfer_curse_to(curse: CurseInstance, target: CharacterState, run_state: PartyRunState, free_transfer: bool = false, resolves_overload: bool = false) -> bool:
+	if curse == null or target == null or curse not in curse_instances or curse.state == CurseInstance.State.INDUSTRY:
+		return false
+	if target.get_curse(curse.get_curse_id()) != null:
+		return false
+	var universal_love := target.get_curse("universal_love")
+	var love_transfer := universal_love != null and universal_love.state == CurseInstance.State.FRUIT and not universal_love.sealed
+	if not free_transfer and not love_transfer:
+		if run_state == null or not run_state.pay_ritual(1, resolves_overload):
+			return false
+	curse_instances.erase(curse)
+	if sealed_curse_id == curse.get_curse_id():
+		sealed_curse_id = ""
+		curse.sealed = false
+	target.curse_instances.append(curse)
+	return true
+
+
+func process_curse_battle_result(victory: bool) -> Array[CurseInstance]:
+	var transformed: Array[CurseInstance] = []
+	if not victory:
+		return transformed
+	for curse in curse_instances:
+		if curse != null and curse.add_maturity(1):
+			distortion_progress += 1
+			transformed.append(curse)
+	return transformed
+
+
+func commit_curse_state_to(target: CharacterState) -> void:
+	if target == null:
+		return
+	target.curse_instances.clear()
+	for curse in curse_instances:
+		if curse != null:
+			target.curse_instances.append(curse.duplicate(true) as CurseInstance)
+	target.base_curse_load_limit = base_curse_load_limit
+	target.curse_load_limit_bonus = curse_load_limit_bonus
+	target.sealed_curse_id = sealed_curse_id
+	target.distortion_progress = distortion_progress
+	target.persistent_max_health_modifier = persistent_max_health_modifier
+	target.adventure_damage_bonus = adventure_damage_bonus
+
+
+func _normalize_curses() -> void:
+	var seen: Dictionary = {}
+	var normalized: Array[CurseInstance] = []
+	for curse in curse_instances:
+		if curse == null or curse.definition == null or curse.get_curse_id().is_empty():
+			continue
+		curse.depth = clampi(curse.depth, 1, 3)
+		curse.maturity = maxi(0, curse.maturity)
+		if seen.has(curse.get_curse_id()):
+			var existing := seen[curse.get_curse_id()] as CurseInstance
+			if existing != null:
+				existing.deepen()
+			continue
+		seen[curse.get_curse_id()] = curse
+		normalized.append(curse)
+	curse_instances.assign(normalized)
+	if not sealed_curse_id.is_empty():
+		var sealed := get_curse(sealed_curse_id)
+		if sealed == null or sealed.state == CurseInstance.State.INDUSTRY:
+			sealed_curse_id = ""
+		else:
+			sealed.sealed = true

@@ -98,6 +98,18 @@ func modify_attack_range(_unit: BattleUnitState, current_range: int, _context: D
 	return current_range
 
 
+func get_lethal_health_floor(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
+	return 0
+
+
+func can_use_action_category(_unit: BattleUnitState, _category: int, _context: Dictionary = {}) -> bool:
+	return true
+
+
+func get_alternate_range_origins(_unit: BattleUnitState, _context: Dictionary = {}) -> Array[Vector2i]:
+	return []
+
+
 func on_move_ap_cost_paid(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 

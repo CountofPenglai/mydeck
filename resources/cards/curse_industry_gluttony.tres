@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Script" path="res://scripts/cards/curse_industry_card_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "gluttony"
+
+[resource]
+script = ExtResource("1_card")
+card_name = "饕餮之业"
+description = "处决范围1内生命满足阈值的敌人并吸血；否则不能打出。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 0
+card_type = 3
+target_type = 1
+ap_cost = 0
+override_range = true
+card_range = 1
+effect = SubResource("Effect")

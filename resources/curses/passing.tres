@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_passing.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "passing"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "passing"
+display_name = "遗逝"
+is_boss_curse = false
+maturity_threshold = 3
+industry_description = "弃置其他手牌，从任意弃牌堆生成至多D+1张0 AP临时副本。"
+report_description = "洗牌前失去2+D生命并获得D咒波；抽牌阶段前磨D。"
+fruit_description = "禁用自动洗牌；每回合一次支付咒波或生命，从弃牌堆回收费用-1临时牌。"
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

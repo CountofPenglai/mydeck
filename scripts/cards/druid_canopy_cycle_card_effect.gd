@@ -82,7 +82,8 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 		if user.move_hand_card_to_mana(selected_card, context):
 			moved += 1
 	if moved > 0:
-		user.set_druid_transformed(true)
+		var source_card := context.get("card") as CardData
+		controller.request_druid_form_change(user, true, context.merged({"source_card": source_card}))
 	controller._emit_log("%s 抽取 %d 张牌，将 %d 张手牌置入法力区%s。" % [
 		user.get_display_name(),
 		drawn,
