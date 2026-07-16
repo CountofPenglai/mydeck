@@ -17,6 +17,7 @@ signal basic_attack_triggered(context: Dictionary)
 signal equipment_switch_started(context: Dictionary)
 signal equipment_switched_out(context: Dictionary)
 signal equipment_switched_in(context: Dictionary)
+signal battle_finished(result: BattleResult)
 
 const DRUID_PREPARE_TRANSFORM_ACTION := "druid_prepare_transform"
 const DRUID_PREPARE_UNTRANSFORM_ACTION := "druid_prepare_untransform"
@@ -187,7 +188,7 @@ func _create_runtime_character_state(template: CharacterState) -> CharacterState
 
 	state.ensure_initialized()
 	state.reset_class_resources()
-	state.current_health = state.get_max_health()
+	state.current_health = clampi(template.current_health, 0, state.get_max_health())
 	return state
 
 
@@ -641,6 +642,8 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 	extra_context["play_mode"] = play_mode
 	extra_context["druid_orientation"] = druid_orientation
 	extra_context["ranger_universal_combo"] = ranger_universal_combo
+	if not extra_context.has("adventure_infusion_cell"):
+		extra_context["adventure_infusion_cell"] = _resolve_card_primary_cell(user, targets)
 	var context := CardPlayContext.create(self, user, card, equipment_slot, extra_context, play_mode)
 	var context_dict := context.to_dict()
 	if not card.can_play(context_dict):
@@ -789,6 +792,7 @@ func _finish_card_play_frame(frame: BattleCardFrame) -> void:
 		"action_id": get_current_action_id(),
 		"targets": frame.targets,
 	})
+	_apply_adventure_card_infusion(frame.user, frame.card, frame.context.extra)
 	_notify_opponents_card_completed(frame.user, frame.card)
 	if frame.user.is_ranger():
 		frame.user.ranger_state.cards_played_this_turn += 1
@@ -803,6 +807,28 @@ func _finish_card_play_frame(frame: BattleCardFrame) -> void:
 	_emit_log("%s 打出 %s，消耗 %d AP。" % [frame.user.get_display_name(), frame.card.card_name, actual_ap_cost])
 	state_changed.emit()
 	_check_battle_end()
+
+
+func _resolve_card_primary_cell(user: BattleUnitState, targets: Array) -> Vector2i:
+	if not targets.is_empty():
+		if targets[0] is Vector2i:
+			return targets[0] as Vector2i
+		var target := targets[0] as BattleUnitState
+		if target != null:
+			return target.cell
+	return user.cell if user != null else BattleHexGrid.INVALID_CELL
+
+
+func _apply_adventure_card_infusion(user: BattleUnitState, card: CardData, extra_context: Dictionary) -> void:
+	if user == null or card == null:
+		return
+	var runtime_state := user.get_card_runtime_state(card, false)
+	if runtime_state.is_empty() or not runtime_state.has("adventure_element_infusion") \
+		or bool(runtime_state.get("adventure_element_infusion_used", false)):
+		return
+	runtime_state["adventure_element_infusion_used"] = true
+	var cell := extra_context.get("adventure_infusion_cell", user.cell) as Vector2i
+	apply_base_surface_element(cell, int(runtime_state["adventure_element_infusion"]))
 
 
 func should_card_enter_curse_after_play(frame: BattleCardFrame) -> bool:
@@ -2810,11 +2836,13 @@ func _check_battle_end() -> bool:
 	cards_in_flight.clear()
 	resolution_runner.clear_pending_actions()
 	_commit_battle_result(players_alive)
+	var result := BattleResult.from_controller(self, players_alive)
 	if players_alive:
 		_emit_log("战斗胜利。")
 	else:
 		_emit_log("战斗失败。")
 	state_changed.emit()
+	battle_finished.emit(result)
 	return true
 
 
@@ -2841,6 +2869,8 @@ func _commit_battle_result(victory: bool) -> void:
 		var source := runtime_character_sources.get(unit.character_state) as CharacterState
 		if source != null:
 			unit.character_state.commit_curse_state_to(source)
+			source.current_health = maxi(1, unit.get_current_health()) if victory else unit.get_current_health()
+			source.ranger_element_inventory = unit.character_state.ranger_element_inventory.duplicate(true)
 
 
 func _resolve_unrest_transfers() -> void:

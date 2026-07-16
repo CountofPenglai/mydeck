@@ -1,0 +1,257 @@
+extends RefCounted
+class_name AdventureRewardService
+
+var _card_pool: Array[CardData] = []
+var _equipment_pool: Array[EquipmentData] = []
+var _consumable_pool: Array[ConsumableData] = []
+
+
+func create_battle_reward(run_state: PartyRunState, room: AdventureRoomState, encounter_tier: int) -> Dictionary:
+	_ensure_catalog()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "reward", room.room_id.hash() + run_state.floor_index * 1000)
+	var reward := {
+		"room_id": room.room_id,
+		"cards": [],
+		"equipment": [],
+		"claimed_cards": [],
+		"claimed_equipment": [],
+		"max_cards": 2,
+		"max_equipment": 0,
+		"gold": 0,
+		"provisions": 0,
+		"ritual_points": 0,
+		"camp_supplies": 0,
+		"settled": false,
+	}
+	if room.room_type == AdventureEnums.RoomType.NORMAL_BATTLE:
+		_add_normal_card_candidates(reward, run_state.get_active_party(), encounter_tier, rng)
+		reward["provisions"] = 1 if rng.randf() < 0.2 else 0
+	elif room.room_type == AdventureEnums.RoomType.ELITE_BATTLE:
+		_add_elite_card_candidates(reward, run_state.get_active_party(), rng, 1)
+		reward["equipment"] = _equipment_candidates(run_state, rng, 3)
+		reward["max_equipment"] = 1
+		reward["ritual_points"] = 1 if rng.randf() < 0.25 else 0
+	elif room.room_type == AdventureEnums.RoomType.BOSS_BATTLE:
+		_add_elite_card_candidates(reward, run_state.get_active_party(), rng, 2)
+		if run_state.floor_index < run_state.floor_count - 1:
+			reward["equipment"] = _equipment_candidates(run_state, rng, 3, run_state.floor_index + 1)
+			reward["max_equipment"] = 1
+			reward["ritual_points"] = 1
+			reward["camp_supplies"] = 1
+	return reward
+
+
+func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array[Dictionary]:
+	_ensure_catalog()
+	var existing = room.runtime_data.get("shop_stock", [])
+	if existing is Array and not existing.is_empty():
+		return (existing as Array).duplicate(true)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "shop", room.room_id.hash() + run_state.floor_index * 1000)
+	var stock: Array[Dictionary] = []
+	for hero in run_state.party:
+		if hero == null or hero.character_data == null:
+			continue
+		var candidates := _cards_for_class(hero.character_data.character_class)
+		_shuffle(candidates, rng)
+		for index in range(mini(2, candidates.size())):
+			var card := candidates[index]
+			stock.append(_stock_entry("card", card.resource_path, card.card_name, _card_price(card.rarity), hero.adventure_character_id))
+	for equipment in _pick_equipment(run_state, rng, 2):
+		stock.append(_stock_entry("equipment", equipment.resource_path, equipment.item_name, _equipment_price(equipment.rarity)))
+	var consumables: Array[ConsumableData] = _consumable_pool.duplicate()
+	_shuffle(consumables, rng)
+	for index in range(mini(3, consumables.size())):
+		var consumable: ConsumableData = consumables[index]
+		stock.append(_stock_entry("consumable", consumable.resource_path, consumable.item_name, 12))
+	room.runtime_data["shop_stock"] = stock.duplicate(true)
+	return stock
+
+
+func create_card_stack(card_path: String, stack_id: String) -> CardStack:
+	var card := load(card_path) as CardData
+	if card == null:
+		return null
+	var stack := CardStack.new()
+	stack.card_data = card
+	stack.count = 1
+	stack.stack_id = stack_id
+	return stack
+
+
+func create_item_stack(item_path: String, stack_id: String) -> InventoryStack:
+	var item := load(item_path) as ItemData
+	if item == null:
+		return null
+	var stack := InventoryStack.new()
+	stack.item_data = item
+	stack.count = 1
+	stack.stack_id = stack_id
+	return stack
+
+
+func get_random_consumable(run_seed: int, salt: int) -> ConsumableData:
+	_ensure_catalog()
+	if _consumable_pool.is_empty():
+		return null
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_seed, "consumable", salt)
+	return _consumable_pool[rng.randi_range(0, _consumable_pool.size() - 1)]
+
+
+func get_random_card(card_class: int, rarity: int, run_seed: int, salt: int) -> CardData:
+	_ensure_catalog()
+	var candidates: Array[CardData] = []
+	for card in _card_pool:
+		if card.rarity == rarity and card.is_available_to_class(card_class):
+			candidates.append(card)
+	if candidates.is_empty():
+		candidates = _cards_for_class(card_class)
+	if candidates.is_empty():
+		return null
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_seed, "event_card", salt)
+	return candidates[rng.randi_range(0, candidates.size() - 1)]
+
+
+func _add_normal_card_candidates(reward: Dictionary, party: Array[CharacterState], tier: int, rng: RandomNumberGenerator) -> void:
+	for hero in party:
+		_add_card_candidate(reward, hero, _roll_normal_rarity(tier, rng), rng)
+	var bonus_heroes := party.duplicate()
+	_shuffle(bonus_heroes, rng)
+	for index in range(mini(2, bonus_heroes.size())):
+		_add_card_candidate(reward, bonus_heroes[index], _roll_normal_rarity(tier, rng), rng)
+
+
+func _add_elite_card_candidates(reward: Dictionary, party: Array[CharacterState], rng: RandomNumberGenerator, per_hero: int) -> void:
+	for hero in party:
+		for _index in range(per_hero):
+			_add_card_candidate(reward, hero, CardEnums.Rarity.EPIC if rng.randf() < 0.25 else CardEnums.Rarity.RARE, rng)
+	if per_hero == 1:
+		var bonus_heroes := party.duplicate()
+		_shuffle(bonus_heroes, rng)
+		for index in range(mini(2, bonus_heroes.size())):
+			_add_card_candidate(reward, bonus_heroes[index], CardEnums.Rarity.EPIC if rng.randf() < 0.25 else CardEnums.Rarity.RARE, rng)
+
+
+func _add_card_candidate(reward: Dictionary, hero: CharacterState, rarity: int, rng: RandomNumberGenerator) -> void:
+	if hero == null or hero.character_data == null:
+		return
+	var candidates: Array[CardData] = []
+	for card in _card_pool:
+		if card.rarity == rarity and card.is_available_to_class(hero.character_data.character_class):
+			candidates.append(card)
+	if candidates.is_empty():
+		candidates = _cards_for_class(hero.character_data.character_class)
+	if candidates.is_empty():
+		return
+	var card := candidates[rng.randi_range(0, candidates.size() - 1)]
+	var cards := reward["cards"] as Array
+	cards.append({
+		"id": "card_%03d" % cards.size(),
+		"hero_id": hero.adventure_character_id,
+		"path": card.resource_path,
+		"name": card.card_name,
+		"rarity": card.rarity,
+	})
+
+
+func _equipment_candidates(run_state: PartyRunState, rng: RandomNumberGenerator, count: int, floor_override: int = -1) -> Array[Dictionary]:
+	var equipment := _pick_equipment(run_state, rng, count, floor_override)
+	var result: Array[Dictionary] = []
+	for index in range(equipment.size()):
+		result.append({
+			"id": "equipment_%03d" % index,
+			"path": equipment[index].resource_path,
+			"name": equipment[index].item_name,
+			"rarity": equipment[index].rarity,
+		})
+	return result
+
+
+func _pick_equipment(run_state: PartyRunState, rng: RandomNumberGenerator, count: int, floor_override: int = -1) -> Array[EquipmentData]:
+	var floor_index := run_state.floor_index if floor_override < 0 else floor_override
+	var target_rarity := CardEnums.Rarity.RARE if floor_index <= 0 else CardEnums.Rarity.EPIC
+	var candidates: Array[EquipmentData] = []
+	for equipment in _equipment_pool:
+		if equipment.rarity != target_rarity:
+			continue
+		for hero in run_state.party:
+			if hero != null and hero.character_data != null and equipment.is_available_to_class(hero.character_data.character_class):
+				candidates.append(equipment)
+				break
+	if candidates.is_empty():
+		candidates = _equipment_pool.duplicate()
+	_shuffle(candidates, rng)
+	return candidates.slice(0, mini(count, candidates.size())) as Array[EquipmentData]
+
+
+func _cards_for_class(card_class: int) -> Array[CardData]:
+	var result: Array[CardData] = []
+	for card in _card_pool:
+		if card.is_available_to_class(card_class):
+			result.append(card)
+	return result
+
+
+func _roll_normal_rarity(tier: int, rng: RandomNumberGenerator) -> int:
+	var roll := rng.randf()
+	match tier:
+		AdventureEnums.EncounterTier.MIXED:
+			return CardEnums.Rarity.COMMON if roll < 0.60 else (CardEnums.Rarity.RARE if roll < 0.95 else CardEnums.Rarity.EPIC)
+		AdventureEnums.EncounterTier.STRONG:
+			return CardEnums.Rarity.COMMON if roll < 0.40 else (CardEnums.Rarity.RARE if roll < 0.90 else CardEnums.Rarity.EPIC)
+		_:
+			return CardEnums.Rarity.COMMON if roll < 0.80 else CardEnums.Rarity.RARE
+
+
+func _stock_entry(kind: String, path: String, name: String, price: int, hero_id: String = "") -> Dictionary:
+	return {"kind": kind, "path": path, "name": name, "price": price, "hero_id": hero_id, "sold": false}
+
+
+func _card_price(rarity: int) -> int:
+	match rarity:
+		CardEnums.Rarity.RARE:
+			return 30
+		CardEnums.Rarity.EPIC:
+			return 60
+		_:
+			return 15
+
+
+func _equipment_price(rarity: int) -> int:
+	match rarity:
+		CardEnums.Rarity.RARE:
+			return 70
+		CardEnums.Rarity.EPIC:
+			return 120
+		_:
+			return 35
+
+
+func _ensure_catalog() -> void:
+	if not _card_pool.is_empty() or not _equipment_pool.is_empty() or not _consumable_pool.is_empty():
+		return
+	for file_name in DirAccess.get_files_at("res://resources/cards"):
+		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
+			continue
+		var resource := load("res://resources/cards/%s" % file_name)
+		if resource is CardData and not (resource as CardData).is_curse_card():
+			_card_pool.append(resource as CardData)
+	for file_name in DirAccess.get_files_at("res://resources/items"):
+		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
+			continue
+		var resource := load("res://resources/items/%s" % file_name)
+		if resource is EquipmentData:
+			_equipment_pool.append(resource as EquipmentData)
+		elif resource is ConsumableData:
+			_consumable_pool.append(resource as ConsumableData)
+
+
+func _shuffle(values: Array, rng: RandomNumberGenerator) -> void:
+	for index in range(values.size() - 1, 0, -1):
+		var other_index := rng.randi_range(0, index)
+		var temporary = values[index]
+		values[index] = values[other_index]
+		values[other_index] = temporary

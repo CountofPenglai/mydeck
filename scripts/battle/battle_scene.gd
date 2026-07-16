@@ -72,6 +72,8 @@ var _curse_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _curse_choice_extra_context: Dictionary = {}
 var _pending_curse: CurseInstance
 var _pending_curse_action_id: String = ""
+var _adventure_result: BattleResult
+var _return_to_map_button: Button
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -94,6 +96,7 @@ var _pending_curse_action_id: String = ""
 func _ready() -> void:
 	controller.log_message.connect(_append_log)
 	controller.state_changed.connect(_refresh)
+	controller.battle_finished.connect(_on_battle_finished)
 	map_view.setup(self, controller)
 	start_button.pressed.connect(_on_start_pressed)
 	end_turn_button.pressed.connect(_on_end_turn_pressed)
@@ -111,12 +114,46 @@ func _ready() -> void:
 	_create_ranger_blend_popup()
 	_create_curse_popup()
 	_create_curse_choice_popup()
+	_create_return_to_map_button()
 	var startup_scenario := scenario
+	var adventure_session := get_node_or_null("/root/AdventureSession")
+	if adventure_session != null and adventure_session.has_method("consume_pending_battle_scenario"):
+		var pending_scenario = adventure_session.call("consume_pending_battle_scenario")
+		if pending_scenario is BattleScenario:
+			startup_scenario = pending_scenario as BattleScenario
 	if startup_scenario == null:
 		startup_scenario = DEFAULT_SCENARIO
 	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
 	_refresh()
+
+
+func _create_return_to_map_button() -> void:
+	_return_to_map_button = Button.new()
+	_return_to_map_button.text = "返回大地图"
+	_return_to_map_button.tooltip_text = "提交战斗结果并返回冒险地图"
+	_return_to_map_button.visible = false
+	_return_to_map_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_return_to_map_button.position = Vector2(-180.0, 68.0)
+	_return_to_map_button.size = Vector2(164.0, 44.0)
+	_return_to_map_button.pressed.connect(_on_return_to_map_pressed)
+	add_child(_return_to_map_button)
+
+
+func _on_battle_finished(result: BattleResult) -> void:
+	_adventure_result = result
+	var adventure_session := get_node_or_null("/root/AdventureSession")
+	_return_to_map_button.visible = adventure_session != null and adventure_session.has_method("complete_pending_battle")
+
+
+func _on_return_to_map_pressed() -> void:
+	if _adventure_result == null:
+		return
+	var adventure_session := get_node_or_null("/root/AdventureSession")
+	if adventure_session == null or not adventure_session.has_method("complete_pending_battle"):
+		return
+	_return_to_map_button.disabled = true
+	adventure_session.call("complete_pending_battle", _adventure_result)
 
 
 func handle_map_click(position: Vector2) -> void:

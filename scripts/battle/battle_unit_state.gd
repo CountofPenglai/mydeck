@@ -2068,6 +2068,13 @@ func _prepare_deck(stacks: Array[CardStack], rng: RandomNumberGenerator, startin
 		for _i in range(stack.count):
 			var runtime_card := stack.card_data.duplicate() as CardData
 			if runtime_card != null:
+				var runtime_state := get_card_runtime_state(runtime_card)
+				runtime_state["adventure_stack_id"] = stack.stack_id
+				if character_state != null and character_state.card_adventure_modifiers.has(stack.stack_id):
+					var adventure_modifiers := character_state.card_adventure_modifiers.get(stack.stack_id, {}) as Dictionary
+					if adventure_modifiers.has("element"):
+						runtime_state["adventure_element_infusion"] = int(adventure_modifiers["element"])
+						runtime_state["adventure_element_infusion_used"] = false
 				draw_pile.append(runtime_card)
 	if character_state != null:
 		for industry_card in character_state.create_industry_cards():

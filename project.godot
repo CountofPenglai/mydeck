@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="my_deck"
-run/main_scene="res://scenes/battle_scene.tscn"
+run/main_scene="res://scenes/adventure_map_scene.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+AdventureSession="*res://scripts/adventure/adventure_session.gd"
 
 [display]
 

@@ -5,6 +5,12 @@ class_name CharacterState
 @export var current_health: int = -1
 @export_range(1, 99, 1) var level: int = 1
 @export var deck: Array[CardStack] = []
+@export_group("Adventure Identity")
+@export var adventure_character_id: String = ""
+@export var adventure_source_path: String = ""
+@export var equipment_instance_ids: Dictionary = {}
+@export var equipment_adventure_modifiers: Dictionary = {}
+@export var card_adventure_modifiers: Dictionary = {}
 @export_group("Equipment")
 @export var weapon_equipment: EquipmentData
 @export_range(0, 1, 1) var weapon_face: int = 0
@@ -53,6 +59,22 @@ func ensure_initialized() -> void:
 
 	if _class_resources_need_reset():
 		reset_class_resources()
+
+
+func ensure_adventure_instance_ids(character_index: int = 0) -> void:
+	if adventure_character_id.is_empty():
+		adventure_character_id = "hero_%02d" % character_index
+	for index in range(deck.size()):
+		var stack := deck[index]
+		if stack != null:
+			stack.ensure_stack_id("%s_card_%03d" % [adventure_character_id, index])
+	for index in range(inventory.size()):
+		var stack := inventory[index]
+		if stack != null:
+			stack.ensure_stack_id("%s_item_%03d" % [adventure_character_id, index])
+	for slot in ["weapon", "armor", "accessory_1", "accessory_2"]:
+		if not equipment_instance_ids.has(slot):
+			equipment_instance_ids[slot] = "%s_equipment_%s" % [adventure_character_id, slot]
 
 
 func reset_class_resources() -> void:
@@ -139,6 +161,7 @@ func get_strength() -> int:
 func get_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := _get_attribute_damage_bonus(context)
 	bonus += flat_damage_bonus + adventure_damage_bonus + _get_equipment_damage_bonus()
+	bonus += _get_equipment_instance_damage_bonus(context)
 	var unit = context.get("unit")
 	if unit != null and unit.has_method("get_status_damage_bonus"):
 		bonus += unit.get_status_damage_bonus(context)
@@ -148,6 +171,29 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 		bonus += unit.get_equipment_effect_damage_bonus(context)
 
 	return bonus
+
+
+func get_equipment_instance_id(equipment: EquipmentData) -> String:
+	if equipment == null:
+		return ""
+	if weapon_equipment != null and equipment in weapon_equipment.get_active_components(weapon_face):
+		return str(equipment_instance_ids.get("weapon", ""))
+	if equipment == armor_equipment:
+		return str(equipment_instance_ids.get("armor", ""))
+	if equipment == accessory_equipment_1:
+		return str(equipment_instance_ids.get("accessory_1", ""))
+	if equipment == accessory_equipment_2:
+		return str(equipment_instance_ids.get("accessory_2", ""))
+	return ""
+
+
+func _get_equipment_instance_damage_bonus(context: Dictionary) -> int:
+	var equipment := context.get("equipment") as EquipmentData
+	var instance_id := get_equipment_instance_id(equipment)
+	if instance_id.is_empty():
+		return 0
+	var modifiers := equipment_adventure_modifiers.get(instance_id, {}) as Dictionary
+	return int(modifiers.get("damage_bonus", 0))
 
 
 func get_agility() -> int:
