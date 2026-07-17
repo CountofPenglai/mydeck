@@ -13,6 +13,7 @@ func _ready() -> void:
 	_test_enemy_catalog()
 	_test_encounter_catalog()
 	_test_reverse_fish()
+	_test_champion_weapon_switch()
 	_test_tactical_turn()
 	print("CHAPTER_ONE_ENEMY_DIAG: completed")
 	get_tree().quit(_exit_code)
@@ -84,6 +85,57 @@ func _test_reverse_fish() -> void:
 	controller.apply_damage(null, fish, 999, "diagnostic", {"fixed_damage": true})
 	if not fish.is_alive() or not bool(fish.enemy_state.runtime_state.get("reversed", false)) or fish.get_max_health() != 5:
 		_fail("hungry fish did not reverse on first lethal damage")
+
+
+func _test_champion_weapon_switch() -> void:
+	var scenario := (load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario).duplicate(true) as BattleScenario
+	scenario.scene_prototype = null
+	scenario.players.clear()
+	scenario.players.append(load("res://resources/characters/battle_warrior_state.tres") as CharacterState)
+	scenario.enemies.clear()
+	scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"fish_champion", 1177))
+	var controller := BattleController.new()
+	controller.setup(scenario)
+	var player: BattleUnitState = controller.player_units[0]
+	var deploy_cell := BattleHexGrid.INVALID_CELL
+	for cell in controller.map_data.get_all_cells():
+		if controller.map_data.is_player_deployment_cell(cell):
+			deploy_cell = cell
+			break
+	if deploy_cell == BattleHexGrid.INVALID_CELL or not controller.deploy_player_unit_at_cell(player, deploy_cell):
+		_fail("could not deploy champion-switch player")
+		return
+
+	var champion: BattleUnitState = controller.enemy_units[0]
+	controller.phase = BattleController.Phase.BATTLE
+	champion.enemy_state.runtime_state["momentum"] = 3
+	var behavior := champion.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	var switched := behavior._execute_step(controller, champion, {
+		"type": "switch",
+		"target_id": player.unit_id,
+	})
+	if not switched:
+		_fail("champion switch intent did not execute")
+	if champion.enemy_state.active_weapon_index != 1:
+		_fail("champion did not switch to reserve spear")
+	if int(champion.enemy_state.runtime_state.get("momentum", -1)) != 0:
+		_fail("champion switch did not consume momentum")
+	if champion.pending_next_attack_damage_bonus != 6:
+		_fail("champion switch did not grant the expected next-attack bonus")
+
+	var charge := load("res://resources/cards/battle_charge.tres") as CardData
+	var effect := charge.effect as ChargeCardEffect
+	var charge_context := {"controller": controller, "user": champion, "card": charge}
+	var charge_cells := effect.get_area_target_cells(charge_context)
+	if charge_cells.is_empty():
+		_fail("champion had no valid charge cell after switching to spear")
+		return
+	champion.hand.append(charge)
+	champion.current_ap = 10
+	controller.current_unit = champion
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+	if not controller.play_card(champion, charge, [charge_cells[0]]):
+		_fail("champion could not resolve a cell-target charge after switching")
 
 
 func _test_tactical_turn() -> void:

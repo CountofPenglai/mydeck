@@ -36,7 +36,12 @@ func _test_charge_direction_movement() -> void:
 	var average_usec := float(Time.get_ticks_usec() - started) / float(PREVIEW_ITERATIONS)
 	if average_usec > 100000.0:
 		_fail("CARD_MOVE_DIAG: charge target query took %.2f us/call" % average_usec)
-	effect.play(context, [destination])
+	warrior.hand.append(card)
+	warrior.current_ap = 10
+	controller.current_unit = warrior
+	if not controller.play_card(warrior, card, [destination], {"equipment_slot": "weapon"}):
+		_fail("CARD_MOVE_DIAG: charge card frame rejected a valid cell target")
+		return
 	if warrior.cell != destination:
 		_fail("CARD_MOVE_DIAG: charge previewed %s but ended at %s" % [destination, warrior.cell])
 	print("CARD_MOVE_DIAG: charge %d cells, %.2f us/query" % [cells.size(), average_usec])

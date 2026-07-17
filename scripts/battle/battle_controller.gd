@@ -749,8 +749,10 @@ func _resolve_paid_card_effect(frame: BattleCardFrame, context_dict: Dictionary)
 		_emit_log("%s 已不在预期区域，效果未执行。" % frame.card.card_name)
 		return
 	for target_value in frame.targets:
+		if not (target_value is BattleUnitState):
+			continue
 		var target := target_value as BattleUnitState
-		if target != null and should_cancel_hostile_effect(frame.user, target, frame.card.card_name, frame.card):
+		if should_cancel_hostile_effect(frame.user, target, frame.card.card_name, frame.card):
 			return
 	var duplicate_targets := frame.user.get_equipment_card_duplicate_targets(frame.card, frame.targets, context_dict)
 	frame.card.play(context_dict, frame.targets)
