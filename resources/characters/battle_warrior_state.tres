@@ -1,45 +1,19 @@
-[gd_resource type="Resource" script_class="CharacterState" load_steps=33 format=3]
+[gd_resource type="Resource" script_class="CharacterState" load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
-[ext_resource type="Resource" path="res://resources/cards/battle_strike_stack.tres" id="3_card_stack"]
 [ext_resource type="Resource" path="res://resources/items/mountain_cleaver.tres" id="4_main_hand"]
 [ext_resource type="Resource" path="res://resources/items/basic_shield.tres" id="5_off_hand"]
-[ext_resource type="Resource" path="res://resources/cards/quick_flourish_stack.tres" id="6_quick"]
-[ext_resource type="Resource" path="res://resources/cards/heavy_cleave_stack.tres" id="7_heavy"]
 [ext_resource type="Resource" path="res://resources/cards/battle_slam_stack.tres" id="8_slam"]
 [ext_resource type="Resource" path="res://resources/cards/battle_charge_stack.tres" id="9_charge"]
 [ext_resource type="Resource" path="res://resources/cards/defensive_stance_stack.tres" id="10_defense"]
-[ext_resource type="Resource" path="res://resources/items/ceremonial_sword_shield_stack.tres" id="11_greatsword_stack"]
-[ext_resource type="Resource" path="res://resources/cards/battle_master_stack.tres" id="12_master"]
-[ext_resource type="Resource" path="res://resources/cards/gather_momentum_whirlwind_stack.tres" id="13_whirlwind"]
-[ext_resource type="Resource" path="res://resources/cards/sentinel_strike_stack.tres" id="14_sentinel"]
-[ext_resource type="Resource" path="res://resources/cards/relentless_stack.tres" id="15_relentless"]
-[ext_resource type="Resource" path="res://resources/cards/stand_firm_stack.tres" id="16_stand_firm"]
-[ext_resource type="Resource" path="res://resources/cards/barbaric_brawl_stack.tres" id="17_brawl"]
-[ext_resource type="Resource" path="res://resources/cards/merciless_slaughter_stack.tres" id="18_slaughter"]
-[ext_resource type="Resource" path="res://resources/cards/hidden_blade_again_stack.tres" id="19_hidden"]
-[ext_resource type="Resource" path="res://resources/cards/breaching_strike_stack.tres" id="20_breach"]
-[ext_resource type="Resource" path="res://resources/cards/battle_cry_stack.tres" id="21_cry"]
-[ext_resource type="Resource" path="res://resources/cards/armed_and_armored_stack.tres" id="22_armed"]
-[ext_resource type="Resource" path="res://resources/cards/rehearsal_stack.tres" id="23_rehearsal"]
-[ext_resource type="Resource" path="res://resources/cards/wound_forged_bulwark_stack.tres" id="24_bulwark"]
-[ext_resource type="Resource" path="res://resources/cards/bloodied_battle_stack.tres" id="25_bloodied"]
-[ext_resource type="Resource" path="res://resources/cards/stand_immovable_stack.tres" id="26_immovable"]
-[ext_resource type="Resource" path="res://resources/cards/attack_defense_dance_stack.tres" id="27_dance"]
-[ext_resource type="Resource" path="res://resources/items/lion_greatsword_stack.tres" id="28_lion"]
-[ext_resource type="Resource" path="res://resources/items/iron_rock_pair_stack.tres" id="29_iron"]
-[ext_resource type="Resource" path="res://resources/items/molten_blackstone_pair_stack.tres" id="30_molten"]
-[ext_resource type="Resource" path="res://resources/items/ember_iron_greataxe_stack.tres" id="31_ember"]
-[ext_resource type="Resource" path="res://resources/items/clockwork_gear_pair_stack.tres" id="32_clockwork"]
 
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
 current_health = 36
-deck = [ExtResource("3_card_stack"), ExtResource("6_quick"), ExtResource("7_heavy"), ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense"), ExtResource("12_master"), ExtResource("13_whirlwind"), ExtResource("14_sentinel"), ExtResource("15_relentless"), ExtResource("16_stand_firm"), ExtResource("17_brawl"), ExtResource("18_slaughter"), ExtResource("19_hidden"), ExtResource("20_breach"), ExtResource("21_cry"), ExtResource("22_armed"), ExtResource("23_rehearsal"), ExtResource("24_bulwark"), ExtResource("25_bloodied"), ExtResource("26_immovable"), ExtResource("27_dance")]
+deck = [ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense")]
 weapon_equipment = ExtResource("4_main_hand")
 weapon_face = 0
 armor_equipment = ExtResource("5_off_hand")
-inventory = [ExtResource("11_greatsword_stack"), ExtResource("28_lion"), ExtResource("29_iron"), ExtResource("30_molten"), ExtResource("31_ember"), ExtResource("32_clockwork")]
 extra_ap_bonus = 0

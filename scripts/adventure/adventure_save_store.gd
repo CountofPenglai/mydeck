@@ -81,6 +81,7 @@ func _serialize_run(run_state: PartyRunState) -> Dictionary:
 		"camp_supplies": run_state.camp_supplies,
 		"ritual_points": run_state.ritual_points,
 		"card_removals_used": run_state.card_removals_used,
+		"enemy_health_percent": run_state.enemy_health_percent,
 		"run_complete": run_state.run_complete,
 		"run_failed": run_state.run_failed,
 		"adventure_flags": run_state.adventure_flags.duplicate(true),
@@ -104,6 +105,7 @@ func _deserialize_run(data: Dictionary) -> PartyRunState:
 	result.camp_supplies = int(data.get("camp_supplies", 0))
 	result.ritual_points = int(data.get("ritual_points", PartyRunState.STARTING_RITUAL_POINTS))
 	result.card_removals_used = int(data.get("card_removals_used", 0))
+	result.enemy_health_percent = clampi(int(data.get("enemy_health_percent", 100)), 1, 1000)
 	result.run_complete = bool(data.get("run_complete", false))
 	result.run_failed = bool(data.get("run_failed", false))
 	result.adventure_flags = (data.get("adventure_flags", {}) as Dictionary).duplicate(true)
@@ -201,7 +203,10 @@ func _deserialize_character(data: Dictionary) -> CharacterState:
 	for stack_data in data.get("deck", []):
 		if not (stack_data is Dictionary):
 			continue
-		var card := load(str(stack_data.get("card", ""))) as CardData
+		var card_path := str(stack_data.get("card", ""))
+		if card_path.is_empty() or not ResourceLoader.exists(card_path):
+			continue
+		var card := load(card_path) as CardData
 		if card == null:
 			continue
 		var stack := CardStack.new()

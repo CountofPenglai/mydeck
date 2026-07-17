@@ -261,7 +261,9 @@ func start_battle() -> bool:
 	for unit in units:
 		unit.notify_equipment_battle_started({"controller": self, "phase": "battle_start"})
 		unit.notify_curse_battle_started({"controller": self, "phase": "battle_start"})
+	ChapterOneEnemyRules.on_battle_started(self)
 	_rebuild_turn_order()
+	_lock_all_enemy_intents()
 	_emit_log("战斗开始。")
 	current_turn_index = -1
 	advance_turn()
@@ -275,15 +277,16 @@ func advance_turn() -> void:
 	if _check_battle_end():
 		return
 
-	if turn_order.is_empty():
+	if turn_order.is_empty() or current_turn_index < 0 or current_turn_index >= turn_order.size() - 1:
+		battle_round += 1
+		if battle_round > 1:
+			surface_state.advance_round(battle_round)
 		_rebuild_turn_order()
+		current_turn_index = 0
+	else:
+		current_turn_index += 1
 
 	for _i in range(turn_order.size()):
-		current_turn_index = (current_turn_index + 1) % turn_order.size()
-		if current_turn_index == 0:
-			battle_round += 1
-			if battle_round > 1:
-				surface_state.advance_round(battle_round)
 		current_unit = turn_order[current_turn_index]
 		if current_unit.is_alive():
 			turn_flow_state = TurnFlowState.START_PENDING
@@ -298,6 +301,7 @@ func advance_turn() -> void:
 			)):
 				turn_flow_state = TurnFlowState.IDLE
 			return
+		current_turn_index = (current_turn_index + 1) % turn_order.size()
 
 	_check_battle_end()
 
@@ -341,6 +345,7 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 		return
 
 	unit.start_turn(config)
+	ChapterOneEnemyRules.on_turn_started(self, unit)
 	for battle_unit in units:
 		if battle_unit != null:
 			battle_unit.remove_expired_statuses()
@@ -435,6 +440,9 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 
 
 func _finish_turn_end_action(unit: BattleUnitState) -> void:
+	ChapterOneEnemyRules.on_turn_ended(self, unit)
+	if unit != null and unit.faction == BattleUnitState.Faction.ENEMY:
+		_lock_enemy_intent(unit)
 	if current_unit == unit:
 		turn_flow_state = TurnFlowState.IDLE
 	if phase == Phase.BATTLE and current_unit == unit:
@@ -792,6 +800,7 @@ func _finish_card_play_frame(frame: BattleCardFrame) -> void:
 		"action_id": get_current_action_id(),
 		"targets": frame.targets,
 	})
+	ChapterOneEnemyRules.on_card_played(self, frame.user, frame.card)
 	_apply_adventure_card_infusion(frame.user, frame.card, frame.context.extra)
 	_notify_opponents_card_completed(frame.user, frame.card)
 	if frame.user.is_ranger():
@@ -2524,6 +2533,8 @@ func lose_life(source: BattleUnitState, target: BattleUnitState, amount: int, la
 func _notify_unit_death(source: BattleUnitState, target: BattleUnitState, context: Dictionary = {}) -> void:
 	if target == null or bool(target.battle_action_flags.get("death_notified", false)):
 		return
+	if ChapterOneEnemyRules.try_handle_lethal(self, source, target, context):
+		return
 	target.battle_action_flags["death_notified"] = true
 	target.notify_death(context)
 	if source != null and source != target:
@@ -2725,6 +2736,20 @@ func _get_enemy_behavior(unit: BattleUnitState) -> EnemyBehavior:
 	if unit == null or unit.enemy_state == null or unit.enemy_state.enemy_data == null:
 		return null
 	return unit.enemy_state.enemy_data.behavior
+
+
+func _lock_all_enemy_intents() -> void:
+	for unit in enemy_units:
+		_lock_enemy_intent(unit)
+
+
+func _lock_enemy_intent(unit: BattleUnitState) -> void:
+	var behavior := _get_enemy_behavior(unit)
+	if behavior != null and unit != null and unit.is_alive():
+		behavior.lock_intent({"controller": self, "phase": "intent_lock"}, unit)
+		if unit.enemy_state != null and unit.enemy_state.intent_plan != null:
+			for step in unit.enemy_state.intent_plan.steps:
+				unit.enemy_state.remember_seen_card(step.get("card") as CardData)
 
 
 func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:

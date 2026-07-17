@@ -4,6 +4,7 @@ class_name EnemyDeckRule
 @export var fixed_cards: Array[CardStack] = []
 @export var random_pool: Array[CardStack] = []
 @export_range(0, 99, 1) var random_pick_count: int = 0
+@export var category_slots: Array[EnemyDeckSlot] = []
 
 func generate_deck(seed: int = -1) -> Array[CardStack]:
 	var result: Array[CardStack] = []
@@ -28,7 +29,53 @@ func generate_deck(seed: int = -1) -> Array[CardStack]:
 		_add_stack(result, stack)
 		pool.remove_at(index)
 
+	var copy_counts := {}
+	for slot in category_slots:
+		if slot == null:
+			continue
+		for _pick in range(slot.pick_count):
+			var entry := _pick_weighted_entry(slot.get_valid_entries(), copy_counts, rng)
+			if entry == null:
+				break
+			_add_card(result, entry.card)
+			copy_counts[entry.card] = int(copy_counts.get(entry.card, 0)) + 1
+
 	return result
+
+
+func get_recipe_summary() -> String:
+	var parts := PackedStringArray()
+	for slot in category_slots:
+		if slot != null and slot.pick_count > 0:
+			parts.append("%s×%d" % [slot.slot_label, slot.pick_count])
+	return "、".join(parts)
+
+
+func _pick_weighted_entry(entries: Array[EnemyCardPoolEntry], copy_counts: Dictionary, rng: RandomNumberGenerator) -> EnemyCardPoolEntry:
+	var candidates: Array[EnemyCardPoolEntry] = []
+	var total_weight := 0
+	for entry in entries:
+		if int(copy_counts.get(entry.card, 0)) >= entry.max_copies:
+			continue
+		candidates.append(entry)
+		total_weight += entry.weight
+	if candidates.is_empty() or total_weight <= 0:
+		return null
+	var roll := rng.randi_range(1, total_weight)
+	for entry in candidates:
+		roll -= entry.weight
+		if roll <= 0:
+			return entry
+	return candidates.back()
+
+
+func _add_card(deck: Array[CardStack], card: CardData) -> void:
+	if card == null:
+		return
+	var stack := CardStack.new()
+	stack.card_data = card
+	stack.count = 1
+	_add_stack(deck, stack)
 
 
 func get_fixed_card_count() -> int:

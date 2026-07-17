@@ -4,4 +4,4 @@
 [resource]
 script = ExtResource("1")
 card_data = ExtResource("2")
-count = 1
+count = 5

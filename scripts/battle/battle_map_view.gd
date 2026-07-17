@@ -29,6 +29,7 @@ var _card_area_preview_cells: Array[Vector2i] = []
 var _card_area_preview_valid := false
 var _card_landing_preview_cells: Array[Vector2i] = []
 var _card_landing_preview_valid := false
+var inspected_enemy: BattleUnitState
 
 
 func setup(scene: BattleScene, battle_controller: BattleController) -> void:
@@ -355,6 +356,8 @@ func _draw_units() -> void:
 				draw_arc(token_position, unit.token_radius, 0.0, TAU, 48, color, 3.0)
 			else:
 				draw_circle(token_position, unit.token_radius, color)
+			if unit == inspected_enemy:
+				draw_arc(token_position, unit.token_radius + 10.0, 0.0, TAU, 48, Color(0.96, 0.76, 0.36, 0.95), 3.0)
 
 		if unit == controller.current_unit:
 			_draw_range_cells(unit.cell, unit.get_attack_range(), false, Color(color.r, color.g, color.b, 0.24))
@@ -386,6 +389,23 @@ func _draw_screen_space_unit_labels() -> void:
 		if not unit.is_deployed or not unit.is_alive():
 			continue
 		_draw_unit_label(unit, font)
+		if unit.faction == BattleUnitState.Faction.ENEMY:
+			_draw_enemy_intent_badge(unit, font)
+
+
+func _draw_enemy_intent_badge(unit: BattleUnitState, font: Font) -> void:
+	if unit.enemy_state == null or unit.enemy_state.intent_plan == null:
+		return
+	var plan := unit.enemy_state.intent_plan
+	var text := "%s  %s" % [plan.get_headline(), plan.get_summary()]
+	var font_size := 12
+	var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1.0, font_size)
+	var panel_size := text_size + Vector2(14.0, 7.0)
+	var center := map_to_screen(unit.position) - Vector2(0.0, unit.token_radius * view_zoom + panel_size.y + 7.0)
+	var rect := Rect2(center - Vector2(panel_size.x * 0.5, 0.0), panel_size)
+	draw_rect(rect, Color(0.12, 0.08, 0.07, 0.9), true)
+	draw_rect(rect, Color(0.78, 0.48, 0.27, 0.9), false, 1.0)
+	draw_string(font, rect.position + Vector2(7.0, panel_size.y - 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.98, 0.89, 0.72, 1.0))
 
 
 func _draw_unit_label(unit: BattleUnitState, font: Font) -> void:

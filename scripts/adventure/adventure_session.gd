@@ -11,8 +11,6 @@ const HERO_PATHS := [
 	"res://resources/characters/battle_ranger_state.tres",
 	"res://resources/characters/battle_druid_state.tres",
 ]
-const MELEE_ENEMY_PATH := "res://resources/enemies/battle_melee_enemy_state.tres"
-const RANGED_ENEMY_PATH := "res://resources/enemies/battle_ranged_enemy_state.tres"
 const ORDINARY_CURSE_PATHS := [
 	"res://resources/curses/blood.tres",
 	"res://resources/curses/greed.tres",
@@ -73,6 +71,57 @@ func start_new_demo(seed_value: int = 0) -> PartyRunState:
 func restart_same_seed() -> void:
 	var seed_value := current_run.run_seed if current_run != null else 0
 	start_new_demo(seed_value)
+
+
+func equip_inventory_item(hero_id: String, stack_id: String, slot: String) -> Dictionary:
+	if _loadout_change_is_blocked():
+		return _failure("战斗或奖励结算期间不能更换装备。")
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return _failure("没有找到要整理装备的角色。")
+	hero.ensure_adventure_instance_ids()
+	var result := CharacterEquipmentModel.equip_inventory_stack_to_slot(hero, stack_id, slot)
+	if not bool(result.get("success", false)):
+		return _failure(str(result.get("message", "换装失败。")))
+	_save_and_emit("%s：%s" % [hero.get_character_name(), str(result.get("message", "换装完成。"))])
+	return {"ok": true, "message": result.get("message", ""), "result": result}
+
+
+func unequip_item(hero_id: String, slot: String) -> Dictionary:
+	if _loadout_change_is_blocked():
+		return _failure("战斗或奖励结算期间不能更换装备。")
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return _failure("没有找到要整理装备的角色。")
+	hero.ensure_adventure_instance_ids()
+	var result := CharacterEquipmentModel.unequip_slot_to_inventory(hero, slot)
+	if not bool(result.get("success", false)):
+		return _failure(str(result.get("message", "卸装失败。")))
+	_save_and_emit("%s：%s" % [hero.get_character_name(), str(result.get("message", "卸装完成。"))])
+	return {"ok": true, "message": result.get("message", ""), "result": result}
+
+
+func sort_inventory(hero_id: String) -> Dictionary:
+	if _loadout_change_is_blocked():
+		return _failure("战斗或奖励结算期间不能整理背包。")
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return _failure("没有找到要整理背包的角色。")
+	hero.ensure_adventure_instance_ids()
+	if not CharacterEquipmentModel.sort_inventory(hero):
+		return _failure("整理背包失败。")
+	_save_and_emit("%s 的背包已按装备位和品质整理。" % hero.get_character_name())
+	return {"ok": true, "message": "背包整理完成。"}
+
+
+func set_enemy_health_percent(value: int) -> bool:
+	var run := ensure_run()
+	var resolved_value := clampi(value, 1, 1000)
+	if run.enemy_health_percent == resolved_value:
+		return true
+	run.enemy_health_percent = resolved_value
+	_save_and_emit("测试设置：后续战斗的怪物生命为 %d%%。" % resolved_value)
+	return true
 
 
 func request_move(target_room_id: String) -> Dictionary:
@@ -171,18 +220,48 @@ func resume_pending_battle() -> bool:
 	return _enter_pending_battle_scene()
 
 
+func restart_pending_battle() -> bool:
+	if current_run == null or current_run.pending_transaction == null \
+			or current_run.pending_transaction.transaction_type != AdventureEnums.TransactionType.BATTLE:
+		return false
+	_rebuild_pending_battle_scenario()
+	return _enter_pending_battle_scene()
+
+
 func consume_pending_battle_scenario() -> BattleScenario:
 	return pending_battle_scenario
 
 
+func has_pending_battle() -> bool:
+	return current_run != null and current_run.pending_transaction != null \
+		and current_run.pending_transaction.transaction_type == AdventureEnums.TransactionType.BATTLE \
+		and not current_run.pending_transaction.committed
+
+
+func pending_battle_grants_reward() -> bool:
+	if not has_pending_battle():
+		return false
+	var payload := current_run.pending_transaction.payload
+	return not bool(payload.get("ambush", false)) and not bool(payload.get("event_battle", false)) \
+		and current_run.floor_state != null \
+		and current_run.floor_state.get_room(str(payload.get("room_id", ""))) != null
+
+
 func complete_pending_battle(result: BattleResult) -> void:
-	if current_run == null or current_run.pending_transaction == null:
+	if not resolve_pending_battle_result(result):
 		return
+	get_tree().change_scene_to_file(MAP_SCENE_PATH)
+
+
+func resolve_pending_battle_result(result: BattleResult) -> bool:
+	if result == null or current_run == null or current_run.pending_transaction == null:
+		return false
 	var transaction := current_run.pending_transaction
 	if transaction.transaction_type != AdventureEnums.TransactionType.BATTLE:
-		return
+		return transaction.transaction_type == AdventureEnums.TransactionType.REWARD and has_pending_reward()
 	var payload := transaction.payload
-	var room := current_run.floor_state.get_room(str(payload.get("room_id", "")))
+	var room := current_run.floor_state.get_room(str(payload.get("room_id", ""))) \
+		if current_run.floor_state != null else null
 	var is_ambush := bool(payload.get("ambush", false))
 	var event_battle := bool(payload.get("event_battle", false))
 	pending_battle_scenario = null
@@ -190,8 +269,7 @@ func complete_pending_battle(result: BattleResult) -> void:
 		current_run.run_failed = true
 		current_run.commit_transaction()
 		_save_only()
-		get_tree().change_scene_to_file(MAP_SCENE_PATH)
-		return
+		return true
 	for hero in current_run.party:
 		if hero != null and result.downed_hero_ids.has(hero.adventure_character_id):
 			hero.current_health = 1
@@ -209,8 +287,10 @@ func complete_pending_battle(result: BattleResult) -> void:
 		_apply_fixed_reward(room, reward)
 		current_run.adventure_flags["pending_reward"] = reward
 		current_run.begin_transaction(AdventureEnums.TransactionType.REWARD, "reward_%s" % room.room_id, {"room_id": room.room_id})
+	else:
+		current_run.commit_transaction()
 	_save_only()
-	get_tree().change_scene_to_file(MAP_SCENE_PATH)
+	return true
 
 
 func has_pending_reward() -> bool:
@@ -660,6 +740,18 @@ func _prepare_battle_transaction(room: AdventureRoomState, ambush: bool, tier: i
 	payload["ambush"] = ambush
 	payload["encounter_tier"] = tier
 	payload["battle_seed"] = AdventureMapGenerator.derive_seed(current_run.run_seed, "encounter", room.room_id.hash() + current_run.floor_index * 1000 + (70000 if ambush else 0))
+	payload["starting_hand_bonus"] = 1 if bool(current_run.adventure_flags.get("tactical_rehearsal", false)) else 0
+	payload["enemy_health_percent"] = current_run.enemy_health_percent
+	current_run.adventure_flags.erase("tactical_rehearsal")
+	var last_key := "last_chapter_one_encounter_%d" % tier
+	var bag_key := "chapter_one_encounter_bag_%d" % tier
+	var bag_ids: Array = current_run.adventure_flags.get(bag_key, []) as Array
+	var draw := ChapterOneEnemyCatalog.draw_encounter(tier, int(payload.battle_seed), bag_ids, str(current_run.adventure_flags.get(last_key, "")))
+	var encounter := draw.get("encounter", {}) as Dictionary
+	payload["encounter_id"] = str(encounter.get("id", ""))
+	payload["enemy_archetypes"] = encounter.get("enemies", []).duplicate()
+	current_run.adventure_flags[last_key] = payload.encounter_id
+	current_run.adventure_flags[bag_key] = draw.get("remaining_ids", [])
 	current_run.begin_transaction(AdventureEnums.TransactionType.BATTLE, "battle_%s" % room.room_id, payload)
 	pending_battle_scenario = _build_battle_scenario(payload)
 	_save_only()
@@ -676,26 +768,32 @@ func _build_battle_scenario(payload: Dictionary) -> BattleScenario:
 	if template == null:
 		return null
 	var scenario := template.duplicate(true) as BattleScenario
+	scenario.scene_prototype = null
 	scenario.players.clear()
 	for hero in current_run.get_active_party():
 		scenario.players.append(hero)
 	scenario.enemies.clear()
 	var tier := int(payload.get("encounter_tier", AdventureEnums.EncounterTier.WEAK))
-	var enemy_paths := [MELEE_ENEMY_PATH]
-	if tier in [AdventureEnums.EncounterTier.MIXED, AdventureEnums.EncounterTier.AMBUSH]:
-		enemy_paths = [MELEE_ENEMY_PATH, RANGED_ENEMY_PATH]
-	elif tier in [AdventureEnums.EncounterTier.STRONG, AdventureEnums.EncounterTier.ELITE, AdventureEnums.EncounterTier.BOSS]:
-		enemy_paths = [MELEE_ENEMY_PATH, RANGED_ENEMY_PATH, MELEE_ENEMY_PATH]
-	for path in enemy_paths:
-		var enemy := load(path) as EnemyState
+	var archetypes: Array = payload.get("enemy_archetypes", []) as Array
+	if archetypes.is_empty():
+		var encounter := ChapterOneEnemyCatalog.pick_encounter(tier, int(payload.get("battle_seed", current_run.run_seed)))
+		archetypes = encounter.get("enemies", []) as Array
+	var birth_index := 0
+	var enemy_health_percent := clampi(
+		int(payload.get("enemy_health_percent", current_run.enemy_health_percent)), 1, 1000
+	)
+	for archetype in archetypes:
+		var enemy_seed := AdventureMapGenerator.derive_seed(int(payload.get("battle_seed", current_run.run_seed)), "enemy_deck", birth_index)
+		var enemy := ChapterOneEnemyCatalog.create_enemy(StringName(archetype), enemy_seed)
 		if enemy != null:
+			enemy.max_health_percent = enemy_health_percent
+			enemy.current_health = enemy.get_max_health()
 			scenario.enemies.append(enemy)
+		birth_index += 1
 	scenario.seed = int(payload.get("battle_seed", current_run.run_seed))
 	if scenario.battle_config != null:
 		scenario.battle_config = scenario.battle_config.duplicate(true) as BattleConfig
-		if bool(current_run.adventure_flags.get("tactical_rehearsal", false)):
-			scenario.battle_config.starting_hand_size += 1
-			current_run.adventure_flags.erase("tactical_rehearsal")
+		scenario.battle_config.starting_hand_size += int(payload.get("starting_hand_bonus", 0))
 	return scenario
 
 
@@ -845,6 +943,14 @@ func _current_room_of_type(room_type: int) -> AdventureRoomState:
 		return null
 	var room := current_run.floor_state.get_current_room()
 	return room if room != null and room.room_type == room_type else null
+
+
+func _loadout_change_is_blocked() -> bool:
+	if current_run == null or current_run.run_complete or current_run.run_failed:
+		return true
+	if has_pending_reward():
+		return true
+	return current_run.pending_transaction != null and not current_run.pending_transaction.committed
 
 
 func _get_hero(hero_id: String) -> CharacterState:

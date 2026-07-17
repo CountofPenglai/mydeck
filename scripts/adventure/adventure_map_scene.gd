@@ -12,6 +12,7 @@ var camp_label: Label
 var ritual_label: Label
 var ambush_label: Label
 var seed_edit: LineEdit
+var enemy_health_spin_box: SpinBox
 var status_label: Label
 var map_view: AdventureMapView
 var detail_title: Label
@@ -21,6 +22,8 @@ var party_list: HBoxContainer
 var modal_layer: ColorRect
 var modal_title: Label
 var modal_body: VBoxContainer
+var inventory_hero_id: String = ""
+var syncing_enemy_health_control: bool = false
 
 
 func _ready() -> void:
@@ -68,10 +71,15 @@ func _build_ui() -> void:
 	map_panel.add_child(map_view)
 	body.add_child(_build_detail_panel())
 	root_stack.add_child(_build_party_bar())
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 12)
 	status_label = Label.new()
 	status_label.custom_minimum_size = Vector2(0.0, 26.0)
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_label.add_theme_color_override("font_color", Color("#d7c797"))
-	root_stack.add_child(status_label)
+	footer.add_child(status_label)
+	footer.add_child(_build_test_controls())
+	root_stack.add_child(footer)
 	_build_modal_layer()
 
 
@@ -117,6 +125,26 @@ func _build_top_bar() -> Control:
 	random_button.pressed.connect(_start_random_run)
 	row.add_child(random_button)
 	return panel
+
+
+func _build_test_controls() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = "测试：怪物生命"
+	label.tooltip_text = "只影响之后锁定的战斗，默认 100%"
+	row.add_child(label)
+	enemy_health_spin_box = SpinBox.new()
+	enemy_health_spin_box.min_value = 1.0
+	enemy_health_spin_box.max_value = 1000.0
+	enemy_health_spin_box.step = 1.0
+	enemy_health_spin_box.value = 100.0
+	enemy_health_spin_box.suffix = "%"
+	enemy_health_spin_box.custom_minimum_size = Vector2(96.0, 32.0)
+	enemy_health_spin_box.tooltip_text = "调整之后进入战斗的所有怪物最大生命"
+	enemy_health_spin_box.value_changed.connect(_on_enemy_health_percent_changed)
+	row.add_child(enemy_health_spin_box)
+	return row
 
 
 func _build_detail_panel() -> Control:
@@ -180,7 +208,7 @@ func _build_modal_layer() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal_layer.add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(620.0, 420.0)
+	panel.custom_minimum_size = Vector2(700.0, 500.0)
 	center.add_child(panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 18)
@@ -214,6 +242,10 @@ func _refresh() -> void:
 	ritual_label.text = "仪式 %d" % run_state.ritual_points
 	ambush_label.text = "伏击 %s" % ("免判定" if run_state.floor_state.watch_protection else "%d%%" % run_state.floor_state.ambush_chance)
 	seed_edit.text = str(run_state.run_seed)
+	if enemy_health_spin_box != null:
+		syncing_enemy_health_control = true
+		enemy_health_spin_box.value = float(run_state.enemy_health_percent)
+		syncing_enemy_health_control = false
 	map_view.set_floor_state(run_state.floor_state)
 	if run_state.floor_state.get_room(selected_room_id) == null:
 		selected_room_id = run_state.floor_state.current_room_id
@@ -351,16 +383,200 @@ func _refresh_party() -> void:
 			"   无法参战" if hero.is_curse_overloaded() or hero.current_health <= 0 else "",
 		]
 		stack.add_child(state_label)
+		var equipment_button := Button.new()
+		equipment_button.text = "装备与背包"
+		equipment_button.tooltip_text = "在战斗外整理背包并更换装备"
+		equipment_button.custom_minimum_size = Vector2(0.0, 28.0)
+		equipment_button.pressed.connect(_show_inventory.bind(hero.adventure_character_id))
+		stack.add_child(equipment_button)
 		party_list.add_child(panel)
+
+
+func _show_inventory(hero_id: String) -> void:
+	inventory_hero_id = hero_id
+	_refresh_inventory_modal()
+
+
+func _refresh_inventory_modal() -> void:
+	var hero := _get_hero_state(inventory_hero_id)
+	if hero == null:
+		_hide_modal()
+		return
+	hero.ensure_adventure_instance_ids()
+	modal_layer.visible = true
+	modal_title.text = "%s · 装备与背包" % hero.get_character_name()
+	_clear_children(modal_body)
+	_add_inventory_hero_selector()
+
+	var equipment_heading := Label.new()
+	equipment_heading.text = "装备栏"
+	equipment_heading.add_theme_font_size_override("font_size", 19)
+	modal_body.add_child(equipment_heading)
+	_add_equipment_slot_row(hero, "武器", CharacterEquipmentModel.SLOT_WEAPON, hero.weapon_equipment)
+	_add_equipment_slot_row(hero, "防具", CharacterEquipmentModel.SLOT_ARMOR, hero.armor_equipment)
+	_add_equipment_slot_row(hero, "饰品 1", CharacterEquipmentModel.SLOT_ACCESSORY_1, hero.accessory_equipment_1)
+	_add_equipment_slot_row(hero, "饰品 2", CharacterEquipmentModel.SLOT_ACCESSORY_2, hero.accessory_equipment_2)
+	modal_body.add_child(HSeparator.new())
+
+	var inventory_header := HBoxContainer.new()
+	var inventory_heading := Label.new()
+	inventory_heading.text = "背包  %d/%d" % [hero.get_inventory_item_count(), CharacterState.INVENTORY_LIMIT]
+	inventory_heading.add_theme_font_size_override("font_size", 19)
+	inventory_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inventory_header.add_child(inventory_heading)
+	var sort_button := Button.new()
+	sort_button.text = "整理"
+	sort_button.tooltip_text = "按装备位、品质和名称排序"
+	sort_button.disabled = hero.inventory.size() < 2
+	sort_button.pressed.connect(_sort_inventory.bind(hero.adventure_character_id))
+	inventory_header.add_child(sort_button)
+	modal_body.add_child(inventory_header)
+
+	var has_items := false
+	for item_stack in hero.inventory:
+		if item_stack == null or item_stack.item_data == null:
+			continue
+		has_items = true
+		_add_inventory_item_row(hero, item_stack)
+	if not has_items:
+		var empty_label := Label.new()
+		empty_label.text = "背包为空。"
+		empty_label.add_theme_color_override("font_color", Color("#aaa69b"))
+		modal_body.add_child(empty_label)
+
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.pressed.connect(_hide_modal)
+	modal_body.add_child(close_button)
+
+
+func _add_inventory_hero_selector() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	for hero in run_state.party:
+		if hero == null:
+			continue
+		var button := Button.new()
+		button.text = hero.get_character_name()
+		button.disabled = hero.adventure_character_id == inventory_hero_id
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_show_inventory.bind(hero.adventure_character_id))
+		row.add_child(button)
+	modal_body.add_child(row)
+
+
+func _add_equipment_slot_row(hero: CharacterState, label_text: String, slot: String, equipment: EquipmentData) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var label := Label.new()
+	var instance_id := str(hero.equipment_instance_ids.get(slot, ""))
+	var modifiers := hero.equipment_adventure_modifiers.get(instance_id, {}) as Dictionary
+	label.text = "%s  %s" % [label_text, _equipment_summary(equipment, modifiers)]
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.custom_minimum_size = Vector2(430.0, 34.0)
+	row.add_child(label)
+	var unequip_button := Button.new()
+	unequip_button.text = "卸下"
+	unequip_button.disabled = equipment == null
+	unequip_button.tooltip_text = "将当前装备放回背包"
+	unequip_button.pressed.connect(_unequip_item.bind(hero.adventure_character_id, slot))
+	row.add_child(unequip_button)
+	modal_body.add_child(row)
+
+
+func _add_inventory_item_row(hero: CharacterState, item_stack: InventoryStack) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	label.text = _inventory_item_summary(hero, item_stack)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.custom_minimum_size = Vector2(350.0, 38.0)
+	row.add_child(label)
+
+	var equipment := item_stack.item_data as EquipmentData
+	if equipment != null:
+		var class_allowed := hero.character_data == null or equipment.is_available_to_class(hero.character_data.character_class)
+		if equipment.is_accessory():
+			_add_equip_button(row, hero, item_stack, CharacterEquipmentModel.SLOT_ACCESSORY_1, "饰品 1", class_allowed)
+			_add_equip_button(row, hero, item_stack, CharacterEquipmentModel.SLOT_ACCESSORY_2, "饰品 2", class_allowed)
+		else:
+			var slot := CharacterEquipmentModel.SLOT_WEAPON if equipment.is_weapon() else CharacterEquipmentModel.SLOT_ARMOR
+			_add_equip_button(row, hero, item_stack, slot, "装备", class_allowed)
+	modal_body.add_child(row)
+	modal_body.add_child(HSeparator.new())
+
+
+func _add_equip_button(row: HBoxContainer, hero: CharacterState, item_stack: InventoryStack, slot: String, text: String, allowed: bool) -> void:
+	var button := Button.new()
+	button.text = text if allowed else "职业不符"
+	button.disabled = not allowed
+	button.pressed.connect(_equip_inventory_item.bind(hero.adventure_character_id, item_stack.stack_id, slot))
+	row.add_child(button)
+
+
+func _equipment_summary(equipment: EquipmentData, adventure_modifiers: Dictionary = {}) -> String:
+	if equipment == null:
+		return "空"
+	var adventure_bonus := int(adventure_modifiers.get("damage_bonus", 0))
+	if equipment.is_weapon():
+		var weapon_summary := "%s · 基础伤害 %d · 范围 %d · %s" % [
+			equipment.item_name, equipment.base_damage, equipment.attack_range, equipment.get_damage_type_label(),
+		]
+		if adventure_bonus != 0:
+			weapon_summary += " · 冒险伤害 %+d" % adventure_bonus
+		return weapon_summary
+	var bonuses := PackedStringArray()
+	if equipment.damage_bonus != 0:
+		bonuses.append("伤害加值 %+d" % equipment.damage_bonus)
+	if equipment.damage_reduction != 0:
+		bonuses.append("伤害减免 %+d" % equipment.damage_reduction)
+	if adventure_bonus != 0:
+		bonuses.append("冒险伤害 %+d" % adventure_bonus)
+	var suffix := " · %s" % " · ".join(bonuses) if not bonuses.is_empty() else ""
+	return "%s%s" % [equipment.item_name, suffix]
+
+
+func _inventory_item_summary(hero: CharacterState, item_stack: InventoryStack) -> String:
+	var item := item_stack.item_data
+	var equipment := item as EquipmentData
+	var count_text := " x%d" % item_stack.count if item_stack.count > 1 else ""
+	if equipment == null:
+		return "%s%s\n%s" % [item.item_name, count_text, item.description]
+	var modifier_text := ""
+	var modifiers := hero.equipment_adventure_modifiers.get(item_stack.stack_id, {}) as Dictionary
+	var adventure_bonus := int(modifiers.get("damage_bonus", 0))
+	if adventure_bonus != 0:
+		modifier_text = " · 冒险伤害 %+d" % adventure_bonus
+	return "%s%s\n%s · %s%s" % [
+		equipment.item_name, count_text, equipment.get_equip_slot_label(), equipment.get_rarity_label(),
+		modifier_text,
+	]
+
+
+func _equip_inventory_item(hero_id: String, stack_id: String, slot: String) -> void:
+	session.equip_inventory_item(hero_id, stack_id, slot)
+	_refresh_inventory_modal()
+
+
+func _unequip_item(hero_id: String, slot: String) -> void:
+	session.unequip_item(hero_id, slot)
+	_refresh_inventory_modal()
+
+
+func _sort_inventory(hero_id: String) -> void:
+	session.sort_inventory(hero_id)
+	_refresh_inventory_modal()
 
 
 func _show_pending_state() -> void:
 	if run_state.run_failed:
 		_show_simple_modal("冒险失败", "小队已经覆灭。", "以同一种子重开", session.restart_same_seed)
-	elif run_state.run_complete:
-		_show_simple_modal("Demo 通关", "第二层首领已被击败，本次冒险完成。", "关闭", _hide_modal)
 	elif session.has_pending_reward():
 		_show_reward_modal()
+	elif run_state.run_complete:
+		_show_simple_modal("Demo 通关", "第二层首领已被击败，本次冒险完成。", "关闭", _hide_modal)
 	elif run_state.pending_transaction != null and run_state.pending_transaction.transaction_type == AdventureEnums.TransactionType.BATTLE:
 		_show_simple_modal("伏击或战斗待处理", "遭遇已经锁定，继续后不会重新生成敌群。", "进入战斗", session.resume_pending_battle)
 	elif bool(run_state.adventure_flags.get("interfloor_camp", false)):
@@ -369,22 +585,57 @@ func _show_pending_state() -> void:
 
 func _show_reward_modal() -> void:
 	modal_layer.visible = true
-	modal_title.text = "战斗奖励"
 	_clear_children(modal_body)
 	var reward := session.get_pending_reward()
+	var claimed_cards := reward.get("claimed_cards", []) as Array
+	var max_cards := int(reward.get("max_cards", 0))
+	modal_title.text = "选择卡牌奖励 · %d/%d" % [claimed_cards.size(), max_cards]
 	var fixed := Label.new()
 	fixed.text = "金币 +%d   补给 +%d   仪式点 +%d   扎营物资 +%d" % [
 		int(reward.get("gold", 0)), int(reward.get("provisions", 0)), int(reward.get("ritual_points", 0)), int(reward.get("camp_supplies", 0)),
 	]
 	modal_body.add_child(fixed)
+	var hint := Label.new()
+	hint.text = "全队最多选择 %d 张卡牌，可以集中交给同一名角色，也可以跳过。" % max_cards
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.add_theme_color_override("font_color", Color("#d7c797"))
+	modal_body.add_child(hint)
+	var card_heading := Label.new()
+	card_heading.text = "候选卡牌"
+	card_heading.add_theme_font_size_override("font_size", 19)
+	modal_body.add_child(card_heading)
+	var card_count := 0
 	for card_data in reward.get("cards", []):
 		if card_data is Dictionary:
+			card_count += 1
+			var candidate_id := str(card_data.get("id", ""))
+			var selected := claimed_cards.has(candidate_id)
 			var button := Button.new()
-			button.text = "%s · %s" % [str(card_data.get("name", "卡牌")), _hero_name(str(card_data.get("hero_id", "")))]
-			button.disabled = (reward.get("claimed_cards", []) as Array).has(str(card_data.get("id", "")))
-			button.pressed.connect(_claim_reward.bind(str(card_data.get("id", ""))))
+			button.text = "%s[%s] %s · %s" % [
+				"已选择 · " if selected else "",
+				CardEnums.rarity_label(int(card_data.get("rarity", CardEnums.Rarity.COMMON))),
+				str(card_data.get("name", "卡牌")),
+				_hero_name(str(card_data.get("hero_id", ""))),
+			]
+			button.disabled = selected or claimed_cards.size() >= max_cards
+			var card_path := str(card_data.get("path", ""))
+			var card := load(card_path) as CardData if ResourceLoader.exists(card_path) else null
+			if card != null:
+				button.tooltip_text = "%d AP · %s\n%s" % [card.ap_cost, card.get_card_type_label(), card.description]
+			button.pressed.connect(_claim_reward.bind(candidate_id))
 			modal_body.add_child(button)
-	for equipment_data in reward.get("equipment", []):
+	if card_count == 0:
+		var empty_cards := Label.new()
+		empty_cards.text = "没有生成可选卡牌，请查看诊断日志。"
+		empty_cards.add_theme_color_override("font_color", Color("#d57568"))
+		modal_body.add_child(empty_cards)
+	var equipment_entries := reward.get("equipment", []) as Array
+	if not equipment_entries.is_empty():
+		var equipment_heading := Label.new()
+		equipment_heading.text = "装备奖励"
+		equipment_heading.add_theme_font_size_override("font_size", 19)
+		modal_body.add_child(equipment_heading)
+	for equipment_data in equipment_entries:
 		if equipment_data is Dictionary:
 			var button := Button.new()
 			button.text = "装备 · %s" % str(equipment_data.get("name", "装备"))
@@ -392,7 +643,7 @@ func _show_reward_modal() -> void:
 			button.pressed.connect(_claim_reward.bind(str(equipment_data.get("id", ""))))
 			modal_body.add_child(button)
 	var finish := Button.new()
-	finish.text = "完成奖励选择"
+	finish.text = "完成奖励选择 · 已选 %d/%d" % [claimed_cards.size(), max_cards]
 	finish.pressed.connect(_settle_reward)
 	modal_body.add_child(finish)
 
@@ -587,6 +838,12 @@ func _start_random_run() -> void:
 	_show_new_run_confirmation(0)
 
 
+func _on_enemy_health_percent_changed(value: float) -> void:
+	if syncing_enemy_health_control or session == null:
+		return
+	session.set_enemy_health_percent(roundi(value))
+
+
 func _show_new_run_confirmation(seed_value: int) -> void:
 	modal_layer.visible = true
 	modal_title.text = "开始新冒险"
@@ -629,6 +886,13 @@ func _hero_name(hero_id: String) -> String:
 		if hero != null and hero.adventure_character_id == hero_id:
 			return hero.get_character_name()
 	return "未知角色"
+
+
+func _get_hero_state(hero_id: String) -> CharacterState:
+	for hero in run_state.party:
+		if hero != null and hero.adventure_character_id == hero_id:
+			return hero
+	return null
 
 
 func _first_hero_id_for_class(card_class: int) -> String:

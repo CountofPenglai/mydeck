@@ -4,6 +4,7 @@ class_name EnemyState
 @export var enemy_data: EnemyData
 @export var current_health: int = -1
 @export_range(1, 99, 1) var level: int = 1
+@export_range(1, 1000, 1) var max_health_percent: int = 100
 @export var deck: Array[CardStack] = []
 @export var extra_ap_bonus: int = 0
 @export var strength_bonus: int = 0
@@ -11,6 +12,10 @@ class_name EnemyState
 @export var intelligence_bonus: int = 0
 @export var flat_damage_bonus: int = 0
 @export var damage_reduction: int = 0
+@export var active_weapon_index: int = 0
+var runtime_state: Dictionary = {}
+var intent_plan := EnemyIntentPlan.new()
+var seen_card_names: PackedStringArray = []
 const MAX_HEALTH_PER_STRENGTH := 3
 const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
 const DAMAGE_PER_ATTRIBUTE := 1
@@ -24,6 +29,8 @@ func ensure_initialized(seed: int = -1) -> void:
 
 	if deck.is_empty():
 		generate_deck(seed)
+	if intent_plan == null:
+		intent_plan = EnemyIntentPlan.new()
 
 
 func generate_deck(seed: int = -1) -> void:
@@ -38,6 +45,8 @@ func generate_deck(seed: int = -1) -> void:
 func get_enemy_name() -> String:
 	if enemy_data == null:
 		return "未绑定敌人"
+	if enemy_data.archetype_id == &"hungry_fish" and bool(runtime_state.get("reversed", false)):
+		return "逆位鱼人"
 
 	return enemy_data.enemy_name
 
@@ -53,8 +62,14 @@ func get_max_health() -> int:
 	if enemy_data == null:
 		return 0
 
-	var level_growth := maxi(0, level - 1) * get_strength() * HEALTH_GROWTH_PER_STRENGTH_LEVEL
-	return enemy_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth
+	var base_health: int
+	if runtime_state.has("max_health_override"):
+		base_health = int(runtime_state.max_health_override)
+	else:
+		var level_growth := maxi(0, level - 1) * get_strength() * HEALTH_GROWTH_PER_STRENGTH_LEVEL
+		base_health = enemy_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth \
+			+ int(runtime_state.get("max_health_bonus", 0))
+	return maxi(1, ceili(float(base_health) * float(max_health_percent) / 100.0))
 
 
 func get_attack() -> int:
@@ -81,8 +96,9 @@ func get_damage_reduction() -> int:
 
 func build_strike_profile_object(_equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
 	var profile := StrikeProfile.new()
-	profile.primary_slot = "innate"
-	profile.primary_equipment = null
+	var weapon := get_weapon_for_slot(_equipment_slot)
+	profile.primary_slot = "weapon" if _equipment_slot.is_empty() else _equipment_slot
+	profile.primary_equipment = weapon
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.primary_damage_type = _resolve_damage_type(context)
 	profile.add_offhand = false
@@ -91,9 +107,16 @@ func build_strike_profile_object(_equipment_slot: String = "", context: Dictiona
 	profile.offhand_damage_bonus = 0
 	var base_damage := 1
 	var attack_range := 1
-	if enemy_data != null:
+	if weapon != null:
+		base_damage = weapon.base_damage
+		attack_range = weapon.attack_range
+		profile.primary_range_type = weapon.range_type
+		profile.primary_damage_type = weapon.damage_type
+	elif enemy_data != null:
 		base_damage = enemy_data.innate_base_damage
 		attack_range = enemy_data.base_attack_range
+	base_damage = int(runtime_state.get("base_damage_override", base_damage))
+	attack_range = int(runtime_state.get("range_override", attack_range))
 
 	profile.primary_base_damage = base_damage
 	profile.primary_range = attack_range
@@ -114,7 +137,7 @@ func get_strength() -> int:
 	if enemy_data == null:
 		return 0
 
-	return enemy_data.base_strength + strength_bonus
+	return int(runtime_state.get("strength_override", enemy_data.base_strength)) + strength_bonus
 
 
 func get_intelligence() -> int:
@@ -132,10 +155,51 @@ func get_battle_token_radius() -> float:
 
 
 func get_attack_range(_equipment_slot: String = "") -> int:
-	if enemy_data == null:
-		return 0
+	var weapon := get_weapon_for_slot(_equipment_slot)
+	if weapon != null:
+		return int(runtime_state.get("range_override", weapon.attack_range))
+	return int(runtime_state.get("range_override", enemy_data.base_attack_range if enemy_data != null else 0))
 
-	return enemy_data.base_attack_range
+
+func get_active_weapon() -> EquipmentData:
+	if enemy_data == null:
+		return null
+	if active_weapon_index == 1 and enemy_data.reserve_weapon_equipment != null:
+		return enemy_data.reserve_weapon_equipment
+	return enemy_data.weapon_equipment
+
+
+func get_weapon_for_slot(slot: String) -> EquipmentData:
+	if slot == "reserve" and enemy_data != null:
+		return enemy_data.reserve_weapon_equipment
+	return get_active_weapon()
+
+
+func can_switch_weapon() -> bool:
+	return enemy_data != null and enemy_data.reserve_weapon_equipment != null
+
+
+func switch_weapon() -> bool:
+	if not can_switch_weapon():
+		return false
+	active_weapon_index = 1 - active_weapon_index
+	return true
+
+
+func get_class_profile() -> int:
+	return enemy_data.class_profile if enemy_data != null else CardEnums.CardClass.NEUTRAL
+
+
+func remember_seen_card(card: CardData) -> void:
+	if card != null and not seen_card_names.has(card.card_name):
+		seen_card_names.append(card.card_name)
+
+
+func reset_battle_runtime() -> void:
+	active_weapon_index = 0
+	runtime_state.clear()
+	seen_card_names.clear()
+	intent_plan.clear()
 
 
 func get_max_ap(config = null) -> int:

@@ -75,6 +75,7 @@ var _pending_curse_action_id: String = ""
 var _adventure_result: BattleResult
 var _return_to_map_button: Button
 var _refresh_scheduled := false
+var inspected_enemy: BattleUnitState
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -90,8 +91,14 @@ var _refresh_scheduled := false
 @onready var discard_button: TextureButton = %DiscardButton
 @onready var discard_label: Label = %DiscardLabel
 @onready var curse_button: Button = %CurseButton
+@onready var menu_button: Button = %MenuButton
 @onready var ap_label: Label = %APLabel
 @onready var log_label: RichTextLabel = %LogLabel
+@onready var enemy_inspect_panel: EnemyInspectPanel = %EnemyInspectPanel
+@onready var battle_menu: Control = %BattleMenu
+@onready var resume_battle_button: Button = %ResumeBattleButton
+@onready var restart_battle_button: Button = %RestartBattleButton
+@onready var restart_confirmation: ConfirmationDialog = %RestartConfirmation
 
 
 func _ready() -> void:
@@ -106,6 +113,11 @@ func _ready() -> void:
 	deck_button.pressed.connect(_on_deck_pressed)
 	discard_button.pressed.connect(_on_discard_pressed)
 	curse_button.pressed.connect(_show_curse_popup)
+	menu_button.pressed.connect(_open_battle_menu)
+	resume_battle_button.pressed.connect(_close_battle_menu)
+	restart_battle_button.pressed.connect(_request_battle_restart)
+	restart_confirmation.confirmed.connect(_restart_current_battle)
+	enemy_inspect_panel.close_requested.connect(_clear_enemy_inspection)
 	_create_ap_orb_layer()
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
@@ -124,9 +136,55 @@ func _ready() -> void:
 			startup_scenario = pending_scenario as BattleScenario
 	if startup_scenario == null:
 		startup_scenario = DEFAULT_SCENARIO
+	if startup_scenario == DEFAULT_SCENARIO:
+		startup_scenario = DEFAULT_SCENARIO.duplicate(true) as BattleScenario
+		startup_scenario.enemies.clear()
+		startup_scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"hungry_fish", 1001))
+		startup_scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"harpoon_fish", 1002))
 	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
 	_refresh()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed("ui_cancel"):
+		return
+	if restart_confirmation.visible:
+		restart_confirmation.hide()
+	else:
+		_set_battle_menu_visible(not battle_menu.visible)
+	get_viewport().set_input_as_handled()
+
+
+func _open_battle_menu() -> void:
+	_set_battle_menu_visible(true)
+
+
+func _close_battle_menu() -> void:
+	_set_battle_menu_visible(false)
+
+
+func _set_battle_menu_visible(value: bool) -> void:
+	battle_menu.visible = value
+	if value:
+		resume_battle_button.grab_focus()
+	else:
+		menu_button.grab_focus()
+
+
+func _request_battle_restart() -> void:
+	restart_confirmation.popup_centered(Vector2i(420, 180))
+
+
+func _restart_current_battle() -> void:
+	restart_battle_button.disabled = true
+	resume_battle_button.disabled = true
+	var adventure_session := get_node_or_null("/root/AdventureSession")
+	if adventure_session != null and adventure_session.has_method("restart_pending_battle"):
+		var restarted := bool(adventure_session.call("restart_pending_battle"))
+		if restarted:
+			return
+	get_tree().reload_current_scene()
 
 
 func _schedule_refresh() -> void:
@@ -145,12 +203,14 @@ func _run_scheduled_refresh() -> void:
 
 func _create_return_to_map_button() -> void:
 	_return_to_map_button = Button.new()
-	_return_to_map_button.text = "返回大地图"
-	_return_to_map_button.tooltip_text = "提交战斗结果并返回冒险地图"
+	_return_to_map_button.text = "选择战斗奖励"
+	_return_to_map_button.tooltip_text = "结算战斗并进入卡牌奖励选择"
 	_return_to_map_button.visible = false
-	_return_to_map_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_return_to_map_button.position = Vector2(-180.0, 68.0)
-	_return_to_map_button.size = Vector2(164.0, 44.0)
+	_return_to_map_button.set_anchors_preset(Control.PRESET_CENTER)
+	_return_to_map_button.offset_left = -120.0
+	_return_to_map_button.offset_top = -26.0
+	_return_to_map_button.offset_right = 120.0
+	_return_to_map_button.offset_bottom = 26.0
 	_return_to_map_button.pressed.connect(_on_return_to_map_pressed)
 	add_child(_return_to_map_button)
 
@@ -158,7 +218,14 @@ func _create_return_to_map_button() -> void:
 func _on_battle_finished(result: BattleResult) -> void:
 	_adventure_result = result
 	var adventure_session := get_node_or_null("/root/AdventureSession")
-	_return_to_map_button.visible = adventure_session != null and adventure_session.has_method("complete_pending_battle")
+	var has_pending_battle := adventure_session != null and adventure_session.has_method("has_pending_battle") \
+		and bool(adventure_session.call("has_pending_battle"))
+	_return_to_map_button.visible = has_pending_battle
+	var grants_reward := result.victory and adventure_session != null \
+		and adventure_session.has_method("pending_battle_grants_reward") \
+		and bool(adventure_session.call("pending_battle_grants_reward"))
+	_return_to_map_button.text = "选择战斗奖励" if grants_reward else "返回大地图"
+	_return_to_map_button.tooltip_text = "结算战斗并进入卡牌奖励选择" if grants_reward else "提交战斗结果并返回冒险地图"
 
 
 func _on_return_to_map_pressed() -> void:
@@ -182,10 +249,13 @@ func handle_map_click(position: Vector2) -> void:
 
 	if controller.phase != BattleController.Phase.BATTLE:
 		return
+	var clicked_unit := controller.get_unit_at_cell(cell)
+	if input_mode == InputMode.NONE and clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
+		_inspect_enemy(clicked_unit)
+		_refresh()
+		return
 	if controller.current_unit == null or controller.current_unit.faction != BattleUnitState.Faction.PLAYER:
 		return
-
-	var clicked_unit := controller.get_unit_at_cell(cell)
 	match input_mode:
 		InputMode.BASIC_ATTACK_TARGET:
 			_handle_basic_attack_target(clicked_unit)
@@ -669,6 +739,10 @@ func _refresh() -> void:
 	_refresh_discard_popup()
 	_refresh_curse_button()
 	_refresh_curse_popup()
+	if inspected_enemy != null and inspected_enemy.is_alive():
+		enemy_inspect_panel.bind_unit(inspected_enemy)
+	else:
+		_clear_enemy_inspection()
 	map_view.invalidate_preview_cache()
 	map_view.queue_redraw()
 	var current := controller.current_unit
@@ -676,6 +750,22 @@ func _refresh() -> void:
 			and current.ranger_state.pending_hand_discard_count > 0 \
 			and (_ordered_discard_popup == null or not _ordered_discard_popup.visible):
 		_show_ranger_pending_hand_discard(current)
+
+
+func _inspect_enemy(unit: BattleUnitState) -> void:
+	inspected_enemy = unit
+	enemy_inspect_panel.bind_unit(unit)
+	map_view.inspected_enemy = unit
+	map_view.queue_redraw()
+
+
+func _clear_enemy_inspection() -> void:
+	inspected_enemy = null
+	if enemy_inspect_panel != null:
+		enemy_inspect_panel.clear()
+	if map_view != null:
+		map_view.inspected_enemy = null
+		map_view.queue_redraw()
 
 
 func _refresh_deploy_list() -> void:

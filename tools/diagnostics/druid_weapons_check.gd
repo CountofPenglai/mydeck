@@ -252,7 +252,7 @@ func _test_kaleidoscope_mirror(druid: BattleUnitState, controller: BattleControl
 	druid.set_druid_transformed(false)
 	var runtime := druid.get_equipment_runtime_state(weapon)
 	runtime.set_counter("swap_profile_turn", druid.turn_serial)
-	var card := load("res://resources/cards/battle_strike.tres") as CardData
+	var card := load("res://resources/cards/battle_slam.tres") as CardData
 	var context := {
 		"controller": controller,
 		"user": druid,

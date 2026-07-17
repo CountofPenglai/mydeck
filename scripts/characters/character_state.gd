@@ -64,17 +64,38 @@ func ensure_initialized() -> void:
 func ensure_adventure_instance_ids(character_index: int = 0) -> void:
 	if adventure_character_id.is_empty():
 		adventure_character_id = "hero_%02d" % character_index
+	var used_ids := {}
+	for slot in ["weapon", "armor", "accessory_1", "accessory_2"]:
+		var equipment_id := str(equipment_instance_ids.get(slot, ""))
+		if equipment_id.is_empty() or used_ids.has(equipment_id):
+			equipment_id = _unique_instance_id("%s_equipment_%s" % [adventure_character_id, slot], used_ids)
+			equipment_instance_ids[slot] = equipment_id
+		used_ids[equipment_id] = true
 	for index in range(deck.size()):
 		var stack := deck[index]
 		if stack != null:
-			stack.ensure_stack_id("%s_card_%03d" % [adventure_character_id, index])
+			var stack_id := stack.stack_id
+			if stack_id.is_empty() or used_ids.has(stack_id):
+				stack_id = _unique_instance_id("%s_card_%03d" % [adventure_character_id, index], used_ids)
+				stack.stack_id = stack_id
+			used_ids[stack_id] = true
 	for index in range(inventory.size()):
 		var stack := inventory[index]
 		if stack != null:
-			stack.ensure_stack_id("%s_item_%03d" % [adventure_character_id, index])
-	for slot in ["weapon", "armor", "accessory_1", "accessory_2"]:
-		if not equipment_instance_ids.has(slot):
-			equipment_instance_ids[slot] = "%s_equipment_%s" % [adventure_character_id, slot]
+			var stack_id := stack.stack_id
+			if stack_id.is_empty() or used_ids.has(stack_id):
+				stack_id = _unique_instance_id("%s_item_%03d" % [adventure_character_id, index], used_ids)
+				stack.stack_id = stack_id
+			used_ids[stack_id] = true
+
+
+func _unique_instance_id(base_id: String, used_ids: Dictionary) -> String:
+	var candidate := base_id
+	var suffix := 2
+	while used_ids.has(candidate):
+		candidate = "%s_%d" % [base_id, suffix]
+		suffix += 1
+	return candidate
 
 
 func reset_class_resources() -> void:

@@ -16,13 +16,14 @@ func get_map_data() -> BattleMapData:
 
 
 func get_enemy_states() -> Array[EnemyState]:
-	if scene_prototype != null:
-		return scene_prototype.create_enemy_states()
-
 	var result: Array[EnemyState] = []
 	for enemy in enemies:
 		if enemy is EnemyState:
 			result.append(enemy)
+	if not result.is_empty():
+		return result
+	if scene_prototype != null:
+		return scene_prototype.create_enemy_states()
 
 	return result
 

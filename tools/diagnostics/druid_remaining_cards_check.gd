@@ -141,7 +141,7 @@ func _reset_druid(druid: BattleUnitState, transformed: bool) -> void:
 
 
 func _dummy_card() -> CardData:
-	return (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	return (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 
 
 func _deploy_players(controller: BattleController) -> void:

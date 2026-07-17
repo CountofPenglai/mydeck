@@ -1,16 +1,16 @@
 # 项目结构与 Skill 工作流
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 本文档记录项目当前工程结构、运行时数据所有权、核心结算路径、测试入口以及在 Codex 中使用 GodotPrompter Skill 的方法。设计数值仍以外部设计文档为目标，实际实现状态以代码、资源和诊断为准。
 
 ## 当前可运行范围
 
-- Godot 版本：`4.6.3-stable`。
+- 当前验证环境：Steam 版 Godot `4.7.1-stable`；具体路径见 `environment_memory.md`。
 - 主入口：两层冒险 Demo，大地图为 `11x7` 方形布局上的房间图。
 - 可操控职业：战士、游侠、德鲁伊。
 - 战斗地图：六边形网格、`Vector2i` 格坐标、整数距离和整数移动费用。
-- 已接入框架：卡牌、装备、状态、诅咒、地表元素、职业资源、商店、奖励、营地、事件、存档和战斗结果回写。
+- 已接入框架：卡牌、装备、状态、诅咒、地表元素、职业资源、第一章怪池与公开意图、商店、奖励、营地、事件、存档和战斗结果回写。
 - 当前自动存档：`user://adventure_run.json`，并使用临时文件和备份文件提交。
 
 ## 运行流程
@@ -44,7 +44,7 @@ flowchart LR
 | `scripts/characters/` | 角色模板、冒险持久状态、装备栏、牌组与职业资源 | `character_state.gd` |
 | `scripts/items/` | 装备配置、成对或双面组件、运行时状态和装备 hook | `equipment_data.gd`、`equipment_runtime_state.gd` |
 | `scripts/curses/` | 业、报、果实例，负荷、成熟度和队伍冒险状态 | `curse_instance.gd`、`party_run_state.gd` |
-| `scripts/enemies/` | 怪物数据、牌组规则和行为 | `enemy_behavior.gd` |
+| `scripts/enemies/` | 怪物数据、分类牌组、第一章遭遇、特性和公开意图 | `chapter_one_enemy_catalog.gd`、`enemy_intent_planner.gd` |
 | `scripts/status/` | 护甲、眩晕、职业状态和通用 hook | `status_effect.gd` |
 | `resources/` | 卡牌、角色、敌人、装备、诅咒和战斗配置 | `.tres` 文件 |
 | `scenes/` | 大地图和战斗组合根 | `adventure_map_scene.tscn`、`battle_scene.tscn` |
@@ -76,6 +76,7 @@ flowchart LR
 - `EquipmentRuntimeState`：层数、冷却、弹仓、风向、准备次数等单场状态。
 - 卡牌运行时 Dictionary：临时减费、来源牌区、临时放逐和单场标记。
 - `BattleSurfaceState`：本场地表元素与高级地表期限。
+- `EnemyState`：敌人阶段、当前武器、特性计数器、已见牌和实例独占意图。
 
 共享 `.tres` 上禁止保存余烬、势、成熟度、弹仓、预设模式或临时伤害加值，否则多个角色和多场战斗会共享错误状态。
 
@@ -84,6 +85,8 @@ flowchart LR
 ### 回合与行动
 
 `BattleController` 使用 `Phase` 和 `TurnFlowState` 表达部署、回合开始、行动阶段、回合结束与战斗结束。玩家命令和 AI 决策都必须经过控制器领域入口。
+
+行动序是每轮快照：新轮开始读取当前敏捷并排序，轮内锁定；当前轮的敏捷变化只影响下一轮。敌人使用锁定的 `EnemyIntentPlan` 执行，不在步骤失效后重新规划强牌。
 
 `BattleResolutionRunner` 管理两层队列：
 
@@ -163,7 +166,8 @@ GodotPrompter 是领域 Skill；Superpowers 等框架若可用，负责 brainsto
 
 | 诊断 | 覆盖范围 |
 | --- | --- |
-| `adventure_system_check.tscn` | 500 层地图生成、确定性、存档往返、生命回写、实例修正 |
+| `adventure_system_check.tscn` | 500 层地图生成、存档往返、战斗奖励选牌、生命回写、怪物生命倍率、实例修正、背包换装模型 |
+| `adventure_inventory_ui_check.tscn` | 大地图装备入口、四槽装备、背包模态层及战斗测试控件运行时加载 |
 | `battle_flow_check.tscn` | 行动队列、非重入、行动 ID、回合边界 |
 | `diagnose_battle_load.tscn` | 全资源扫描、战斗场景实例化和开战 |
 | `hex_grid_check.tscn` | 六边坐标、距离、直线、范围和移动费用 |
@@ -173,6 +177,7 @@ GodotPrompter 是领域 Skill；Superpowers 等框架若可用，负责 brainsto
 | `warrior_*_check.tscn` | 战士机制、hook 与武器 |
 | `ranger_*_check.tscn` | 游侠机制与武器 |
 | `druid_*_check.tscn` | 德鲁伊机制、hook、卡牌与武器 |
+| `chapter_one_enemy_check.tscn` | 16 张怪物牌、10 种敌人、五档遭遇和逆位鱼人 |
 
 专项诊断不能代替严格项目加载。每次提交前至少执行：
 

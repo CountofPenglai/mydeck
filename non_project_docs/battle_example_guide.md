@@ -11,7 +11,8 @@ This project includes a complete prototype battle example. The project main scen
 ## Flow
 
 1. Run the project to enter the adventure map, or open `battle_scene.tscn` to test combat directly.
-2. A direct battle starts in the deployment phase.
+2. A direct battle starts in the deployment phase. Each hero starts with only the three class starter cards, using a `5 + 2 + 1` distribution for eight cards total.
+   Press `Esc` or click `菜单` to open the battle menu. Restart uses the same locked encounter and returns to deployment.
 3. Select each player unit in the sidebar, then click a highlighted deployment hex.
 4. Click `开始战斗` once all player units are deployed.
 5. During player turns:
@@ -25,8 +26,9 @@ This project includes a complete prototype battle example. The project main scen
 - `阿兰`: warrior with switchable weapons, momentum cards, armor, and healing.
 - `莉娜`: ranger with paired melee/ranged weapons, stealth, combo, and elements.
 - `米拉`: druid with a mana zone, transformation, dual-orientation cards, and form-linked weapons.
-- `近战训练敌`: melee state-machine enemy.
-- `远程训练敌`: ranged state-machine enemy that tries to maintain preferred distance.
+- Direct battle preview: `饥饿鱼人` and `鱼叉鱼人`, both using the Chapter One categorized deck and locked public-intent planner.
+
+Click an enemy while no card or movement target is being selected to open the compact enemy intelligence panel. The badge above each enemy shows its first locked action and cumulative attack/defense estimate.
 
 The sample battlefield uses a `12x9` hex grid. Fire, water, earth, and air sample cells are configured in `sample_battle_map.tres`.
 

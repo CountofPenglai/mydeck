@@ -50,8 +50,9 @@ func _ready() -> void:
 		get_tree().quit(_exit_code)
 		return
 	_test_weapon_modes(ranger)
-	if ranger.character_state == null or ranger.character_state.deck.size() < 21:
-		_fail("RANGER_DIAG: default ranger deck does not include the full design set")
+	if ranger.character_state == null or ranger.character_state.deck.size() != 3 \
+			or ranger.character_state.get_deck_card_count() != 8:
+		_fail("RANGER_DIAG: default ranger deck is not the 5+2+1 starter set")
 	if controller.surface_state.get_element(Vector2i(4, 2)) != BattleSurfaceState.Element.FIRE \
 			or controller.surface_state.get_element(Vector2i(7, 5)) != BattleSurfaceState.Element.AIR:
 		_fail("RANGER_DIAG: sample map base elements were not loaded")

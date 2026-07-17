@@ -200,7 +200,7 @@ func _test_turn_command_boundary() -> void:
 
 
 func _test_duplicate_card_submission(controller: BattleController, unit: BattleUnitState) -> void:
-	var card := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var card := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	var target := controller.get_nearest_opponent(unit)
 	if card == null or target == null:
 		_fail("FLOW_DIAG: duplicate card diagnostic resources missing")

@@ -17,6 +17,15 @@ class_name EnemyData
 @export_range(0, 12, 1) var base_attack_range: int = 1
 @export var battle_token_radius: float = 24.0
 
+@export_group("Weapons")
+@export var weapon_equipment: EquipmentData
+@export var reserve_weapon_equipment: EquipmentData
+
+@export_group("Chapter Profile")
+@export var archetype_id: StringName = &"training_enemy"
+@export_enum("无", "战士", "游侠", "德鲁伊") var class_profile: int = CardEnums.CardClass.NEUTRAL
+@export_multiline var trait_summary: String = ""
+
 @export_group("Deck and Behavior")
 @export var deck_rule: EnemyDeckRule
 @export var behavior: EnemyBehavior

@@ -3,7 +3,7 @@ class_name PartyRunState
 
 const STARTING_RITUAL_POINTS := 3
 const MIN_RITUAL_DEBT := -2
-const SAVE_VERSION := 1
+const SAVE_VERSION := 3
 
 @export var ritual_points: int = STARTING_RITUAL_POINTS
 @export_group("Adventure")
@@ -16,6 +16,7 @@ const SAVE_VERSION := 1
 @export var camp_points: int = 0
 @export var camp_supplies: int = 0
 @export var card_removals_used: int = 0
+@export_range(1, 1000, 1) var enemy_health_percent: int = 100
 @export var run_complete: bool = false
 @export var run_failed: bool = false
 @export var party: Array[CharacterState] = []
@@ -37,6 +38,7 @@ func initialize_adventure(seed_value: int, heroes: Array[CharacterState], defini
 	camp_supplies = 0
 	ritual_points = STARTING_RITUAL_POINTS
 	card_removals_used = 0
+	enemy_health_percent = 100
 	run_complete = false
 	run_failed = false
 	party = heroes

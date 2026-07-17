@@ -22,6 +22,7 @@ func _ready() -> void:
 	get_tree().root.add_child.call_deferred(scene)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	_test_battle_menu(scene)
 
 	var controller_value = scene.get("controller")
 	if controller_value is BattleController:
@@ -35,6 +36,19 @@ func _ready() -> void:
 	await get_tree().process_frame
 	print("DIAG: completed")
 	get_tree().quit(_exit_code)
+
+
+func _test_battle_menu(scene: Node) -> void:
+	var menu := scene.get_node_or_null("%BattleMenu") as Control
+	if menu == null:
+		_fail("DIAG: battle menu is missing")
+		return
+	scene.call("_open_battle_menu")
+	if not menu.visible:
+		_fail("DIAG: battle menu did not open")
+	scene.call("_close_battle_menu")
+	if menu.visible:
+		_fail("DIAG: battle menu did not close")
 
 
 func _deploy_players(controller: BattleController) -> void:

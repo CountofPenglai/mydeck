@@ -6,4 +6,4 @@
 [resource]
 script = ExtResource("1_stack")
 card_data = ExtResource("2_card")
-count = 3
+count = 2

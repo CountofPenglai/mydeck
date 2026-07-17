@@ -64,7 +64,7 @@ func _ready() -> void:
 
 func _test_moonlight_targets(controller: BattleController, druid: BattleUnitState) -> void:
 	var moonlight := load("res://resources/cards/druid_moonlit_mend.tres") as CardData
-	var ordinary_attack := load("res://resources/cards/battle_strike.tres") as CardData
+	var ordinary_attack := load("res://resources/cards/battle_slam.tres") as CardData
 	var ally := _find_other_player(controller, druid)
 	var enemy: BattleUnitState = controller.enemy_units[0] if not controller.enemy_units.is_empty() else null
 	if moonlight == null or ordinary_attack == null or ally == null or enemy == null:

@@ -100,6 +100,8 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	curse_runtime_states.clear()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
+	if enemy_state != null:
+		enemy_state.reset_battle_runtime()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
@@ -199,7 +201,8 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 		result = enemy_state.get_damage_bonus(merged_context)
 	if battle_controller != null:
 		result += battle_controller.get_surface_damage_bonus(self)
-	return result + get_curse_damage_bonus(merged_context)
+	result += get_curse_damage_bonus(merged_context)
+	return ChapterOneEnemyRules.modify_damage_bonus(self, result) if enemy_state != null else result
 
 
 func get_damage_reduction(context: Dictionary = {}) -> int:
@@ -218,6 +221,8 @@ func get_damage_reduction(context: Dictionary = {}) -> int:
 func get_character_class() -> int:
 	if character_state != null and character_state.character_data != null:
 		return character_state.character_data.character_class
+	if enemy_state != null:
+		return enemy_state.get_class_profile()
 
 	return CardEnums.CardClass.NEUTRAL
 
@@ -730,7 +735,8 @@ func get_agility() -> int:
 		result = character_state.get_agility()
 	elif enemy_state != null:
 		result = enemy_state.get_agility()
-	return _modify_equipment_attribute("agility", result)
+	result = _modify_equipment_attribute("agility", result)
+	return ChapterOneEnemyRules.modify_agility(self, result) if enemy_state != null else result
 
 
 func get_strength() -> int:
@@ -849,6 +855,17 @@ func get_attack_weapon_options() -> Array:
 				available.append(option)
 		return available
 
+	if enemy_state != null:
+		var weapon := enemy_state.get_active_weapon()
+		return [{
+			"slot": "weapon",
+			"label": weapon.item_name if weapon != null else "天生武器",
+			"weapon": weapon,
+			"equipment": weapon,
+			"base_damage": weapon.base_damage if weapon != null else enemy_state.enemy_data.innate_base_damage,
+			"range": get_attack_range(),
+			"range_type": weapon.range_type if weapon != null else EquipmentData.WeaponRangeType.MELEE,
+		}]
 	return []
 
 
@@ -872,9 +889,11 @@ func get_active_weapon_face_index() -> int:
 
 
 func get_active_weapon_equipment() -> EquipmentData:
-	if character_state == null:
-		return null
-	return character_state.get_weapon_face(get_active_weapon_face_index())
+	if character_state != null:
+		return character_state.get_weapon_face(get_active_weapon_face_index())
+	if enemy_state != null:
+		return enemy_state.get_active_weapon()
+	return null
 
 
 func has_equipment_subcategory(subcategory: String) -> bool:
@@ -1640,8 +1659,14 @@ func notify_before_strike(context: Dictionary = {}) -> Dictionary:
 
 
 func notify_movement_completed(context: Dictionary = {}) -> void:
-	_notify_curse_effects("on_movement_completed", [], _with_unit_context(context))
-	_notify_equipment_effects("on_movement_completed", [], _with_unit_context(context))
+	var event_context := _with_unit_context(context)
+	_notify_curse_effects("on_movement_completed", [], event_context)
+	_notify_equipment_effects("on_movement_completed", [], event_context)
+	if enemy_state != null and battle_controller != null:
+		ChapterOneEnemyRules.on_movement_completed(battle_controller, self, event_context)
+	for card in discard_pile.duplicate():
+		if card != null and card.effect != null and card.effect.has_method("on_discard_owner_movement_completed"):
+			card.effect.call("on_discard_owner_movement_completed", self, card, event_context)
 
 
 func notify_ranger_combo_milestone(threshold: int, context: Dictionary = {}) -> void:
@@ -1763,6 +1788,8 @@ func notify_armor_changed(previous: int, current: int, context: Dictionary = {})
 	event_context["current_armor"] = current
 	_notify_status_effects("on_armor_changed", [previous, current], event_context)
 	_notify_zone_card_effects("on_zone_owner_armor_changed", [previous, current], event_context)
+	if enemy_state != null and battle_controller != null:
+		ChapterOneEnemyRules.on_armor_changed(battle_controller, self, previous, current)
 
 
 func _reset_druid_state() -> void:

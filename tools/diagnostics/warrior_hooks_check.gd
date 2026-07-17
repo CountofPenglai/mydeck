@@ -178,7 +178,7 @@ func _test_stand_immovable(controller: BattleController, warrior: BattleUnitStat
 
 func _test_rehearsal(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
 	var rehearsal := (load("res://resources/cards/rehearsal.tres") as CardData).duplicate() as CardData
-	var selected := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var selected := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	if rehearsal == null or selected == null:
 		_fail("WARRIOR_HOOK: rehearsal resources missing")
 		return
@@ -205,7 +205,7 @@ func _test_rehearsal(controller: BattleController, warrior: BattleUnitState, ene
 	if warrior.exiled_pile.find(selected) < 0:
 		_fail("WARRIOR_HOOK: rehearsed card did not exile after play")
 
-	var unplayed := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var unplayed := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	warrior.discard_pile.append(unplayed)
 	warrior.move_discard_card_to_hand(unplayed)
 	warrior.mark_temporary_card(unplayed, -2, true, true)
@@ -217,7 +217,7 @@ func _test_rehearsal(controller: BattleController, warrior: BattleUnitState, ene
 func _test_playability_guards(controller: BattleController, warrior: BattleUnitState) -> void:
 	var rehearsal := (load("res://resources/cards/rehearsal.tres") as CardData).duplicate() as CardData
 	var bulwark := (load("res://resources/cards/wound_forged_bulwark.tres") as CardData).duplicate() as CardData
-	var other := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var other := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	if rehearsal == null or bulwark == null or other == null:
 		_fail("WARRIOR_HOOK: playability guard resources missing")
 		return
@@ -256,7 +256,7 @@ func _test_payment_rollback(controller: BattleController, warrior: BattleUnitSta
 	var first_condition := DiscardHandCondition.new()
 	var second_condition := DiscardHandCondition.new()
 	test_card.combo_conditions.assign([first_condition, second_condition])
-	var payment_card := (load("res://resources/cards/battle_strike.tres") as CardData).duplicate() as CardData
+	var payment_card := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	var discard_marker := {"count": 0}
 	var discard_listener: StatusEffect = DIAGNOSTIC_DISCARD_STATUS_SCRIPT.new()
 	discard_listener.set("marker", discard_marker)

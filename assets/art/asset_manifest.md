@@ -32,6 +32,14 @@ See `non_project_docs/art_style_guide.md` for the durable style rules.
   - 256x256 discard pile UI button matching the existing stone, leather, parchment, and brass-trim battle HUD style.
 - `ui/ap_orb_full.png`
   - 128x128 transparent green AP orb used to mark available AP inside the existing empty AP slot frame.
+- `cards/monster_card_basic.svg`
+  - Compact dark teal prototype artwork shared by the eight basic monster cards.
+- `cards/monster_card_mutation.svg`
+  - Crimson-violet prototype artwork shared by the eight mutation cards.
+- `cards/temporary_jinx.svg`
+  - Prototype curse artwork for temporary monster-generated jinx cards.
+- `enemies/chapter_one_monsters.svg`
+  - Ten-cell 128px badge atlas for the Chapter One monster roster; used by both battle tokens and the compact inspect panel.
 
 Raw generated sources for the normalized portrait/battle assets are kept beside the final files with `_raw` suffix.
 

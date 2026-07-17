@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_scene.gd" id="1_scene"]
 [ext_resource type="Script" path="res://scripts/battle/battle_map_view.gd" id="2_map_view"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" path="res://assets/art/ui/small_action_button.png" id="6_action"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/deck_button.png" id="7_deck"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/discard_button.png" id="8_discard"]
+[ext_resource type="PackedScene" path="res://scenes/ui/enemy_inspect_panel.tscn" id="9_enemy_inspect"]
 
 [node name="BattleScene" type="Control"]
 custom_minimum_size = Vector2(960, 540)
@@ -158,6 +159,32 @@ offset_bottom = 54.0
 tooltip_text = "查看诅咒区"
 text = "诅咒区"
 
+[node name="MenuButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -270.0
+offset_top = 16.0
+offset_right = -182.0
+offset_bottom = 54.0
+tooltip_text = "打开战斗菜单"
+text = "菜单"
+
+[node name="EnemyInspectPanel" parent="." instance=ExtResource("9_enemy_inspect")]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -366.0
+offset_top = 64.0
+offset_right = -16.0
+offset_bottom = -224.0
+grow_horizontal = 0
+grow_vertical = 2
+
 [node name="HudTexture" type="TextureRect" parent="BottomHud"]
 layout_mode = 1
 anchors_preset = 15
@@ -303,3 +330,84 @@ theme_override_font_sizes/font_size = 13
 text = "牌库"
 horizontal_alignment = 1
 vertical_alignment = 2
+
+[node name="BattleMenu" type="Control" parent="."]
+unique_name_in_owner = true
+process_mode = 3
+visible = false
+z_index = 100
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Shade" type="ColorRect" parent="BattleMenu"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.025, 0.03, 0.04, 0.78)
+
+[node name="Panel" type="PanelContainer" parent="BattleMenu"]
+custom_minimum_size = Vector2(360, 240)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -120.0
+offset_right = 180.0
+offset_bottom = 120.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="BattleMenu/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Options" type="VBoxContainer" parent="BattleMenu/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="BattleMenu/Panel/Margin/Options"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "战斗菜单"
+horizontal_alignment = 1
+
+[node name="RestartHint" type="Label" parent="BattleMenu/Panel/Margin/Options"]
+layout_mode = 2
+text = "重开后将从本场战斗的部署阶段重新开始。"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="ResumeBattleButton" type="Button" parent="BattleMenu/Panel/Margin/Options"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "返回战斗"
+
+[node name="RestartBattleButton" type="Button" parent="BattleMenu/Panel/Margin/Options"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "重新开始战斗"
+
+[node name="RestartConfirmation" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+process_mode = 3
+title = "确认重开"
+dialog_text = "当前战斗进度将被放弃，并使用相同遭遇重新开始。"
+ok_button_text = "重新开始"
+exclusive = true

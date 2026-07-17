@@ -12,7 +12,7 @@ config_version=5
 
 config/name="my_deck"
 run/main_scene="res://scenes/adventure_map_scene.tscn"
-config/features=PackedStringArray("4.6", "Forward Plus")
+config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]

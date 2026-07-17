@@ -12,6 +12,7 @@
 
 - [德鲁伊职业实现](druid_implementation_notes.md)：法力区、形态、双面牌、剩余卡牌和德鲁伊武器。
 - [游侠职业实现](ranger_implementation_notes.md)：潜行、连击、元素、卡牌与成对武器。
+- [第一章敌人与怪物卡池实现](chapter_one_enemy_implementation.md)：怪物牌、分类卡组、敌人特性、遭遇池、公开意图与简版战斗情报 UI。
 - [战斗场景加载排查](battle_scene_load_investigation.md)：历史加载故障、定位过程和验证命令。
 - [UI 加载问题记录](ui_load_issue_notes.md)：历史 UI 资源与配置故障。
 

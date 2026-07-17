@@ -44,18 +44,19 @@ func _test_resources_and_runtime_identity(warrior: BattleUnitState) -> void:
 	if relentless_effect == null or relentless_effect.damage_bonus_per_returned_card != 2:
 		_fail("WARRIOR_MECH: relentless return bonus is not 2")
 
-	var battle_strikes: Array[CardData] = []
+	var basic_attacks: Array[CardData] = []
+	var basic_attack := load("res://resources/cards/battle_slam.tres") as CardData
 	for zone in [warrior.draw_pile, warrior.hand, warrior.discard_pile]:
 		for card in zone:
-			if card != null and card.card_name == "战斗打击":
-				battle_strikes.append(card)
-	if battle_strikes.size() >= 2 and battle_strikes[0] == battle_strikes[1]:
+			if card != null and basic_attack != null and card.card_name == basic_attack.card_name:
+				basic_attacks.append(card)
+	if basic_attacks.size() >= 2 and basic_attacks[0] == basic_attacks[1]:
 		_fail("WARRIOR_MECH: runtime deck cards still share CardData identity")
 
 
 func _test_hidden_blade_again(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
 	var template := load("res://resources/cards/hidden_blade_again.tres") as CardData
-	var filler_template := load("res://resources/cards/battle_strike.tres") as CardData
+	var filler_template := load("res://resources/cards/battle_slam.tres") as CardData
 	if template == null or filler_template == null:
 		_fail("WARRIOR_MECH: hidden blade resources missing")
 		return
@@ -99,7 +100,7 @@ func _test_hidden_blade_again(controller: BattleController, warrior: BattleUnitS
 
 func _test_battle_cry(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
 	var card := (load("res://resources/cards/battle_cry.tres") as CardData).duplicate() as CardData
-	var filler := load("res://resources/cards/battle_strike.tres") as CardData
+	var filler := load("res://resources/cards/battle_slam.tres") as CardData
 	if card == null or filler == null:
 		_fail("WARRIOR_MECH: battle cry resources missing")
 		return

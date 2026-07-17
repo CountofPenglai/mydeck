@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/cards/monster_card_effect.gd" id="2"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/monster_card_basic.svg" id="3"]
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("2")
+kind = 2
+[resource]
+script = ExtResource("1")
+card_name = "群猎"
+description = "武器打击。目标相邻其他怪物时，每段获得+2伤害加值。"
+artwork = ExtResource("3")
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 2
+effect = SubResource("Effect")
