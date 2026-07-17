@@ -1376,21 +1376,60 @@ func get_ap_movement_distance(unit: BattleUnitState, ap_budget: int, agility_mod
 
 
 func get_reachable_cells(unit: BattleUnitState, ap_budget: int = -1) -> Array[Vector2i]:
+	var available_ap := unit.current_ap if unit != null and ap_budget < 0 else ap_budget
+	return get_reachable_cells_for_ap(unit, available_ap, true)
+
+
+func get_reachable_cells_for_ap(unit: BattleUnitState, ap_budget: int, apply_ap_cost_modifiers: bool = true, agility_modifier: int = 0) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	if unit == null or map_data == null or not map_data.is_valid_cell(unit.cell):
 		return result
-	var available_ap := unit.current_ap if ap_budget < 0 else ap_budget
+	var available_ap := maxi(0, ap_budget)
+	var blocked_cells := _get_blocked_movement_cells(unit)
+	if unit.is_flying():
+		for cell in map_data.get_all_cells():
+			if blocked_cells.has(cell):
+				continue
+			var movement_cost := BattleHexGrid.distance(unit.cell, cell)
+			if _get_budgeted_movement_ap_cost(unit, movement_cost, apply_ap_cost_modifiers, agility_modifier) <= available_ap:
+				result.append(cell)
+		return result
+	var movement_costs := BattlePathfinder.find_reachable_costs(
+		map_data,
+		surface_state,
+		unit.cell,
+		func(candidate: Vector2i) -> bool: return not blocked_cells.has(candidate)
+	)
 	for cell in map_data.get_all_cells():
-		if cell != unit.cell and not targeting.is_unit_cell_clear(unit, cell, false):
+		if not movement_costs.has(cell):
 			continue
-		var path := get_movement_path(unit, cell)
-		if path.is_empty():
-			continue
-		var movement_cost: int = _get_path_movement_cost(unit, path)
-		if unit.get_move_ap_cost(movement_cost, config) > available_ap:
+		var movement_cost := int(movement_costs[cell])
+		if _get_budgeted_movement_ap_cost(unit, movement_cost, apply_ap_cost_modifiers, agility_modifier) > available_ap:
 			continue
 		result.append(cell)
 	return result
+
+
+func _get_budgeted_movement_ap_cost(unit: BattleUnitState, movement_cost: int, apply_ap_cost_modifiers: bool, agility_modifier: int = 0) -> int:
+	if apply_ap_cost_modifiers:
+		return unit.get_move_ap_cost(movement_cost, config)
+	var move_distance := maxi(1, unit.get_move_distance_per_ap(config, agility_modifier))
+	return ceili(float(movement_cost) / float(move_distance))
+
+
+func _get_blocked_movement_cells(unit: BattleUnitState) -> Dictionary:
+	var blocked := {}
+	if unit == null:
+		return blocked
+	for occupied_cell in unit.get_occupied_cells():
+		if occupied_cell != unit.cell:
+			blocked[occupied_cell] = true
+	for other in units:
+		if other == null or other == unit or not other.is_deployed or not other.is_alive():
+			continue
+		for occupied_cell in other.get_occupied_cells():
+			blocked[occupied_cell] = true
+	return blocked
 
 
 func apply_card_movement_to_cell(unit: BattleUnitState, cell: Vector2i, label: String = "卡牌移动") -> bool:
@@ -1405,6 +1444,38 @@ func apply_card_movement_to_cell(unit: BattleUnitState, cell: Vector2i, label: S
 	unit.set_hex_cell(cell, map_data)
 	if not unit.is_flying():
 		process_surface_entry(unit, cell)
+	_complete_card_movement(unit, start_cell, label)
+	return true
+
+
+func apply_card_path_movement_to_cell(
+	unit: BattleUnitState,
+	cell: Vector2i,
+	max_ap: int = -1,
+	apply_ap_cost_modifiers: bool = true,
+	label: String = "卡牌移动"
+	) -> bool:
+	if phase != Phase.BATTLE or unit == null or not unit.is_alive():
+		return false
+	if not unit.can_start_voluntary_movement() or not _is_cell_valid_for_unit(unit, cell, false):
+		return false
+	var path := get_movement_path(unit, cell)
+	if path.is_empty():
+		return false
+	var movement_cost := _get_path_movement_cost(unit, path)
+	if max_ap >= 0 and _get_budgeted_movement_ap_cost(unit, movement_cost, apply_ap_cost_modifiers) > max_ap:
+		return false
+
+	var start_cell := unit.cell
+	for index in range(1, path.size()):
+		unit.set_hex_cell(path[index], map_data)
+		if process_surface_entry(unit, path[index]):
+			break
+	_complete_card_movement(unit, start_cell, label)
+	return true
+
+
+func _complete_card_movement(unit: BattleUnitState, start_cell: Vector2i, label: String) -> void:
 	_notify_opponents_movement_completed(unit)
 	unit.notify_movement_completed({
 		"controller": self,
@@ -1416,7 +1487,6 @@ func apply_card_movement_to_cell(unit: BattleUnitState, cell: Vector2i, label: S
 	})
 	_emit_log("%s 移动到格 (%d, %d)（%s）。" % [unit.get_display_name(), unit.cell.x, unit.cell.y, label])
 	state_changed.emit()
-	return true
 
 
 func apply_movement_effect(unit: BattleUnitState, target_cell: Vector2i, agility_modifier: int = 0, truncate_to_range: bool = true, ap_budget: int = -1) -> Dictionary:
@@ -1451,8 +1521,7 @@ func apply_movement_effect(unit: BattleUnitState, target_cell: Vector2i, agility
 		end_cell = path[mini(max_distance, path.size() - 1)]
 
 	end_cell = targeting.find_clear_endpoint_along_hex_line(unit, start_cell, end_cell)
-	var end_position := map_data.cell_to_map(end_cell)
-	if not map_data.is_valid_cell(end_cell) or not targeting.is_unit_cell_clear(unit, end_cell, true):
+	if end_cell == start_cell or not map_data.is_valid_cell(end_cell) or not targeting.is_unit_cell_clear(unit, end_cell, true):
 		return result
 
 	unit.set_hex_cell(end_cell, map_data)

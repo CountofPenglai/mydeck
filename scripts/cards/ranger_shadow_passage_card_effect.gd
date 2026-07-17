@@ -18,6 +18,23 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	return valid
 
 
+func provides_area_target_cells() -> bool:
+	return true
+
+
+func get_area_target_cells(context: Dictionary = {}) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var controller: BattleController = context.get("controller") as BattleController
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	if controller == null or user == null or controller.phase != BattleController.Phase.BATTLE \
+			or not user.is_alive() or not user.can_start_voluntary_movement():
+		return result
+	for cell: Vector2i in controller.map_data.get_all_cells():
+		if _is_valid_landing(controller, user, cell):
+			result.append(cell)
+	return result
+
+
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller: BattleController = context.get("controller") as BattleController
 	var user: BattleUnitState = context.get("user") as BattleUnitState
@@ -44,7 +61,7 @@ func _resolve_passage(controller: BattleController, user: BattleUnitState, landi
 
 
 func _is_valid_landing(controller: BattleController, user: BattleUnitState, cell: Vector2i) -> bool:
-	if cell == user.cell or user.cell_distance_to(_unit_at_cell(controller, cell)) == 0:
+	if cell == user.cell:
 		return false
 	if not controller.map_data.is_valid_cell(cell):
 		return false
@@ -56,7 +73,3 @@ func _is_valid_landing(controller: BattleController, user: BattleUnitState, cell
 		if BattleHexGrid.distance(enemy.cell, cell) == 1:
 			return true
 	return false
-
-
-func _unit_at_cell(controller: BattleController, cell: Vector2i) -> BattleUnitState:
-	return controller.get_unit_at_cell(cell) if controller != null else null

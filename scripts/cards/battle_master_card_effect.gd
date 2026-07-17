@@ -12,7 +12,23 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	if controller == null or user == null or targets.size() != 1 or not (targets[0] is Vector2i):
 		return false
 
-	return controller.can_unit_reach_cell_with_ap(user, targets[0], move_ap_limit, write_log, false)
+	var valid := get_area_target_cells(context).has(targets[0] as Vector2i)
+	if not valid and write_log:
+		controller._emit_log("战斗大师需要选择一个 %d AP 移动可达的位置。" % move_ap_limit)
+	return valid
+
+
+func provides_area_target_cells() -> bool:
+	return true
+
+
+func get_area_target_cells(context: Dictionary = {}) -> Array[Vector2i]:
+	var controller: BattleController = context.get("controller") as BattleController
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	if controller == null or user == null or controller.phase != BattleController.Phase.BATTLE \
+			or not user.is_alive() or not user.can_start_voluntary_movement():
+		return []
+	return controller.get_reachable_cells_for_ap(user, move_ap_limit, false)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
@@ -22,8 +38,8 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		return
 
 	controller.enqueue_effect(
-		Callable(controller, "apply_card_movement_to_cell"),
-		[user, targets[0], "战斗大师"],
+		Callable(controller, "apply_card_path_movement_to_cell"),
+		[user, targets[0], move_ap_limit, false, "战斗大师"],
 		effect_priority,
 		"战斗大师：移动",
 		context

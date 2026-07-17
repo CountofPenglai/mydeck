@@ -2,6 +2,8 @@
 
 Date: 2026-07-07
 
+Status: resolved after rebuilding the Godot import cache. This document is retained for diagnosing the same missing `.ctex` symptom.
+
 ## Symptom
 
 Battle UI failed to load after adding two new UI textures:

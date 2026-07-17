@@ -12,8 +12,7 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	var user: BattleUnitState = context.get("user") as BattleUnitState
 	if controller == null or user == null or targets.size() != 1 or not (targets[0] is BattleUnitState):
 		return false
-	var target := targets[0] as BattleUnitState
-	var legal_cells := _legal_landing_cells(controller, user, target, str(context.get("equipment_slot", "")))
+	var legal_cells := get_landing_target_cells(context, targets)
 	var requested: Variant = context.get("landing_cell")
 	var valid := not legal_cells.is_empty()
 	if requested is Vector2i:
@@ -21,6 +20,20 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	if not valid and write_log:
 		controller._emit_log("交错猎步没有与当前武器模式对应的合法落点。")
 	return valid
+
+
+func provides_landing_target_cells() -> bool:
+	return true
+
+
+func get_landing_target_cells(context: Dictionary = {}, targets: Array = []) -> Array[Vector2i]:
+	var controller: BattleController = context.get("controller") as BattleController
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	if controller == null or user == null or targets.size() != 1 or not (targets[0] is BattleUnitState):
+		return []
+	if controller.phase != BattleController.Phase.BATTLE or not user.is_alive() or not user.can_start_voluntary_movement():
+		return []
+	return _legal_landing_cells(controller, user, targets[0] as BattleUnitState, str(context.get("equipment_slot", "")))
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:

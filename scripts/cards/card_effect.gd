@@ -20,6 +20,22 @@ func get_valid_targets(_context: Dictionary = {}) -> Array:
 	return []
 
 
+func provides_area_target_cells() -> bool:
+	return false
+
+
+func get_area_target_cells(_context: Dictionary = {}) -> Array[Vector2i]:
+	return []
+
+
+func provides_landing_target_cells() -> bool:
+	return false
+
+
+func get_landing_target_cells(_context: Dictionary = {}, _targets: Array = []) -> Array[Vector2i]:
+	return []
+
+
 func get_target_type_for_mode(_context: Dictionary = {}, _play_mode: int = CardEnums.CardPlayMode.NORMAL, default_target_type: int = CardEnums.TargetType.NONE) -> int:
 	return default_target_type
 

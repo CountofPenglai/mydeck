@@ -47,5 +47,5 @@ Godot 4.6.3 会向 `%APPDATA%\Godot` 写入日志与缓存。受限沙箱可能�
 
 ## 后续边界
 
-- 项目尚无“新冒险开始”流程；该流程建立后应显式清空 `CharacterState.ranger_element_inventory`。
+- 大地图“新冒险开始”流程已接入；`AdventureSession.start_new_demo()` 从角色模板深复制新队伍，因此新冒险不会继承上一局的游侠元素库存。同一次冒险内仍通过 `CharacterState.ranger_element_inventory` 和存档跨战斗保留。
 - 牌库构筑界面尚未按品质筛选，本次将完整设计牌组接入样例游侠，便于战斗内验证。

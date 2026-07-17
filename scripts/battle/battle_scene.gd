@@ -74,6 +74,7 @@ var _pending_curse: CurseInstance
 var _pending_curse_action_id: String = ""
 var _adventure_result: BattleResult
 var _return_to_map_button: Button
+var _refresh_scheduled := false
 
 @onready var map_view: BattleMapView = %MapView
 @onready var phase_label: Label = %PhaseLabel
@@ -95,7 +96,7 @@ var _return_to_map_button: Button
 
 func _ready() -> void:
 	controller.log_message.connect(_append_log)
-	controller.state_changed.connect(_refresh)
+	controller.state_changed.connect(_schedule_refresh)
 	controller.battle_finished.connect(_on_battle_finished)
 	map_view.setup(self, controller)
 	start_button.pressed.connect(_on_start_pressed)
@@ -125,6 +126,20 @@ func _ready() -> void:
 		startup_scenario = DEFAULT_SCENARIO
 	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
+	_refresh()
+
+
+func _schedule_refresh() -> void:
+	if _refresh_scheduled:
+		return
+	_refresh_scheduled = true
+	call_deferred("_run_scheduled_refresh")
+
+
+func _run_scheduled_refresh() -> void:
+	if not _refresh_scheduled:
+		return
+	_refresh_scheduled = false
 	_refresh()
 
 
@@ -274,7 +289,8 @@ func _on_move_pressed() -> void:
 	_clear_input()
 	input_mode = InputMode.MOVE
 	_append_log("请选择移动位置。")
-	_refresh()
+	map_view.invalidate_preview_cache()
+	map_view.queue_redraw()
 
 
 func _on_attack_pressed() -> void:
@@ -608,6 +624,7 @@ func _refresh_ap_orbs(current_ap: int, max_ap: int) -> void:
 
 
 func _refresh() -> void:
+	_refresh_scheduled = false
 	if not is_inside_tree():
 		return
 
@@ -652,6 +669,7 @@ func _refresh() -> void:
 	_refresh_discard_popup()
 	_refresh_curse_button()
 	_refresh_curse_popup()
+	map_view.invalidate_preview_cache()
 	map_view.queue_redraw()
 	var current := controller.current_unit
 	if not _actions_locked() and current != null and current.is_ranger() \

@@ -2,6 +2,8 @@
 
 Date: 2026-07-07
 
+Status: resolved. This is a historical investigation; use `environment_memory.md` and `project_structure_and_skill_workflow.md` for current verification commands and architecture.
+
 ## Scope
 
 The battle scene was reported as still failing to load after recent UI and character-system changes. The investigation covered:

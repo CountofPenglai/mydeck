@@ -17,21 +17,24 @@ Fields:
 - `enemy_configs`: enemy state + count list.
 - `global_effects`: scene-wide effect interfaces. Current sample uses a no-op placeholder.
 
-## Map Boundary
+## Hex Map
 
-`BattleMapData.boundary_points` stores the actual playable edge as a polygon coordinate list.
+`BattleMapData` is the authoritative source for the battle grid. Current maps use pointy-top offset hex cells and integer `Vector2i` coordinates.
 
-Example:
+Important fields:
 
-```gdscript
-PackedVector2Array(28, 54, 862, 45, 890, 570, 38, 584)
-```
+- `grid_columns` / `grid_rows`: valid cell dimensions.
+- `hex_size`: visual radius of each hex.
+- `grid_origin`: map-space position of cell `(0, 0)`.
+- `player_deployment_columns`: deployment columns on the left.
+- `enemy_spawn_columns`: spawn columns on the right.
+- `element_cells`: configured base-element cells.
 
-The battle controller uses this polygon for movement/deployment validation. If no polygon is configured, it falls back to the rectangular `map_size`.
+`map_size` remains the visual canvas size. It is not the movement boundary. Cell validity, distance, lines and ranges are derived through `BattleHexGrid` and `BattleMapData`.
 
 ## Initialization Flow
 
-`BattleScenario` may still keep legacy `map_data` and `enemies`, but initialization now prefers:
+`BattleScenario` may still keep direct `map_data` and `enemies`, but initialization prefers:
 
 - `scenario.scene_prototype.map_data`
 - `scenario.scene_prototype.enemy_configs`

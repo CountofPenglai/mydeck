@@ -50,6 +50,32 @@ static func get_path_cost(path: Array[Vector2i], surfaces: BattleSurfaceState) -
 	return cost
 
 
+static func find_reachable_costs(map_data: BattleMapData, surfaces: BattleSurfaceState, start: Vector2i, is_clear: Callable) -> Dictionary:
+	var costs: Dictionary = {}
+	if map_data == null or not map_data.is_valid_cell(start):
+		return costs
+	var pending: Array[Vector2i] = [start]
+	var pending_index := 0
+	costs[start] = 0
+	while pending_index < pending.size():
+		var current := pending[pending_index]
+		pending_index += 1
+		if current != start and surfaces != null and surfaces.get_element(current) == BattleSurfaceState.Element.ICE:
+			continue
+		for neighbor in BattleHexGrid.neighbors(current):
+			if not map_data.is_valid_cell(neighbor):
+				continue
+			if is_clear.is_valid() and not bool(is_clear.call(neighbor)):
+				continue
+			var step_cost := surfaces.get_movement_cost(neighbor) if surfaces != null else 1
+			var next_cost := int(costs[current]) + step_cost
+			if costs.has(neighbor) and int(costs[neighbor]) <= next_cost:
+				continue
+			costs[neighbor] = next_cost
+			pending.append(neighbor)
+	return costs
+
+
 static func _take_lowest(frontier: Array[Vector2i], costs: Dictionary) -> Vector2i:
 	var best_index := 0
 	var best_cost := int(costs.get(frontier[0], 2147483647))

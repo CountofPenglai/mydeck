@@ -12,10 +12,16 @@ This folder stores local-machine notes that are useful for Codex work but are no
 
 ## Useful Commands
 
-Run a headless editor compile/load check for this project:
+Run a strict headless editor compile/load check for this project:
 
 ```powershell
-& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --path "D:\py_work\my-deck" --quit
+& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --disable-crash-handler --log-file "tmp\project_compile.log" --path "D:\py_work\my-deck" --editor --quit
+```
+
+Run one diagnostic scene:
+
+```powershell
+& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --disable-crash-handler --log-file "tmp\battle_flow.log" --path "D:\py_work\my-deck" --scene "res://tools/diagnostics/battle_flow_check.tscn"
 ```
 
 Check the Godot version:
@@ -52,11 +58,15 @@ Root cause: Godot writes logs/cache under `%APPDATA%\Godot\...`, which is outsid
 
 Resolution: run Godot CLI checks outside the workspace sandbox / with Codex escalation so AppData writes are allowed.
 
-Verified on 2026-06-01:
+Verified again on 2026-07-16:
 
 ```powershell
-& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --path "D:\py_work\my-deck" --quit
-& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --path "D:\py_work\my-deck" --scene "res://scenes/battle_scene.tscn" --quit
+& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --disable-crash-handler --log-file "tmp\project_compile.log" --path "D:\py_work\my-deck" --editor --quit
+& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --disable-crash-handler --log-file "tmp\battle_load.log" --path "D:\py_work\my-deck" --scene "res://tools/diagnostics/diagnose_battle_load.tscn"
 ```
 
-Both commands complete successfully when run outside the sandbox.
+Both commands complete successfully when run outside the sandbox. Key diagnostic scenes are indexed in `project_structure_and_skill_workflow.md`.
+
+Headless diagnostics currently print Dummy Renderer texture/RID and ObjectDB cleanup warnings during process exit. Treat the process exit code and the diagnostic completion marker as the test result; do not treat those known exit-only warnings as gameplay failures.
+
+Commands using `--log-file "tmp\..."` create local log files. Remove them after inspection so they are not mistaken for project artifacts.

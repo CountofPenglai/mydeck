@@ -21,6 +21,14 @@ var _is_panning := false
 var _user_adjusted_view := false
 var _press_position := Vector2.ZERO
 var _last_position := Vector2.ZERO
+var _move_preview_cells: Array[Vector2i] = []
+var _move_preview_valid := false
+var _card_target_preview_units: Array[BattleUnitState] = []
+var _card_target_preview_valid := false
+var _card_area_preview_cells: Array[Vector2i] = []
+var _card_area_preview_valid := false
+var _card_landing_preview_cells: Array[Vector2i] = []
+var _card_landing_preview_valid := false
 
 
 func setup(scene: BattleScene, battle_controller: BattleController) -> void:
@@ -29,7 +37,19 @@ func setup(scene: BattleScene, battle_controller: BattleController) -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
 	call_deferred("_reset_view_to_fit")
+	invalidate_preview_cache()
 	queue_redraw()
+
+
+func invalidate_preview_cache() -> void:
+	_move_preview_cells.clear()
+	_move_preview_valid = false
+	_card_target_preview_units.clear()
+	_card_target_preview_valid = false
+	_card_area_preview_cells.clear()
+	_card_area_preview_valid = false
+	_card_landing_preview_cells.clear()
+	_card_landing_preview_valid = false
 
 
 func screen_to_map(local_position: Vector2) -> Vector2:
@@ -202,7 +222,10 @@ func _draw_move_preview() -> void:
 	if unit == null:
 		return
 
-	for cell in controller.get_reachable_cells(unit):
+	if not _move_preview_valid:
+		_move_preview_cells = controller.get_reachable_cells(unit)
+		_move_preview_valid = true
+	for cell in _move_preview_cells:
 		if cell != unit.cell:
 			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 
@@ -247,17 +270,29 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 					_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 		else:
 			_draw_range_cells(unit.cell, card_range, false)
-		for target in controller.get_units_by_filter(unit, BattleController.UnitFilter.ALL):
-			if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
-				_draw_target_marker(target)
+		if not _card_target_preview_valid:
+			for target in controller.get_units_by_filter(unit, BattleController.UnitFilter.ALL):
+				if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
+					_card_target_preview_units.append(target)
+			_card_target_preview_valid = true
+		for target in _card_target_preview_units:
+			_draw_target_marker(target)
 	elif target_type == CardEnums.TargetType.AREA:
 		_draw_area_card_preview(unit, card, equipment_slot, play_mode, extra_context)
 
 
 func _draw_area_card_preview(unit: BattleUnitState, card: CardData, equipment_slot: String, play_mode: int, extra_context: Dictionary) -> void:
-	for cell in controller.map_data.get_all_cells():
-		if controller.can_preview_card_targets(unit, card, [cell], equipment_slot, play_mode, extra_context):
-			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
+	if not _card_area_preview_valid:
+		var context := _build_effect_preview_context(unit, card, equipment_slot, play_mode, extra_context)
+		if card.effect != null and card.effect.provides_area_target_cells():
+			_card_area_preview_cells = card.effect.get_area_target_cells(context)
+		else:
+			for cell in controller.map_data.get_all_cells():
+				if controller.can_preview_card_targets(unit, card, [cell], equipment_slot, play_mode, extra_context):
+					_card_area_preview_cells.append(cell)
+		_card_area_preview_valid = true
+	for cell in _card_area_preview_cells:
+		_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 
 
 func _draw_card_landing_preview(preview: Dictionary) -> void:
@@ -270,10 +305,28 @@ func _draw_card_landing_preview(preview: Dictionary) -> void:
 	var play_mode := int(preview.get("pending_play_mode", CardEnums.CardPlayMode.NORMAL))
 	var raw_context: Variant = preview.get("pending_extra_context", {})
 	var extra_context: Dictionary = (raw_context as Dictionary).duplicate() if raw_context is Dictionary else {}
-	for cell in controller.map_data.get_all_cells():
-		extra_context["landing_cell"] = cell
-		if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
-			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
+	if not _card_landing_preview_valid:
+		var context := _build_effect_preview_context(unit, card, equipment_slot, play_mode, extra_context)
+		if card.effect != null and card.effect.provides_landing_target_cells():
+			_card_landing_preview_cells = card.effect.get_landing_target_cells(context, [target])
+		else:
+			for cell in controller.map_data.get_all_cells():
+				extra_context["landing_cell"] = cell
+				if controller.can_preview_card_targets(unit, card, [target], equipment_slot, play_mode, extra_context):
+					_card_landing_preview_cells.append(cell)
+		_card_landing_preview_valid = true
+	for cell in _card_landing_preview_cells:
+		_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
+
+
+func _build_effect_preview_context(unit: BattleUnitState, card: CardData, equipment_slot: String, play_mode: int, extra_context: Dictionary) -> Dictionary:
+	var context := extra_context.duplicate()
+	context["controller"] = controller
+	context["user"] = unit
+	context["card"] = card
+	context["equipment_slot"] = equipment_slot
+	context["play_mode"] = play_mode
+	return context
 
 
 func _draw_target_marker(unit: BattleUnitState) -> void:
