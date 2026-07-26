@@ -6,6 +6,7 @@ enum Rarity {
 	RARE,
 	EPIC,
 	LEGENDARY,
+	BASIC,
 }
 
 enum CardClass {
@@ -117,6 +118,8 @@ static func rarity_label(value: int) -> String:
 			return "史诗"
 		Rarity.LEGENDARY:
 			return "传说"
+		Rarity.BASIC:
+			return "基础"
 		_:
 			return "未知"
 

@@ -8,7 +8,8 @@ kind = 11
 [resource]
 script = ExtResource("1")
 card_name = "灼喉囊"
-description = "范围3造成3点智力伤害并施加火。显化：每回合首次打击施加火。"
+reward_eligible = false
+description = "范围3造成3点智力伤害并施加火。\n畸变~灼喉"
 artwork = ExtResource("3")
 rarity = 1
 card_type = 0
@@ -18,4 +19,5 @@ target_type = 1
 ap_cost = 2
 override_range = true
 card_range = 3
+mutation_fields = PackedStringArray("scorch_throat")
 effect = SubResource("Effect")

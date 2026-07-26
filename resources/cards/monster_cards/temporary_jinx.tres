@@ -8,6 +8,7 @@ kind = 16
 [resource]
 script = ExtResource("1")
 card_name = "辐照咒害"
+reward_eligible = false
 description = "不可打出。战斗结束时清除。"
 artwork = ExtResource("3")
 card_type = 3

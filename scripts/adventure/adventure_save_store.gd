@@ -92,10 +92,11 @@ func _serialize_run(run_state: PartyRunState) -> Dictionary:
 
 
 func _deserialize_run(data: Dictionary) -> PartyRunState:
-	if int(data.get("version", 0)) != PartyRunState.SAVE_VERSION:
+	var source_version := int(data.get("version", 0))
+	if source_version < 3 or source_version > PartyRunState.SAVE_VERSION:
 		return null
 	var result := PartyRunState.new()
-	result.save_version = int(data.get("version", PartyRunState.SAVE_VERSION))
+	result.save_version = PartyRunState.SAVE_VERSION
 	result.run_seed = int(data.get("run_seed", 0))
 	result.floor_index = int(data.get("floor_index", 0))
 	result.floor_count = int(data.get("floor_count", 2))
@@ -177,6 +178,12 @@ func _serialize_character(hero: CharacterState) -> Dictionary:
 		"curse_load_limit_bonus": hero.curse_load_limit_bonus,
 		"sealed_curse_id": hero.sealed_curse_id,
 		"distortion_progress": hero.distortion_progress,
+		"selected_distortion_fields": Array(hero.selected_distortion_fields),
+		"claimed_distortion_milestones": Array(hero.claimed_distortion_milestones),
+		"distortion_grace_count": hero.distortion_grace_count,
+		"strength_bonus": hero.strength_bonus,
+		"agility_bonus": hero.agility_bonus,
+		"intelligence_bonus": hero.intelligence_bonus,
 		"persistent_max_health_modifier": hero.persistent_max_health_modifier,
 		"adventure_damage_bonus": hero.adventure_damage_bonus,
 	}
@@ -247,6 +254,12 @@ func _deserialize_character(data: Dictionary) -> CharacterState:
 	hero.curse_load_limit_bonus = int(data.get("curse_load_limit_bonus", 0))
 	hero.sealed_curse_id = str(data.get("sealed_curse_id", ""))
 	hero.distortion_progress = int(data.get("distortion_progress", 0))
+	hero.selected_distortion_fields = PackedStringArray(data.get("selected_distortion_fields", []))
+	hero.claimed_distortion_milestones = PackedInt32Array(data.get("claimed_distortion_milestones", []))
+	hero.distortion_grace_count = int(data.get("distortion_grace_count", 0))
+	hero.strength_bonus = int(data.get("strength_bonus", hero.strength_bonus))
+	hero.agility_bonus = int(data.get("agility_bonus", hero.agility_bonus))
+	hero.intelligence_bonus = int(data.get("intelligence_bonus", hero.intelligence_bonus))
 	hero.persistent_max_health_modifier = int(data.get("persistent_max_health_modifier", 0))
 	hero.adventure_damage_bonus = int(data.get("adventure_damage_bonus", 0))
 	hero.ensure_initialized()

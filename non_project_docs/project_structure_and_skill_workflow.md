@@ -1,6 +1,6 @@
 # 项目结构与 Skill 工作流
 
-更新时间：2026-07-17
+更新时间：2026-07-26
 
 本文档记录项目当前工程结构、运行时数据所有权、核心结算路径、测试入口以及在 Codex 中使用 GodotPrompter Skill 的方法。设计数值仍以外部设计文档为目标，实际实现状态以代码、资源和诊断为准。
 
@@ -43,7 +43,7 @@ flowchart LR
 | `scripts/cards/` | 卡牌配置接口、效果、条件、职业牌和选择模式 | `card_data.gd`、`card_effect.gd` |
 | `scripts/characters/` | 角色模板、冒险持久状态、装备栏、牌组与职业资源 | `character_state.gd` |
 | `scripts/items/` | 装备配置、成对或双面组件、运行时状态和装备 hook | `equipment_data.gd`、`equipment_runtime_state.gd` |
-| `scripts/curses/` | 业、报、果实例，负荷、成熟度和队伍冒险状态 | `curse_instance.gd`、`party_run_state.gd` |
+| `scripts/curses/` | 业、报、果实例，负荷、成熟度、畸变目录与单位级畸变运行时 | `curse_instance.gd`、`distortion_catalog.gd`、`distortion_battle_state.gd` |
 | `scripts/enemies/` | 怪物数据、分类牌组、第一章遭遇、特性和公开意图 | `chapter_one_enemy_catalog.gd`、`enemy_intent_planner.gd` |
 | `scripts/status/` | 护甲、眩晕、职业状态和通用 hook | `status_effect.gd` |
 | `resources/` | 卡牌、角色、敌人、装备、诅咒和战斗配置 | `.tres` 文件 |
@@ -68,11 +68,13 @@ flowchart LR
 
 - `PartyRunState`：种子、楼层、金币、补给、扎营点、仪式点、队伍和待处理事务。
 - `CharacterState`：生命、牌组、装备实例、背包、诅咒、元素库存及冒险期修正。
+- `CharacterState` 的 `distortion_progress`、已领取里程碑、永久字段与恩典次数属于冒险持久状态。
 - `CardStack.stack_id` 与装备实例 ID：承载单件牌或装备的冒险期修改。
 
 ### 战斗运行时状态
 
 - `BattleUnitState`：坐标、AP、手牌与各牌区、状态、形态、职业战斗资源。
+- `DistortionBattleState`：永久字段投影、显化牌来源计数、衰退快照以及每回合/每轮字段计数器。
 - `EquipmentRuntimeState`：层数、冷却、弹仓、风向、准备次数等单场状态。
 - 卡牌运行时 Dictionary：临时减费、来源牌区、临时放逐和单场标记。
 - `BattleSurfaceState`：本场地表元素与高级地表期限。
@@ -85,6 +87,8 @@ flowchart LR
 ### 回合与行动
 
 `BattleController` 使用 `Phase` 和 `TurnFlowState` 表达部署、回合开始、行动阶段、回合结束与战斗结束。玩家命令和 AI 决策都必须经过控制器领域入口。
+
+当前回合开始顺序为：旧字段回合开始触发 → 抽牌行动 → 旧显化牌衰退 → 汇总生命损失 → 玩家选择或敌人执行锁定显化 → 行动阶段。玩家显化时进入独立 `MANIFEST_PENDING` 状态，普通移动、攻击和出牌不会提前开放。
 
 行动序是每轮快照：新轮开始读取当前敏捷并排序，轮内锁定；当前轮的敏捷变化只影响下一轮。敌人使用锁定的 `EnemyIntentPlan` 执行，不在步骤失效后重新规划强牌。
 
@@ -122,6 +126,15 @@ flowchart LR
 ### 通用 hook
 
 当前 hook 覆盖抽牌、弃牌、进入特殊区、伤害前后、治疗后、打击后、护甲变化、法力变化、装备切换和移动完成。新增卡牌前先检查已有 hook；只有真正缺少通用时点时才扩展基础接口，并同步状态、装备、卡牌和诊断。
+
+### 诅咒与畸变
+
+- `CardData.mutation_fields` 是畸变字段的唯一数据来源；显示文字不参与规则解析。
+- 显化牌仍位于附魔区，但进入、衰退、解放和放逐都必须经过 `BattleUnitState` 的统一接口，以同步字段来源计数。
+- 同字段效果不叠加；多张来源仍分别保留并在衰退时逐张触发弃牌 hook。
+- 永久字段由 `CharacterState.selected_distortion_fields` 投影进战斗，不写入共享卡牌资源。
+- 里程碑领取由 `AdventureSession` 生成确定性三选一；大地图角色条负责高亮入口，不抢占战后选牌模态层。
+- 具体实现状态、字段边界和测试见 [distortion_implementation.md](distortion_implementation.md)。
 
 ## 大地图架构
 
@@ -166,14 +179,14 @@ GodotPrompter 是领域 Skill；Superpowers 等框架若可用，负责 brainsto
 
 | 诊断 | 覆盖范围 |
 | --- | --- |
-| `adventure_system_check.tscn` | 500 层地图生成、存档往返、战斗奖励选牌、生命回写、怪物生命倍率、实例修正、背包换装模型 |
+| `adventure_system_check.tscn` | 500 层地图生成、v3/v4 存档往返、畸变奖励 UI、战斗奖励选牌、生命回写、怪物生命倍率、实例修正、背包换装模型 |
 | `adventure_inventory_ui_check.tscn` | 大地图装备入口、四槽装备、背包模态层及战斗测试控件运行时加载 |
 | `battle_flow_check.tscn` | 行动队列、非重入、行动 ID、回合边界 |
 | `diagnose_battle_load.tscn` | 全资源扫描、战斗场景实例化和开战 |
 | `hex_grid_check.tscn` | 六边坐标、距离、直线、范围和移动费用 |
 | `movement_preview_check.tscn` | 普通移动合法格与性能 |
 | `card_movement_check.tscn` | 冲锋、战斗大师和游侠移动牌预览/结算一致性 |
-| `curse_system_check.tscn` | 诅咒生命周期、负荷和战斗接入 |
+| `curse_system_check.tscn` | 诅咒生命周期、负荷、里程碑、恩典、显化衰退、解放和战斗内选择 UI |
 | `warrior_*_check.tscn` | 战士机制、hook 与武器 |
 | `ranger_*_check.tscn` | 游侠机制与武器 |
 | `druid_*_check.tscn` | 德鲁伊机制、hook、卡牌与武器 |

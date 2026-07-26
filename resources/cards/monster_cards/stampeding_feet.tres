@@ -8,7 +8,8 @@ kind = 15
 [resource]
 script = ExtResource("1")
 card_name = "奔踏畸足"
-description = "对武器范围内所有敌方打击。在弃牌堆时，主动移动后自动放逐并再次结算。"
+reward_eligible = false
+description = "对武器范围内所有敌方打击。\n畸变~奔踏"
 artwork = ExtResource("3")
 rarity = 1
 card_type = 0
@@ -16,4 +17,5 @@ card_tags = 1
 damage_type = 3
 target_type = 5
 ap_cost = 2
+mutation_fields = PackedStringArray("stampede")
 effect = SubResource("Effect")

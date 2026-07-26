@@ -54,6 +54,8 @@ func _refresh_steps(plan: EnemyIntentPlan) -> void:
 	_clear_children(intent_steps)
 	if plan == null or plan.steps.is_empty():
 		_add_text_row(intent_steps, "观望", "本轮没有已锁定行动")
+		if plan != null:
+			_add_manifest_rows(plan)
 		return
 	for index in range(plan.steps.size()):
 		var step: Dictionary = plan.steps[index]
@@ -65,6 +67,14 @@ func _refresh_steps(plan: EnemyIntentPlan) -> void:
 		if defense > 0:
 			detail += "  预计防 %d" % defense
 		_add_text_row(intent_steps, "%d. %s" % [index + 1, str(step.get("label", "行动"))], detail)
+	_add_manifest_rows(plan)
+
+
+func _add_manifest_rows(plan: EnemyIntentPlan) -> void:
+	if plan.expected_decay_life > 0:
+		_add_text_row(intent_steps, "畸变衰退", "预计失去 %d 点生命" % plan.expected_decay_life)
+	if not plan.planned_manifest_fields.is_empty():
+		_add_text_row(intent_steps, "计划显化", "、".join(plan.planned_manifest_fields))
 
 
 func _refresh_seen_cards(names: PackedStringArray) -> void:

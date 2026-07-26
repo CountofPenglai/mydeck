@@ -8,10 +8,12 @@ kind = 14
 [resource]
 script = ExtResource("1")
 card_name = "辐照腺体"
-description = "在武器范围+2内选择敌人，弃1张其他手牌，并向其牌库洗入临时咒害。"
+reward_eligible = false
+description = "在武器范围+2内选择敌人，弃1张其他手牌，并向其牌库洗入临时咒害。\n畸变~辐照"
 artwork = ExtResource("3")
 rarity = 1
 target_type = 1
 ap_cost = 2
 range_modifier = 2
+mutation_fields = PackedStringArray("irradiation")
 effect = SubResource("Effect")

@@ -128,8 +128,8 @@ func request_move(target_room_id: String) -> Dictionary:
 	var run := ensure_run()
 	if run.run_complete or run.run_failed or run.floor_state == null:
 		return _failure("本次冒险已经结束。")
-	if has_pending_reward():
-		return _failure("请先完成当前战斗奖励。")
+	if has_pending_reward() or has_pending_event_reward():
+		return _failure("请先完成当前奖励选择。")
 	if run.pending_transaction != null and not run.pending_transaction.committed:
 		return _failure("当前仍有未完成的冒险事务。")
 	var floor := run.floor_state
@@ -306,6 +306,112 @@ func get_pending_reward() -> Dictionary:
 	return (current_run.adventure_flags.get("pending_reward", {}) as Dictionary).duplicate(true)
 
 
+func has_pending_event_reward() -> bool:
+	if current_run == null:
+		return false
+	var reward = current_run.adventure_flags.get("pending_event_reward", {})
+	return reward is Dictionary and not (reward as Dictionary).is_empty()
+
+
+func get_pending_event_reward() -> Dictionary:
+	if not has_pending_event_reward():
+		return {}
+	return (current_run.adventure_flags.get("pending_event_reward", {}) as Dictionary).duplicate(true)
+
+
+func claim_pending_event_reward(action_id: String, hero_id: String, candidate_id: String = "") -> Dictionary:
+	if not has_pending_event_reward():
+		return _failure("当前没有待选择的事件奖励。")
+	var reward := current_run.adventure_flags["pending_event_reward"] as Dictionary
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return _failure("请选择奖励接收者。")
+	match action_id:
+		"sealed_reliquary":
+			var result := _grant_event_item(hero, "res://resources/items/sealed_reliquary.tres", "sealed_reliquary")
+			if not bool(result.get("ok", false)):
+				return result
+			return _finish_pending_event_reward("%s 获得「封印圣匣」：装备后负荷上限 +1，每场首次打出诅咒牌获得 4 护甲。" % hero.get_character_name())
+		"arcanist_load":
+			hero.curse_load_limit_bonus += 2
+			return _finish_pending_event_reward("%s 获得本次冒险负荷上限 +2，当前上限为 %d。" % [hero.get_character_name(), hero.get_curse_load_limit()])
+		"arcanist_pendant":
+			var result := _grant_event_item(hero, "res://resources/items/arcane_pendant.tres", "arcane_pendant")
+			if not bool(result.get("ok", false)):
+				return result
+			return _finish_pending_event_reward("%s 获得「奥能坠饰」：装备后智力 +2。" % hero.get_character_name())
+		"remains_curse":
+			if _get_available_curse_capacity(hero) < 1:
+				return _failure("%s 无法再承担普通业。" % hero.get_character_name())
+			_add_random_curse(hero, int(reward.get("curse_salt", 0)))
+			return _finish_pending_event_reward("掷骰结果为 %d；%s 获得 1 个随机普通业，当前负荷 %d/%d。" % [int(reward.get("roll", 6)), hero.get_character_name(), hero.get_curse_load(), hero.get_curse_load_limit()])
+		"equipment":
+			if not str(reward.get("claimed_equipment", "")).is_empty():
+				return _failure("已经选择过装备奖励。")
+			var candidate := _find_reward_candidate(reward.get("equipment", []) as Array, candidate_id)
+			if candidate.is_empty():
+				return _failure("所选装备不在本次候选中。")
+			var result := _grant_event_item(hero, str(candidate.get("path", "")), "event_equipment_%s" % candidate_id)
+			if not bool(result.get("ok", false)):
+				return result
+			reward["claimed_equipment"] = candidate_id
+			reward["equipment_receiver"] = hero_id
+			_save_and_emit("%s 获得装备「%s」。" % [hero.get_character_name(), str(candidate.get("name", "装备"))])
+			return {"ok": true, "message": "装备选择已锁定。"}
+		"card":
+			var claimed_cards := reward.get("claimed_cards", {}) as Dictionary
+			if claimed_cards.has(hero_id):
+				return _failure("%s 已经选择过职业牌。" % hero.get_character_name())
+			var candidate := _find_reward_candidate(reward.get("cards", []) as Array, candidate_id)
+			if candidate.is_empty() or str(candidate.get("hero_id", "")) != hero_id:
+				return _failure("该卡牌不属于所选角色的候选。")
+			var stack := reward_service.create_card_stack(
+				str(candidate.get("path", "")),
+				"%s_event_reward_%s" % [hero_id, candidate_id],
+				hero.character_data.character_class
+			)
+			if stack == null:
+				return _failure("所选卡牌资源无效。")
+			hero.deck.append(stack)
+			claimed_cards[hero_id] = candidate_id
+			reward["claimed_cards"] = claimed_cards
+			_save_and_emit("%s 获得卡牌「%s」。" % [hero.get_character_name(), str(candidate.get("name", "卡牌"))])
+			return {"ok": true, "message": "卡牌选择已锁定。"}
+	return _failure("未知的事件奖励选择。")
+
+
+func settle_pending_event_reward() -> Dictionary:
+	if not has_pending_event_reward():
+		return _failure("当前没有待结算的事件奖励。")
+	var reward := current_run.adventure_flags["pending_event_reward"] as Dictionary
+	if int(reward.get("required_equipment", 0)) > 0 and str(reward.get("claimed_equipment", "")).is_empty():
+		return _failure("请先选择 1 件装备。")
+	var required_hero_ids := reward.get("required_card_hero_ids", []) as Array
+	var claimed_cards := reward.get("claimed_cards", {}) as Dictionary
+	for hero_id_value in required_hero_ids:
+		if not claimed_cards.has(str(hero_id_value)):
+			return _failure("请为每名冒险者各选择 1 张职业牌。")
+	var starts_battle := bool(reward.get("starts_battle", false))
+	var room := current_run.floor_state.get_room(str(reward.get("room_id", ""))) if current_run.floor_state != null else null
+	if bool(reward.get("remains_delivery", false)):
+		_remove_adventurer_remains_item()
+		current_run.adventure_flags.erase("adventurer_remains")
+		current_run.adventure_flags.erase("adventurer_remains_carrier")
+	current_run.adventure_flags.erase("pending_event_reward")
+	if starts_battle:
+		_save_only()
+		if start_event_battle(str(reward.get("event_id", ""))):
+			return {"ok": true, "battle": true, "message": "混乱之门的奖励已经锁定，强制战斗开始。"}
+		current_run.adventure_flags["pending_event_reward"] = reward
+		_save_only()
+		return _failure("奖励已记录，但无法开始混乱之门战斗。")
+	if room != null and bool(reward.get("complete_room", true)):
+		room.completed = true
+	var message := str(reward.get("completion_message", "事件奖励结算完成。"))
+	_save_and_emit(message)
+	return {"ok": true, "message": message, "completed": room != null and room.completed}
+
+
 func claim_reward_candidate(candidate_id: String) -> bool:
 	if not has_pending_reward():
 		return false
@@ -319,7 +425,11 @@ func claim_reward_candidate(candidate_id: String) -> bool:
 		var hero := _get_hero(str(card_data.get("hero_id", "")))
 		if hero == null:
 			return false
-		var stack := reward_service.create_card_stack(str(card_data.get("path", "")), "%s_reward_%s" % [hero.adventure_character_id, candidate_id])
+		var stack := reward_service.create_card_stack(
+			str(card_data.get("path", "")),
+			"%s_reward_%s" % [hero.adventure_character_id, candidate_id],
+			hero.character_data.character_class
+		)
 		if stack == null:
 			return false
 		hero.deck.append(stack)
@@ -361,7 +471,7 @@ func settle_pending_reward() -> void:
 
 
 func enter_next_floor() -> bool:
-	if current_run == null or not bool(current_run.adventure_flags.get("interfloor_camp", false)) or has_pending_reward():
+	if current_run == null or not bool(current_run.adventure_flags.get("interfloor_camp", false)) or has_pending_reward() or has_pending_event_reward():
 		return false
 	_heal_party_percent(0.25)
 	current_run.add_camp_points(definition.get_economy().shelter_camp_points, definition.get_economy().camp_point_cap)
@@ -383,6 +493,42 @@ func rest_at_current_shelter() -> bool:
 	room.rest_used = true
 	_save_and_emit("队伍完成休息，并获得 4 点扎营点。")
 	return true
+
+
+func can_deliver_adventurer_remains() -> bool:
+	var room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
+	return room != null and room.shelter_type == AdventureEnums.ShelterType.OUTPOST \
+		and bool(current_run.adventure_flags.get("adventurer_remains", false)) \
+		and not has_pending_event_reward()
+
+
+func begin_adventurer_remains_delivery() -> Dictionary:
+	if not can_deliver_adventurer_remains():
+		return _failure("只有携带遗骨抵达据点时才能交付。")
+	var room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
+	var candidates := reward_service.get_equipment_candidates(current_run, room.room_id.hash() + 5700, 3, current_run.floor_index)
+	if candidates.is_empty():
+		return _failure("当前楼层没有可用的装备候选。")
+	current_run.adventure_flags["pending_event_reward"] = {
+		"event_id": "adventurer_remains_delivery",
+		"room_id": room.room_id,
+		"title": "交付冒险者遗骨",
+		"kind": "equipment",
+		"instructions": "据点确认了死者身份。从 3 件本层装备中选择 1 件并指定接收者；确认后遗骨任务物品消失。",
+		"starts_battle": false,
+		"complete_room": false,
+		"remains_delivery": true,
+		"completion_message": "遗骨已交还据点，任务物品移除。",
+		"required_equipment": 1,
+		"equipment": candidates,
+		"claimed_equipment": "",
+		"equipment_receiver": "",
+		"cards": [],
+		"required_card_hero_ids": [],
+		"claimed_cards": {},
+	}
+	_save_and_emit("据点已确认遗骨身份，请选择 1 件本层装备作为报酬。")
+	return {"ok": true, "message": "请选择 1 件本层装备。", "pending_event_reward": true}
 
 
 func use_camp_activity(activity_id: String, hero_id: String = "") -> bool:
@@ -530,6 +676,81 @@ func transfer_curse_at_camp(source_id: String, curse_id: String, target_id: Stri
 	return true
 
 
+func has_pending_distortion_reward(hero_id: String = "") -> bool:
+	if current_run == null:
+		return false
+	if not hero_id.is_empty():
+		var selected_hero := _get_hero(hero_id)
+		return selected_hero != null and selected_hero.has_pending_distortion_reward()
+	for hero in current_run.party:
+		if hero != null and hero.has_pending_distortion_reward():
+			return true
+	return false
+
+
+func get_distortion_reward_options(hero_id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return result
+	var milestone_index := hero.get_pending_distortion_milestone()
+	if milestone_index < 0:
+		return result
+	var excluded := hero.selected_distortion_fields.duplicate()
+	var option_seed := AdventureMapGenerator.derive_seed(
+		current_run.run_seed,
+		"distortion_reward_%s" % hero.adventure_character_id,
+		milestone_index,
+	)
+	var option_ids := DistortionCatalog.get_options_for_tier(milestone_index, excluded, option_seed)
+	for option_id_value in option_ids:
+		var option_id := str(option_id_value)
+		result.append({
+			"id": option_id,
+			"name": DistortionCatalog.get_display_name(option_id),
+			"description": DistortionCatalog.get_description(option_id),
+		})
+	return result
+
+
+func get_distortion_reward_state(hero_id: String) -> Dictionary:
+	var hero := _get_hero(hero_id)
+	if hero == null:
+		return {}
+	var milestone_index := hero.get_pending_distortion_milestone()
+	return {
+		"hero_id": hero.adventure_character_id,
+		"progress": hero.distortion_progress,
+		"milestone_index": milestone_index,
+		"threshold": hero.get_effective_distortion_threshold(milestone_index) if milestone_index >= 0 else hero.get_next_distortion_threshold(),
+		"options": get_distortion_reward_options(hero_id),
+		"grace": {
+			"id": DistortionCatalog.GRACE_ID,
+			"name": DistortionCatalog.get_display_name(DistortionCatalog.GRACE_ID),
+			"description": DistortionCatalog.get_description(DistortionCatalog.GRACE_ID),
+		},
+	}
+
+
+func choose_distortion_reward(hero_id: String, reward_id: String) -> bool:
+	var hero := _get_hero(hero_id)
+	if hero == null or not hero.has_pending_distortion_reward():
+		return false
+	if reward_id != DistortionCatalog.GRACE_ID:
+		var offered := false
+		for option in get_distortion_reward_options(hero_id):
+			if str(option.get("id", "")) == reward_id:
+				offered = true
+				break
+		if not offered:
+			return false
+	var reward_name := DistortionCatalog.get_display_name(reward_id)
+	if not hero.apply_distortion_reward(reward_id):
+		return false
+	_save_and_emit("%s 选择了畸变奖励「%s」。" % [hero.get_character_name(), reward_name])
+	return true
+
+
 func exchange_camp_supply() -> bool:
 	if current_run == null or current_run.camp_supplies <= 0:
 		return false
@@ -543,25 +764,33 @@ func get_shop_stock() -> Array[Dictionary]:
 	var room := current_run.floor_state.get_current_room() if current_run != null and current_run.floor_state != null else null
 	if room == null or room.room_type not in [AdventureEnums.RoomType.SHOP, AdventureEnums.RoomType.EVENT]:
 		return []
-	return reward_service.get_shop_stock(current_run, room)
+	return _get_room_shop_stock(room)
 
 
 func buy_shop_entry(index: int) -> bool:
 	var room := current_run.floor_state.get_current_room()
-	var stock := reward_service.get_shop_stock(current_run, room)
+	var stock := _get_room_shop_stock(room)
 	if index < 0 or index >= stock.size():
 		return false
 	var entry := stock[index]
 	if bool(entry.get("sold", false)) or not current_run.spend_gold(int(entry.get("price", 0))):
 		return false
 	var success := false
-	if str(entry.get("kind", "")) == "card":
+	var entry_kind := str(entry.get("kind", ""))
+	if entry_kind == "card":
 		var hero := _get_hero(str(entry.get("hero_id", "")))
 		if hero != null:
-			var stack := reward_service.create_card_stack(str(entry.get("path", "")), "%s_shop_%s_%d" % [hero.adventure_character_id, room.room_id, index])
+			var stack := reward_service.create_card_stack(
+				str(entry.get("path", "")),
+				"%s_shop_%s_%d" % [hero.adventure_character_id, room.room_id, index],
+				hero.character_data.character_class
+			)
 			if stack != null:
 				hero.deck.append(stack)
 				success = true
+	elif entry_kind == "camp_supply":
+		current_run.camp_supplies += 1
+		success = true
 	else:
 		var receiver := _first_inventory_receiver()
 		if receiver != null and receiver.get_inventory_item_count() < CharacterState.INVENTORY_LIMIT:
@@ -619,115 +848,236 @@ func remove_shop_card(hero_id: String, stack_id: String) -> bool:
 	return true
 
 
-func resolve_current_event(option_id: String, hero_id: String = "") -> Dictionary:
+func get_current_event_options(room: AdventureRoomState = null) -> Array[Dictionary]:
+	var event_room := room if room != null else _current_room_of_type(AdventureEnums.RoomType.EVENT)
+	if event_room == null:
+		return []
+	var event_definition := get_event_definition(event_room)
+	var result: Array[Dictionary] = []
+	for raw_option in event_definition.get("options", []):
+		if not (raw_option is Dictionary):
+			continue
+		var option := (raw_option as Dictionary).duplicate(true)
+		var option_id := str(option.get("id", "leave"))
+		var availability := _get_event_option_availability(event_room, option_id)
+		option.merge(availability, true)
+		if option_id == "alchemy_roll":
+			var price := int(event_room.runtime_data.get("alchemy_price", 20))
+			option["label"] = "支付 %d 金并投掷" % price
+			option["preview"] = "%s 当前金币：%d。" % [str(option.get("preview", "")), current_run.gold]
+		result.append(option)
+	return result
+
+
+func get_event_selection(option_id: String) -> Dictionary:
+	var room := _current_room_of_type(AdventureEnums.RoomType.EVENT)
+	if room == null or room.completed:
+		return {"kind": "none", "title": "事件已经结束", "choices": []}
+	match option_id:
+		"take_supply", "aid":
+			return {
+				"kind": "hero_item",
+				"title": "选择消耗品与获得者",
+				"heroes": _event_hero_entries(true),
+				"items": _get_locked_event_consumables(room, option_id),
+			}
+		"altar_resolve":
+			return {"kind": "altar", "title": "为每名冒险者选择献祭数量", "heroes": _event_hero_entries(false)}
+		"take_remains":
+			return {"kind": "hero", "title": "选择遗骨携带者", "heroes": _event_hero_entries(true)}
+		"accept_fall":
+			return {"kind": "hero", "title": "选择负荷最高的承受者", "heroes": _highest_load_hero_entries()}
+		"share":
+			return {"kind": "hero", "title": "选择承担普通业的角色", "heroes": _event_hero_entries(false)}
+		"gamble", "alchemy_roll":
+			return {"kind": "hero", "title": "选择可能获得卡牌或诅咒的角色", "heroes": _event_hero_entries(false)}
+		"remove_card":
+			return {"kind": "cards", "title": "选择同一角色的 1 至 2 张牌", "heroes": _event_card_entries()}
+		"nature_resolve":
+			return {"kind": "nature", "title": "选择超负荷角色的诅咒处理", "heroes": _nature_choice_entries()}
+	return {"kind": "none", "title": "确认事件选择", "choices": []}
+
+
+func resolve_current_event(option_id: String, selection_value: Variant = {}) -> Dictionary:
 	var room := _current_room_of_type(AdventureEnums.RoomType.EVENT)
 	if room == null or room.completed:
 		return _failure("当前没有可结算事件。")
 	if option_id == "leave":
-		return {"ok": true, "message": "事件保持未完成，可以稍后回访。"}
-	var hero := _get_hero(hero_id)
-	if hero == null:
-		hero = _first_inventory_receiver()
-	var message := "事件已结算。"
+		return {"ok": true, "message": "你暂时离开了%s。事件保持未完成，回到这里时仍可继续选择。" % str(get_event_definition(room).get("title", "事件")), "completed": false}
+	var availability := _get_event_option_availability(room, option_id)
+	if not bool(availability.get("available", false)):
+		return _failure(str(availability.get("reason", "当前不能选择该项。")))
+	var selection: Dictionary = selection_value.duplicate(true) if selection_value is Dictionary else {"hero_id": str(selection_value)}
+	var hero := _get_hero(str(selection.get("hero_id", "")))
+	var message := ""
 	match option_id:
 		"take_supply":
-			var item := reward_service.get_random_consumable(current_run.run_seed, room.room_id.hash())
-			if hero == null or item == null or hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT:
-				return _failure("背包没有可用空间。")
-			var stack := reward_service.create_item_stack(item.resource_path, "%s_event_%s" % [hero.adventure_character_id, room.room_id])
+			var item_path := str(selection.get("item_path", ""))
+			if hero == null or not _event_candidate_path_is_valid(_get_locked_event_consumables(room, option_id), item_path):
+				return _failure("请选择一件候选消耗品及其获得者。")
+			if hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT:
+				return _failure("%s 的背包已满。" % hero.get_character_name())
+			var stack := reward_service.create_item_stack(item_path, "%s_event_%s" % [hero.adventure_character_id, room.room_id])
+			if stack == null:
+				return _failure("所选消耗品资源无效。")
 			hero.inventory.append(stack)
 			room.completed = true
-			message = "获得了 %s。" % item.item_name
-		"offer_1", "offer_2":
-			var count := 1 if option_id == "offer_1" else 2
-			if hero == null:
-				return _failure("没有合法角色。")
-			hero.current_health = mini(hero.get_max_health(), hero.current_health + 10 * count)
-			for index in range(count):
-				_add_random_curse(hero, room.room_id.hash() + index)
+			message = "%s 将「%s」收入背包。背包现在为 %d/%d。" % [hero.get_character_name(), stack.item_data.item_name, hero.get_inventory_item_count(), CharacterState.INVENTORY_LIMIT]
+		"altar_resolve":
+			var curse_counts := selection.get("curse_counts", {}) as Dictionary
+			var result_lines := PackedStringArray()
+			for party_hero in current_run.party:
+				if party_hero == null:
+					continue
+				var count := clampi(int(curse_counts.get(party_hero.adventure_character_id, 0)), 0, 3)
+				if count > _get_available_curse_capacity(party_hero):
+					return _failure("%s 无法再承担 %d 个普通业。" % [party_hero.get_character_name(), count])
+				var before_health := party_hero.current_health
+				party_hero.current_health = mini(party_hero.get_max_health(), party_hero.current_health + 10 * count)
+				for index in range(count):
+					_add_random_curse(party_hero, room.room_id.hash() + party_hero.adventure_character_id.hash() + index)
+				result_lines.append("%s：恢复 %d 生命，获得 %d 个普通业，负荷 %d/%d。" % [party_hero.get_character_name(), party_hero.current_health - before_health, count, party_hero.get_curse_load(), party_hero.get_curse_load_limit()])
 			room.completed = true
-			message = "%s 恢复生命，并承受了新的业。" % hero.get_character_name()
+			message = "堕落圣坛完成结算：\n%s" % "\n".join(result_lines)
 		"take_remains":
+			var carrier := hero
+			if carrier == null:
+				return _failure("请选择遗骨携带者。")
+			if carrier.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT:
+				return _failure("%s 的背包已满。" % carrier.get_character_name())
+			var remains_stack := reward_service.create_item_stack("res://resources/items/adventurer_remains.tres", "%s_remains_%s" % [carrier.adventure_character_id, room.room_id])
+			if remains_stack == null:
+				return _failure("冒险者遗骨资源缺失。")
+			carrier.inventory.append(remains_stack)
 			current_run.adventure_flags["adventurer_remains"] = true
+			current_run.adventure_flags["adventurer_remains_carrier"] = carrier.adventure_character_id
 			var roll := _event_roll(room)
-			if roll >= 5 and hero != null:
-				_add_random_curse(hero, room.room_id.hash() + roll)
+			if roll >= 5:
+				_create_pending_remains_curse(room, roll)
+				message = "%s 携带冒险者遗骨，占用 1 个背包格。掷骰结果：%d；请继续选择 1 名角色承受随机普通业。" % [carrier.get_character_name(), roll]
+				_save_and_emit(message)
+				return {"ok": true, "message": message, "pending_event_reward": true, "completed": false}
 			room.completed = true
-			message = "拾取遗骨，骰子结果为 %d。" % roll
+			message = "%s 携带冒险者遗骨，占用 1 个背包格。掷骰结果：%d，没有额外惩罚。抵达下一座据点后可交付遗骨。" % [carrier.get_character_name(), roll]
 		"accept_fall":
-			if hero == null:
-				return _failure("没有合法角色。")
+			if hero == null or not _highest_load_hero_entries().any(func(entry: Dictionary) -> bool: return str(entry.get("id", "")) == hero.adventure_character_id):
+				return _failure("请选择当前未封印负荷最高的角色。")
+			if _get_available_curse_capacity(hero) < 2:
+				return _failure("%s 无法承担两个普通业。" % hero.get_character_name())
 			var card := reward_service.get_random_card(hero.character_data.character_class, CardEnums.Rarity.EPIC, current_run.run_seed, room.room_id.hash())
 			if card != null:
-				hero.deck.append(reward_service.create_card_stack(card.resource_path, "%s_fall_%s" % [hero.adventure_character_id, room.room_id]))
+				var stack := reward_service.create_card_stack(
+					card.resource_path,
+					"%s_fall_%s" % [hero.adventure_character_id, room.room_id],
+					hero.character_data.character_class
+				)
+				if stack != null:
+					hero.deck.append(stack)
 			_add_random_curse(hero, room.room_id.hash())
 			_add_random_curse(hero, room.room_id.hash() + 1)
 			room.completed = true
-			message = "%s 获得史诗牌并承受两个业。" % hero.get_character_name()
+			message = "%s 获得史诗牌「%s」并承受 2 个普通业。最终负荷：%d/%d。" % [hero.get_character_name(), card.card_name if card != null else "未生成", hero.get_curse_load(), hero.get_curse_load_limit()]
 		"share":
 			if hero == null:
-				return _failure("没有合法角色。")
+				return _failure("请选择承担普通业的角色。")
+			if _get_available_curse_capacity(hero) < 1:
+				return _failure("%s 无法再承担普通业。" % hero.get_character_name())
 			_add_random_curse(hero, room.room_id.hash())
 			current_run.gain_ritual_points(2)
 			room.completed = true
+			message = "%s 分担了 1 个随机普通业；团队仪式点 +2，现有 %d 点。" % [hero.get_character_name(), current_run.ritual_points]
 		"aid":
 			if not current_run.pay_ritual(1):
 				return _failure("仪式点不足。")
-			var item := reward_service.get_random_consumable(current_run.run_seed, room.room_id.hash())
-			if item != null and hero != null:
-				hero.inventory.append(reward_service.create_item_stack(item.resource_path, "%s_wanderer_%s" % [hero.adventure_character_id, room.room_id]))
+			var aid_item_path := str(selection.get("item_path", ""))
+			if hero == null or hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT or not _event_candidate_path_is_valid(_get_locked_event_consumables(room, option_id), aid_item_path):
+				current_run.gain_ritual_points(1)
+				return _failure("请选择有背包空间的获得者和候选消耗品。")
+			var aid_stack := reward_service.create_item_stack(aid_item_path, "%s_wanderer_%s" % [hero.adventure_character_id, room.room_id])
+			if aid_stack == null:
+				current_run.gain_ritual_points(1)
+				return _failure("所选消耗品资源无效。")
+			hero.inventory.append(aid_stack)
 			room.completed = true
+			message = "支付 1 仪式点援助游荡者；%s 获得「%s」。剩余仪式点：%d。" % [hero.get_character_name(), aid_stack.item_data.item_name, current_run.ritual_points]
 		"gamble":
+			if hero == null:
+				return _failure("请选择随机结果的承受者。")
 			var roll := _event_roll(room)
-			if roll <= 2 and hero != null:
+			if roll <= 2:
 				_add_random_curse(hero, room.room_id.hash() + roll)
+				message = "掷骰结果：%d。%s 获得 1 个随机普通业。" % [roll, hero.get_character_name()]
 			elif roll <= 5:
 				current_run.add_provisions(2)
-			elif hero != null:
-				var card := reward_service.get_random_card(hero.character_data.character_class, CardEnums.Rarity.RARE, current_run.run_seed, room.room_id.hash())
-				if card != null:
-					hero.deck.append(reward_service.create_card_stack(card.resource_path, "%s_luck_%s" % [hero.adventure_character_id, room.room_id]))
+				message = "掷骰结果：%d。团队补给 +2，现有 %d。" % [roll, current_run.provisions]
+			else:
+				_create_pending_card_event_reward(room, hero, CardEnums.Rarity.RARE, "受咒游荡者 · 稀有牌三选一", "掷骰结果为 6。为 %s 从 3 张本职业稀有牌中选择 1 张。" % hero.get_character_name(), true)
+				message = "掷骰结果：6。已锁定 %s 的 3 张稀有牌候选，请继续选择 1 张。" % hero.get_character_name()
+				_save_and_emit(message)
+				return {"ok": true, "message": message, "pending_event_reward": true, "completed": false}
 			room.completed = true
-			message = "骰子结果为 %d。" % roll
 		"alchemy_roll":
+			if hero == null:
+				return _failure("请选择首次史诗奖励的获得者。")
 			var price := int(room.runtime_data.get("alchemy_price", 20))
 			if not current_run.spend_gold(price):
 				return _failure("金币不足。")
 			var roll := _event_roll(room)
 			if roll <= 3:
 				current_run.add_gold(1)
+				message = "支付 %d 金，掷骰结果：%d。仅回收 1 金，当前金币 %d。" % [price, roll, current_run.gold]
 			elif roll <= 5:
 				current_run.add_gold(40)
 				room.runtime_data["alchemy_price"] = price + 10
+				message = "支付 %d 金，掷骰结果：%d。获得 40 金；下次费用提高到 %d。" % [price, roll, price + 10]
 			elif bool(room.runtime_data.get("alchemy_epic_claimed", false)):
 				current_run.add_gold(60)
 				room.runtime_data["alchemy_price"] = price + 10
-			elif hero != null:
-				var card := reward_service.get_random_card(hero.character_data.character_class, CardEnums.Rarity.EPIC, current_run.run_seed, room.room_id.hash() + roll)
-				if card != null:
-					hero.deck.append(reward_service.create_card_stack(card.resource_path, "%s_alchemy_%s" % [hero.adventure_character_id, room.room_id]))
+				message = "支付 %d 金，掷骰结果：6。史诗奖励已领取，本次获得 60 金；下次费用为 %d。" % [price, price + 10]
+			else:
 				room.runtime_data["alchemy_epic_claimed"] = true
 				room.runtime_data["alchemy_price"] = price + 10
-			message = "支付 %d 金币，骰子结果为 %d。" % [price, roll]
+				_create_pending_card_event_reward(room, hero, CardEnums.Rarity.EPIC, "炼金术 · 史诗牌三选一", "首次掷出 6。为 %s 从 3 张本职业史诗牌中选择 1 张；下次费用为 %d 金。" % [hero.get_character_name(), price + 10], false)
+				message = "支付 %d 金，掷骰结果：6。已锁定 %s 的 3 张史诗牌候选；选牌后仍可再次参与，费用为 %d 金。" % [price, hero.get_character_name(), price + 10]
+				_save_and_emit(message)
+				return {"ok": true, "message": message, "pending_event_reward": true, "completed": false}
 		"nature_resolve":
-			_resolve_nature_blessing()
+			var nature_result := _resolve_nature_blessing(selection.get("curse_actions", {}) as Dictionary)
+			if not bool(nature_result.get("ok", false)):
+				return _failure(str(nature_result.get("message", "恩惠选择无效。")))
 			room.completed = true
+			message = str(nature_result.get("message", "大自然的恩惠完成结算。"))
 		"remove_card":
-			if hero == null or not _remove_first_non_curse_card(hero):
-				return _failure("没有可移除的非诅咒牌。")
-			_add_random_curse(hero, room.room_id.hash())
+			var stack_ids := selection.get("stack_ids", []) as Array
+			if hero == null or stack_ids.size() < 1 or stack_ids.size() > 2:
+				return _failure("请选择同一角色的 1 至 2 张非诅咒牌。")
+			if hero.deck.size() - stack_ids.size() < 1 or _get_available_curse_capacity(hero) < stack_ids.size():
+				return _failure("该选择会使牌组低于最低张数，或无法承担对应数量的业。")
+			var removed_names := PackedStringArray()
+			for stack_id_value in stack_ids:
+				var removed := _remove_card_stack(hero, str(stack_id_value))
+				if removed.is_empty():
+					return _failure("所选牌已不在该角色的持久牌组中。")
+				removed_names.append(removed)
+			for index in range(stack_ids.size()):
+				_add_random_curse(hero, room.room_id.hash() + index)
 			room.completed = true
+			message = "%s 永久移除 %s，并获得 %d 个随机普通业。" % [hero.get_character_name(), "、".join(removed_names), stack_ids.size()]
 		"open_shop":
 			_initialize_room_runtime(room)
-			message = "游商库存已经揭示。"
+			message = "游商的固定库存已经揭示。库存不会刷新，可以离开后回访。"
 		"event_battle":
+			if room.content_id == "chaos_gate":
+				_create_pending_event_reward(room, room.content_id, true)
+				_save_and_emit("混乱之门已经锁定奖励候选；完成全部选择后将立即进入战斗。")
+				return {"ok": true, "message": "请先选择下一档装备，并为每名冒险者各选择 1 张职业牌。完成后将立即强制开战。", "pending_event_reward": true, "completed": false}
 			if start_event_battle(room.content_id):
-				return {"ok": true, "message": "正在进入专属战斗。", "battle": true}
+				return {"ok": true, "message": "事件选择已经锁定，正在进入专属战斗。胜利后会继续处理事件奖励。", "battle": true}
 			return _failure("无法开始专属战斗。")
 		_:
 			return _failure("尚未实现该事件选择。")
 	_save_and_emit(message)
-	return {"ok": true, "message": message}
+	return {"ok": true, "message": message, "completed": room.completed}
 
 
 func get_event_definition(room: AdventureRoomState) -> Dictionary:
@@ -817,23 +1167,162 @@ func _apply_fixed_reward(room: AdventureRoomState, reward: Dictionary) -> void:
 func _complete_event_battle(event_id: String, room: AdventureRoomState) -> void:
 	if room == null:
 		return
-	room.completed = true
-	var receiver := _first_inventory_receiver()
+	if event_id == "chaos_gate":
+		room.completed = true
+		return
+	_create_pending_event_reward(room, event_id, false)
+
+
+func _create_pending_event_reward(room: AdventureRoomState, event_id: String, starts_battle: bool) -> void:
+	if room == null:
+		return
+	var event_definition := AdventureContentCatalog.get_event_definition(event_id)
+	var reward := {
+		"event_id": event_id,
+		"room_id": room.room_id,
+		"title": str(event_definition.get("title", "事件")),
+		"starts_battle": starts_battle,
+		"complete_room": true,
+		"required_equipment": 0,
+		"equipment": [],
+		"claimed_equipment": "",
+		"equipment_receiver": "",
+		"cards": [],
+		"required_card_hero_ids": [],
+		"claimed_cards": {},
+	}
 	match event_id:
 		"sealed_chapel":
-			if receiver != null:
-				receiver.curse_load_limit_bonus += 1
-				current_run.adventure_flags["sealed_reliquary"] = true
+			reward["kind"] = "sealed_reliquary"
+			reward["instructions"] = "选择 1 名背包有空位的冒险者获得封印圣匣。它是饰品：负荷上限 +1，每场首次打出诅咒牌后获得 4 护甲。"
 		"trapped_arcanist":
-			if receiver != null:
-				receiver.curse_load_limit_bonus += 2
+			reward["kind"] = "arcanist"
+			reward["instructions"] = "二选一：指定 1 名冒险者在本次冒险中负荷上限 +2；或选择 1 名冒险者获得智力 +2 的奥能坠饰。"
 		"master_forging", "chaos_gate":
-			current_run.add_gold(30)
+			reward["kind"] = "chaos" if event_id == "chaos_gate" else "equipment"
+			reward["instructions"] = "从 3 件下一档装备中选择 1 件并指定接收者。"
+			reward["required_equipment"] = 1
+			reward["equipment"] = reward_service.get_equipment_candidates(current_run, room.room_id.hash() + 4100, 3, current_run.floor_index + 1)
+			if event_id == "chaos_gate":
+				reward["instructions"] += " 再为每名冒险者各选择 1 张职业牌；全部锁定后立即强制开战。"
+				var cards: Array[Dictionary] = []
+				var required_ids: Array[String] = []
+				for hero in current_run.party:
+					if hero == null or hero.character_data == null:
+						continue
+					required_ids.append(hero.adventure_character_id)
+					var candidates := reward_service.get_card_candidates(hero.character_data.character_class, CardEnums.Rarity.RARE, current_run.run_seed, room.room_id.hash() + hero.adventure_character_id.hash(), 3)
+					for candidate_data in candidates:
+						var candidate := candidate_data.duplicate(true)
+						candidate["id"] = "%s_%s" % [hero.adventure_character_id, str(candidate.get("id", "card"))]
+						candidate["hero_id"] = hero.adventure_character_id
+						cards.append(candidate)
+				reward["cards"] = cards
+				reward["required_card_hero_ids"] = required_ids
+		_:
+			room.completed = true
+			return
+	current_run.adventure_flags["pending_event_reward"] = reward
+
+
+func _create_pending_card_event_reward(room: AdventureRoomState, hero: CharacterState, rarity: int, title: String, instructions: String, complete_room: bool) -> void:
+	if room == null or hero == null or hero.character_data == null:
+		return
+	var candidates := reward_service.get_card_candidates(hero.character_data.character_class, rarity, current_run.run_seed, room.room_id.hash() + int(room.runtime_data.get("roll_count", 0)) * 313, 3)
+	var cards: Array[Dictionary] = []
+	for candidate_data in candidates:
+		var candidate := candidate_data.duplicate(true)
+		candidate["id"] = "%s_%s_%d" % [hero.adventure_character_id, str(candidate.get("id", "card")), int(room.runtime_data.get("roll_count", 0))]
+		candidate["hero_id"] = hero.adventure_character_id
+		cards.append(candidate)
+	current_run.adventure_flags["pending_event_reward"] = {
+		"event_id": room.content_id,
+		"room_id": room.room_id,
+		"title": title,
+		"kind": "single_card",
+		"instructions": instructions,
+		"starts_battle": false,
+		"complete_room": complete_room,
+		"completion_message": "%s 获得了所选卡牌。" % hero.get_character_name(),
+		"required_equipment": 0,
+		"equipment": [],
+		"claimed_equipment": "",
+		"cards": cards,
+		"required_card_hero_ids": [hero.adventure_character_id],
+		"claimed_cards": {},
+	}
+
+
+func _create_pending_remains_curse(room: AdventureRoomState, roll: int) -> void:
+	current_run.adventure_flags["pending_event_reward"] = {
+		"event_id": room.content_id,
+		"room_id": room.room_id,
+		"title": "冒险者遗骨 · 诅咒承受者",
+		"kind": "remains_curse",
+		"instructions": "掷骰结果为 %d。选择 1 名仍可承担普通业的冒险者；确认后遗骨事件完成。" % roll,
+		"starts_battle": false,
+		"complete_room": true,
+		"required_equipment": 0,
+		"equipment": [],
+		"claimed_equipment": "",
+		"cards": [],
+		"required_card_hero_ids": [],
+		"claimed_cards": {},
+		"roll": roll,
+		"curse_salt": room.room_id.hash() + roll,
+	}
+
+
+func _find_reward_candidate(candidates: Array, candidate_id: String) -> Dictionary:
+	for candidate_data in candidates:
+		if candidate_data is Dictionary and str(candidate_data.get("id", "")) == candidate_id:
+			return (candidate_data as Dictionary).duplicate(true)
+	return {}
+
+
+func _grant_event_item(hero: CharacterState, item_path: String, stack_suffix: String) -> Dictionary:
+	if hero == null or hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT:
+		return _failure("所选角色的背包已满。")
+	var stack := reward_service.create_item_stack(item_path, "%s_%s" % [hero.adventure_character_id, stack_suffix])
+	if stack == null:
+		return _failure("事件奖励物品资源无效。")
+	hero.inventory.append(stack)
+	return {"ok": true, "message": "%s 获得「%s」。" % [hero.get_character_name(), stack.item_data.item_name]}
+
+
+func _remove_adventurer_remains_item() -> void:
+	for hero in current_run.party:
+		if hero == null:
+			continue
+		for stack in hero.inventory.duplicate():
+			if stack != null and stack.item_data != null and stack.item_data.resource_path == "res://resources/items/adventurer_remains.tres":
+				hero.inventory.erase(stack)
+				return
+
+
+func _finish_pending_event_reward(message: String) -> Dictionary:
+	if not has_pending_event_reward():
+		return _failure("当前没有待结算的事件奖励。")
+	var reward := current_run.adventure_flags["pending_event_reward"] as Dictionary
+	var room := current_run.floor_state.get_room(str(reward.get("room_id", ""))) if current_run.floor_state != null else null
+	if room != null and bool(reward.get("complete_room", true)):
+		room.completed = true
+	current_run.adventure_flags.erase("pending_event_reward")
+	_save_and_emit(message)
+	return {"ok": true, "message": message, "completed": true}
 
 
 func _initialize_room_runtime(room: AdventureRoomState) -> void:
 	if room.room_type == AdventureEnums.RoomType.SHOP or room.content_id == "wilderness_merchant":
-		reward_service.get_shop_stock(current_run, room)
+		_get_room_shop_stock(room)
+
+
+func _get_room_shop_stock(room: AdventureRoomState) -> Array[Dictionary]:
+	if room == null:
+		return []
+	if room.content_id == "wilderness_merchant":
+		return reward_service.get_wilderness_merchant_stock(current_run, room)
+	return reward_service.get_shop_stock(current_run, room)
 
 
 func _event_roll(room: AdventureRoomState) -> int:
@@ -870,25 +1359,195 @@ func _add_random_curse(hero: CharacterState, salt: int) -> void:
 		hero.curse_instances.append(curse)
 
 
-func _resolve_nature_blessing() -> void:
+func _get_event_option_availability(room: AdventureRoomState, option_id: String) -> Dictionary:
+	if option_id == "leave":
+		return {"available": true, "reason": ""}
+	var available := true
+	var reason := ""
+	match option_id:
+		"take_supply", "aid":
+			if option_id == "aid" and not current_run.can_pay_ritual(1):
+				available = false
+				reason = "需要 1 点仪式点。"
+			elif _first_inventory_receiver() == null:
+				available = false
+				reason = "所有角色的背包都已满。"
+			elif _get_locked_event_consumables(room, option_id).is_empty():
+				available = false
+				reason = "当前资源中没有可用消耗品。"
+		"altar_resolve":
+			available = current_run != null and not current_run.party.is_empty()
+			reason = "队伍中没有可结算角色。" if not available else ""
+		"take_remains":
+			available = _first_inventory_receiver() != null
+			reason = "所有角色的背包都已满，无法携带遗骨。" if not available else ""
+		"accept_fall":
+			available = _highest_load_hero_entries().any(func(entry: Dictionary) -> bool: return int(entry.get("curse_capacity", 0)) >= 2)
+			reason = "负荷最高的角色都无法再承担两个普通业。" if not available else ""
+		"share":
+			available = current_run.party.any(func(hero: CharacterState) -> bool: return hero != null and _get_available_curse_capacity(hero) >= 1)
+			reason = "没有角色能够再承担一个普通业。" if not available else ""
+		"gamble", "alchemy_roll":
+			available = current_run != null and not current_run.party.is_empty()
+			if option_id == "alchemy_roll" and available:
+				var price := int(room.runtime_data.get("alchemy_price", 20))
+				available = current_run.gold >= price
+				reason = "需要 %d 金，当前只有 %d 金。" % [price, current_run.gold] if not available else ""
+		"remove_card":
+			available = not _event_card_entries().is_empty()
+			reason = "没有能承担业且可以继续精简牌组的角色。" if not available else ""
+		"nature_resolve", "open_shop":
+			available = true
+		"event_battle":
+			available = current_run != null and not current_run.get_active_party().is_empty()
+			reason = "没有生命大于 0 且未超负荷的角色可以参战。" if not available else ""
+	return {"available": available, "reason": reason}
+
+
+func _event_hero_entries(require_inventory_space: bool) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if current_run == null:
+		return result
+	for hero in current_run.party:
+		if hero == null:
+			continue
+		var inventory_space := CharacterState.INVENTORY_LIMIT - hero.get_inventory_item_count()
+		result.append({
+			"id": hero.adventure_character_id,
+			"name": hero.get_character_name(),
+			"health": hero.current_health,
+			"max_health": hero.get_max_health(),
+			"load": hero.get_curse_load(),
+			"load_limit": hero.get_curse_load_limit(),
+			"curse_capacity": _get_available_curse_capacity(hero),
+			"inventory_space": inventory_space,
+			"available": inventory_space > 0 if require_inventory_space else true,
+		})
+	return result
+
+
+func _highest_load_hero_entries() -> Array[Dictionary]:
+	var entries := _event_hero_entries(false)
+	var highest := 0
+	for entry in entries:
+		highest = maxi(highest, int(entry.get("load", 0)))
+	var result: Array[Dictionary] = []
+	for entry in entries:
+		if int(entry.get("load", 0)) == highest:
+			result.append(entry)
+	return result
+
+
+func _event_card_entries() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if current_run == null:
+		return result
+	for hero in current_run.party:
+		if hero == null or hero.deck.size() <= 1 or _get_available_curse_capacity(hero) <= 0:
+			continue
+		var cards: Array[Dictionary] = []
+		for stack in hero.deck:
+			if stack == null or stack.card_data == null or stack.card_data.is_curse_card():
+				continue
+			cards.append({"id": stack.stack_id, "name": stack.card_data.card_name, "description": stack.card_data.description})
+		if not cards.is_empty():
+			result.append({"id": hero.adventure_character_id, "name": hero.get_character_name(), "cards": cards, "max_count": mini(2, mini(cards.size(), hero.deck.size() - 1)), "curse_capacity": _get_available_curse_capacity(hero)})
+	return result
+
+
+func _nature_choice_entries() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if current_run == null:
+		return result
+	for hero in current_run.party:
+		if hero == null or hero.get_curse_load() < hero.get_curse_load_limit():
+			continue
+		var choices: Array[Dictionary] = []
+		for curse in hero.curse_instances:
+			if curse == null or curse.sealed:
+				continue
+			if curse.state == CurseInstance.State.INDUSTRY:
+				choices.append({"id": "remove:%s" % curse.get_curse_id(), "label": "移除业：%s" % curse.get_display_name()})
+			elif curse.state == CurseInstance.State.REPORT:
+				choices.append({"id": "mature:%s" % curse.get_curse_id(), "label": "报成熟 +1：%s" % curse.get_display_name()})
+		result.append({"id": hero.adventure_character_id, "name": hero.get_character_name(), "choices": choices})
+	return result
+
+
+func _get_locked_event_consumables(room: AdventureRoomState, option_id: String) -> Array[Dictionary]:
+	var key := "event_consumables_%s" % option_id
+	var existing := room.runtime_data.get(key, []) as Array
+	if not existing.is_empty():
+		var result: Array[Dictionary] = []
+		for entry in existing:
+			if entry is Dictionary:
+				result.append((entry as Dictionary).duplicate(true))
+		return result
+	var candidates := reward_service.get_consumable_candidates(current_run.run_seed, room.room_id.hash() + option_id.hash(), 3)
+	room.runtime_data[key] = candidates.duplicate(true)
+	return candidates
+
+
+func _event_candidate_path_is_valid(candidates: Array[Dictionary], item_path: String) -> bool:
+	return candidates.any(func(candidate: Dictionary) -> bool: return str(candidate.get("path", "")) == item_path)
+
+
+func _get_available_curse_capacity(hero: CharacterState) -> int:
+	if hero == null:
+		return 0
+	var capacity := 0
+	for path in ORDINARY_CURSE_PATHS:
+		var curse_definition := load(path) as CurseDefinition
+		if curse_definition == null:
+			continue
+		var existing := hero.get_curse(curse_definition.curse_id)
+		capacity += 3 if existing == null else maxi(0, 3 - existing.depth)
+	return capacity
+
+
+func _resolve_nature_blessing(curse_actions: Dictionary) -> Dictionary:
+	var result_lines := PackedStringArray()
 	for hero in current_run.party:
 		if hero == null:
 			continue
 		if hero.get_curse_load() >= hero.get_curse_load_limit():
-			hero.current_health = maxi(1, hero.current_health - ceili(hero.get_max_health() * 0.1))
-			var resolved := false
-			for curse in hero.curse_instances.duplicate():
-				if curse != null and curse.state == CurseInstance.State.INDUSTRY:
-					hero.curse_instances.erase(curse)
-					resolved = true
-					break
-			if not resolved:
-				for curse in hero.curse_instances:
-					if curse != null and curse.state == CurseInstance.State.REPORT:
-						curse.add_maturity(1)
-						break
+			var choices := _nature_choice_entries().filter(func(entry: Dictionary) -> bool: return str(entry.get("id", "")) == hero.adventure_character_id)
+			var action_id := str(curse_actions.get(hero.adventure_character_id, ""))
+			if not choices.is_empty() and not (choices[0].get("choices", []) as Array).is_empty() \
+					and not (choices[0].get("choices", []) as Array).any(func(choice: Dictionary) -> bool: return str(choice.get("id", "")) == action_id):
+				return {"ok": false, "message": "请选择 %s 的诅咒处理方式。" % hero.get_character_name()}
+			var loss := ceili(hero.get_max_health() * 0.1)
+			hero.current_health = maxi(1, hero.current_health - loss)
+			var action_text := "没有可处理的业或报"
+			if action_id.begins_with("remove:"):
+				var remove_curse_id := action_id.trim_prefix("remove:")
+				var industry_curse := hero.get_curse(remove_curse_id)
+				if industry_curse != null and industry_curse.state == CurseInstance.State.INDUSTRY:
+					hero.curse_instances.erase(industry_curse)
+					action_text = "移除业「%s」" % industry_curse.get_display_name()
+			elif action_id.begins_with("mature:"):
+				var mature_curse_id := action_id.trim_prefix("mature:")
+				var report_curse := hero.get_curse(mature_curse_id)
+				if report_curse != null and report_curse.state == CurseInstance.State.REPORT:
+					report_curse.add_maturity(1)
+					action_text = "令报「%s」成熟度 +1" % report_curse.get_display_name()
+			result_lines.append("%s：失去 %d 生命，并%s。" % [hero.get_character_name(), loss, action_text])
 		else:
+			var before := hero.current_health
 			hero.current_health = mini(hero.get_max_health(), hero.current_health + ceili(hero.get_max_health() * 0.1))
+			result_lines.append("%s：恢复 %d 生命。" % [hero.get_character_name(), hero.current_health - before])
+	return {"ok": true, "message": "大自然的恩惠完成结算：\n%s" % "\n".join(result_lines)}
+
+
+func _remove_card_stack(hero: CharacterState, stack_id: String) -> String:
+	if hero == null:
+		return ""
+	for stack in hero.deck:
+		if stack != null and stack.stack_id == stack_id and stack.card_data != null and not stack.card_data.is_curse_card():
+			var card_name := stack.card_data.card_name
+			hero.deck.erase(stack)
+			return card_name
+	return ""
 
 
 func _remove_first_non_curse_card(hero: CharacterState) -> bool:
@@ -948,7 +1607,7 @@ func _current_room_of_type(room_type: int) -> AdventureRoomState:
 func _loadout_change_is_blocked() -> bool:
 	if current_run == null or current_run.run_complete or current_run.run_failed:
 		return true
-	if has_pending_reward():
+	if has_pending_reward() or has_pending_event_reward():
 		return true
 	return current_run.pending_transaction != null and not current_run.pending_transaction.committed
 

@@ -10,5 +10,6 @@ card_name = "战术打击"
 description = "对一个敌方单位造成基础伤害。后续可以接入战棋格子与目标选择流程。"
 artwork = ExtResource("3_scroll")
 rarity = 1
+reward_eligible = false
 card_class = 1
 target_type = 1

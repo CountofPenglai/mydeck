@@ -40,6 +40,7 @@ enum UnitFilter {
 enum TurnFlowState {
 	IDLE,
 	START_PENDING,
+	MANIFEST_PENDING,
 	ACTIVE,
 	END_PENDING,
 }
@@ -354,6 +355,13 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 	_queue_global_effects("on_turn_start", unit)
 	unit.notify_equipment_turn_start({"controller": self, "phase": "turn_start"})
 	_apply_surface_turn_start(unit)
+	enqueue_effect(
+		Callable(unit, "resolve_distortion_turn_start"),
+		[],
+		-70,
+		"%s 畸变回合开始" % unit.get_display_name(),
+		{"unit": unit, "phase": "distortion_turn_start"}
+	)
 	if not (unbound_skip_enemy_pending and unit.faction == BattleUnitState.Faction.ENEMY):
 		enqueue_effect(
 			Callable(unit, "notify_draw_phase_before"),
@@ -367,18 +375,41 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 			-90,
 			"%s 抽牌阶段" % unit.get_display_name()
 		)
+		enqueue_effect(
+			Callable(self, "_resolve_distortion_post_draw"),
+			[unit],
+			-100,
+			"%s 畸变衰退" % unit.get_display_name()
+		)
 
 
 func _resolve_draw_phase(unit: BattleUnitState) -> void:
 	if phase != Phase.BATTLE or unit == null or current_unit != unit or not unit.is_alive():
 		return
-	var drawn := unit.draw_cards(1, rng, {
+	var draw_count := unit.get_distortion_draw_count()
+	var drawn := unit.draw_cards(draw_count, rng, {
 		"controller": self,
 		"reason": "draw_phase",
 		"draw_source": "draw_phase",
 		"phase": "draw_phase",
 	})
 	_emit_log("%s 在抽牌阶段抽取 %d 张牌。" % [unit.get_display_name(), drawn])
+
+
+func _resolve_distortion_post_draw(unit: BattleUnitState) -> void:
+	if phase != Phase.BATTLE or unit == null or current_unit != unit or not unit.is_alive():
+		return
+	var decayed := unit.decay_turn_start_manifestations({
+		"controller": self,
+		"phase": "mutation_decay",
+	})
+	if decayed > 0:
+		lose_life(unit, unit, decayed, "畸变衰退", {
+			"distortion_decay": true,
+		})
+		_emit_log("%s 的 %d 张显化牌衰退。" % [unit.get_display_name(), decayed])
+	if unit.is_alive() and not unit.get_manifestable_hand_cards().is_empty():
+		unit.distortion_state.pending_manual_manifest = true
 
 
 func _finish_turn_start_action(unit: BattleUnitState) -> void:
@@ -395,6 +426,61 @@ func _finish_turn_start_action(unit: BattleUnitState) -> void:
 		unbound_skip_enemy_pending = false
 		_emit_log("%s 的抽牌与行动阶段被无羁跳过。" % unit.get_display_name())
 		_begin_unbound_extra_phase()
+		return
+	if unit.distortion_state.pending_manual_manifest:
+		if unit.faction == BattleUnitState.Faction.ENEMY:
+			_manifest_enemy_planned_cards(unit)
+		else:
+			turn_flow_state = TurnFlowState.MANIFEST_PENDING
+			_emit_log("%s 可以从手牌显化至多 2 张畸变牌。" % unit.get_display_name())
+			state_changed.emit()
+			return
+	_activate_action_phase(unit)
+
+
+func submit_manifestation_selection(unit: BattleUnitState, cards: Array[CardData]) -> bool:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.MANIFEST_PENDING \
+			or unit == null or current_unit != unit or unit.faction != BattleUnitState.Faction.PLAYER:
+		return false
+	if cards.size() > 2:
+		return false
+	var manifested := unit.manifest_cards_from_hand(cards, {
+		"controller": self,
+		"phase": "manual_manifest",
+	})
+	if manifested != cards.size():
+		return false
+	if manifested > 0:
+		_emit_log("%s 显化了 %d 张畸变牌。" % [unit.get_display_name(), manifested])
+	_activate_action_phase(unit)
+	return true
+
+
+func _manifest_enemy_planned_cards(unit: BattleUnitState) -> void:
+	if unit == null:
+		return
+	var selected: Array[CardData] = []
+	var planned_ids := PackedInt64Array()
+	if unit.enemy_state != null and unit.enemy_state.intent_plan != null:
+		planned_ids = unit.enemy_state.intent_plan.planned_manifest_card_ids
+	for card_id in planned_ids:
+		for card in unit.hand:
+			if card != null and card.get_instance_id() == card_id and unit.distortion_state.card_adds_new_field(card):
+				selected.append(card)
+				break
+		if selected.size() >= 2:
+			break
+	unit.manifest_cards_from_hand(selected, {
+		"controller": self,
+		"phase": "enemy_manifest",
+	})
+	unit.distortion_state.pending_manual_manifest = false
+
+
+func _activate_action_phase(unit: BattleUnitState) -> void:
+	if unit == null or current_unit != unit or not unit.is_alive():
+		turn_flow_state = TurnFlowState.IDLE
+		advance_turn()
 		return
 	turn_flow_state = TurnFlowState.ACTIVE
 	unit.notify_action_phase_started({"controller": self, "phase": "action_phase_start"})
@@ -901,6 +987,7 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"active_card_damage_bonuses": user.active_card_damage_bonuses.duplicate(true),
 		"pending_next_attack_damage_bonus": user.pending_next_attack_damage_bonus,
 		"active_attack_lifesteal_cards": user.active_attack_lifesteal_cards.duplicate(true),
+		"distortion_state": user.distortion_state.snapshot(),
 		"statuses": _duplicate_resources(user.statuses),
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
@@ -948,6 +1035,7 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	user.active_card_damage_bonuses = (snapshot.get("active_card_damage_bonuses", {}) as Dictionary).duplicate(true)
 	user.pending_next_attack_damage_bonus = int(snapshot.get("pending_next_attack_damage_bonus", 0))
 	user.active_attack_lifesteal_cards = (snapshot.get("active_attack_lifesteal_cards", {}) as Dictionary).duplicate(true)
+	user.distortion_state.restore(snapshot.get("distortion_state", {}) as Dictionary)
 	var status_snapshot: Array = snapshot.get("statuses", []) as Array
 	user.statuses.assign(status_snapshot)
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
@@ -1972,7 +2060,25 @@ func should_cancel_hostile_effect(source: BattleUnitState, target: BattleUnitSta
 	if source == null or target == null or source.faction == target.faction:
 		return false
 	if source_card != null and target.should_counter_hostile_card(source, source_card, {"controller": self, "source": source, "card": source_card}):
-		_emit_log("%s 的守成之果反制了%s。" % [target.get_display_name(), effect_kind])
+		if target.consume_empty_eye_counter_flag():
+			_emit_log("%s 的空目反制了%s。" % [target.get_display_name(), effect_kind])
+			var backlash := _get_card_attribute_value(source, source_card) + source.get_damage_bonus({
+				"controller": self,
+				"card": source_card,
+				"damage_type": source_card.damage_type,
+				"distortion_field": "empty_eye",
+			})
+			enqueue_effect(
+				Callable(self, "apply_damage"),
+				[source, target, maxi(0, backlash), "空目反噬", {
+					"source_card": source_card,
+					"distortion_field": "empty_eye",
+				}],
+				-10,
+				"空目反噬"
+			)
+		else:
+			_emit_log("%s 的守成之果反制了%s。" % [target.get_display_name(), effect_kind])
 		state_changed.emit()
 		return true
 	if not target.is_ranger():
@@ -1995,6 +2101,21 @@ func should_cancel_hostile_effect(source: BattleUnitState, target: BattleUnitSta
 	_emit_log("%s 的潜行抵消了来自 %s 的整次%s。" % [target.get_display_name(), source.get_display_name(), effect_kind])
 	state_changed.emit()
 	return true
+
+
+func _get_card_attribute_value(source: BattleUnitState, card: CardData) -> int:
+	if source == null or card == null:
+		return 0
+	match card.damage_type:
+		CardEnums.DamageType.STRENGTH:
+			return source.get_strength()
+		CardEnums.DamageType.AGILITY:
+			return source.get_agility()
+		CardEnums.DamageType.INTELLIGENCE:
+			return source.get_intelligence()
+		_:
+			var profile := source.build_strike_profile_object()
+			return profile.primary_base_damage
 
 
 func is_unit_concealed(unit: BattleUnitState) -> bool:
@@ -2802,6 +2923,10 @@ func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, w
 		if not card.is_unit_target_allowed(target_context, target):
 			if write_log:
 				_emit_log("%s 不能选择 %s 作为目标。" % [card.card_name, target.get_display_name()])
+			return false
+		if not target.can_be_targeted_by_other_card(user, card, target_context):
+			if write_log:
+				_emit_log("%s 受到披夜保护，暂时不能成为其他单位手牌的目标。" % target.get_display_name())
 			return false
 		if user.faction == target.faction and not target.can_be_friendly_target(user, target_context):
 			if write_log:

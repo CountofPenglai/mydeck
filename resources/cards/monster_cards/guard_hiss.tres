@@ -8,6 +8,7 @@ kind = 6
 [resource]
 script = ExtResource("1")
 card_name = "护群嘶鸣"
+reward_eligible = false
 description = "范围3内一名友军获得4护甲并抽1张牌。"
 artwork = ExtResource("3")
 target_type = 1

@@ -8,6 +8,7 @@ kind = 3
 [resource]
 script = ExtResource("1")
 card_name = "蜷缩硬皮"
+reward_eligible = false
 description = "获得5护甲。"
 artwork = ExtResource("3")
 target_type = 0

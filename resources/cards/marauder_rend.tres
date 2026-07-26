@@ -10,6 +10,7 @@ card_name = "掠夺者撕裂"
 description = "近战敌人的凶狠斩击。"
 artwork = ExtResource("2_scroll")
 rarity = 0
+reward_eligible = false
 card_class = 0
 card_type = 0
 damage_type = 0

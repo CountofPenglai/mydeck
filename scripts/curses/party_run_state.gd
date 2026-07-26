@@ -3,7 +3,7 @@ class_name PartyRunState
 
 const STARTING_RITUAL_POINTS := 3
 const MIN_RITUAL_DEBT := -2
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
 
 @export var ritual_points: int = STARTING_RITUAL_POINTS
 @export_group("Adventure")

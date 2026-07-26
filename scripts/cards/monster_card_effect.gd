@@ -1,7 +1,6 @@
 extends CardEffect
 class_name MonsterCardEffect
 
-const MANIFEST_STATUS := preload("res://scripts/status/monster_manifest_status.gd")
 const TEMPORARY_JINX_PATH := "res://resources/cards/monster_cards/temporary_jinx.tres"
 
 enum Kind {
@@ -129,7 +128,11 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 		Kind.ENLIGHTENED_TUMOR:
 			_manifest_from_draw_pile(controller, user, card)
 		Kind.NIGHT_MEMBRANE:
-			var released := _release_all_manifestations(controller, user)
+			var released: int = user.release_all_manifestations({
+				"controller": controller,
+				"source_card": card,
+				"reason": "night_membrane",
+			})
 			if target != null and released > 0:
 				controller.lose_life(user, target, released * 2, "披夜薄膜", {"fixed_damage": true})
 		Kind.IRRADIATED_GLAND:
@@ -139,15 +142,6 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			_strike_all_in_range(controller, user, card, "奔踏畸足")
 		Kind.TEMPORARY_JINX:
 			pass
-
-
-func on_discard_owner_movement_completed(owner: BattleUnitState, zone_card: CardData, context: Dictionary = {}) -> void:
-	if kind != Kind.STAMPEDING_FEET or owner == null or zone_card == null or bool(context.get("forced", false)):
-		return
-	var controller := context.get("controller") as BattleController
-	if controller == null or not owner.move_card_to_exile(zone_card):
-		return
-	_strike_all_in_range(controller, owner, zone_card, "奔踏畸足追击")
 
 
 func _deal_typed_damage(controller: BattleController, user: BattleUnitState, target: BattleUnitState, card: CardData, base: int, damage_type: int, label: String) -> int:
@@ -235,56 +229,18 @@ func _deal_even_segments(controller: BattleController, user: BattleUnitState, ca
 func _manifest_from_draw_pile(controller: BattleController, user: BattleUnitState, source_card: CardData) -> void:
 	var candidate: CardData
 	for card in user.draw_pile:
-		if card != source_card and card.effect is MonsterCardEffect:
-			var effect := card.effect as MonsterCardEffect
-			if effect.kind >= Kind.LASHING_TENTACLE and effect.kind <= Kind.STAMPEDING_FEET and effect.kind != Kind.ENLIGHTENED_TUMOR:
-				candidate = card
-				break
+		if card != source_card and card.has_mutation_fields():
+			candidate = card
+			break
 	if candidate == null:
 		return
-	user.draw_pile.erase(candidate)
-	var old_card := _find_same_manifest(user, candidate.card_name)
-	user.add_card_to_enchant_zone(candidate, {"controller": controller, "reason": "monster_manifest"})
-	var effect := candidate.effect as MonsterCardEffect
-	if old_card != null:
-		_remove_manifest_status(user, old_card)
-		user.move_enchant_card_to_discard(old_card, {"controller": controller, "reason": "manifest_replace"})
-		user.draw_cards(1, controller.rng, {"controller": controller, "reason": "manifest_replace"})
-	if effect.kind in [Kind.LASHING_TENTACLE, Kind.BLOOD_MOUTH, Kind.EXTRA_LIMBS, Kind.SCORCH_SAC]:
-		var status := MANIFEST_STATUS.new() as MonsterManifestStatus
-		status.configure(effect.kind - Kind.LASHING_TENTACLE, candidate)
-		user.add_status(status)
-	controller._emit_log("%s 显化了%s。" % [user.get_display_name(), candidate.card_name])
-
-
-func _find_same_manifest(user: BattleUnitState, card_name: String) -> CardData:
-	for card in user.enchant_zone:
-		if card != null and card.card_name == card_name:
-			return card
-	return null
-
-
-func _remove_manifest_status(user: BattleUnitState, card: CardData) -> void:
-	if card == null or not (card.effect is MonsterCardEffect):
-		return
-	var effect := card.effect as MonsterCardEffect
-	if effect.kind in [Kind.LASHING_TENTACLE, Kind.BLOOD_MOUTH, Kind.EXTRA_LIMBS, Kind.SCORCH_SAC]:
-		user.remove_status("monster_manifest_%d" % (effect.kind - Kind.LASHING_TENTACLE))
-
-
-func _release_all_manifestations(controller: BattleController, user: BattleUnitState) -> int:
-	var cards := user.enchant_zone.duplicate()
-	var released := 0
-	for card in cards:
-		if card == null or not (card.effect is MonsterCardEffect):
-			continue
-		var effect := card.effect as MonsterCardEffect
-		if effect.kind == Kind.SCORCH_SAC:
-			controller.apply_base_surface_element(user.cell, BattleSurfaceState.Element.FIRE)
-		_remove_manifest_status(user, card)
-		user.move_enchant_card_to_discard(card, {"controller": controller, "reason": "manifest_release"})
-		released += 1
-	return released
+	var manifested: CardData = user.manifest_card_from_draw_pile(candidate, {
+		"controller": controller,
+		"source_card": source_card,
+		"reason": "enlightened_tumor",
+	}) as CardData
+	if manifested != null:
+		controller._emit_log("%s 显化了%s。" % [user.get_display_name(), manifested.card_name])
 
 
 func _discard_random_other(user: BattleUnitState, source_card: CardData, controller: BattleController) -> void:

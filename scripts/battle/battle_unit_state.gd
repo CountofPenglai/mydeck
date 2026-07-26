@@ -28,6 +28,7 @@ var enchant_zone: Array[CardData] = []
 var curse_zone: Array[CurseInstance] = []
 var curse_wave: int = 0
 var curse_runtime_states: Dictionary = {}
+var distortion_state := DistortionBattleState.new()
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
 var card_runtime_states: Dictionary = {}
@@ -72,6 +73,7 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	turn_serial = 0
 	curse_wave = 0
 	curse_runtime_states.clear()
+	distortion_state.reset_for_battle(character_state)
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
 	if character_state != null:
@@ -98,6 +100,7 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	turn_serial = 0
 	curse_wave = 0
 	curse_runtime_states.clear()
+	distortion_state.reset_for_battle()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
 	if enemy_state != null:
@@ -122,6 +125,7 @@ func start_turn(config: BattleConfig) -> void:
 	druid_temporary_mana = 0
 	druid_max_health_loss = 0
 	_reset_curse_turn_runtime()
+	distortion_state.start_turn()
 	ranger_state.start_turn(turn_serial)
 
 
@@ -202,6 +206,9 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 	if battle_controller != null:
 		result += battle_controller.get_surface_damage_bonus(self)
 	result += get_curse_damage_bonus(merged_context)
+	result -= distortion_state.lashing_damage_penalty
+	if distortion_state.has_field("night_veil") and not bool(distortion_state.battle_flags.get("night_veil_broken", false)):
+		result += _get_night_veil_damage_bonus(merged_context)
 	return ChapterOneEnemyRules.modify_damage_bonus(self, result) if enemy_state != null else result
 
 
@@ -490,6 +497,8 @@ func get_card_ap_cost(card: CardData, context: Dictionary = {}) -> int:
 	for status in statuses:
 		if status != null and status.has_method("modify_card_ap_cost"):
 			cost = status.modify_card_ap_cost(self, card, cost, merged_context)
+	if distortion_state.bloodseeking_ready and card.is_attack_card():
+		cost -= 1
 
 	return maxi(0, cost)
 
@@ -519,6 +528,7 @@ func notify_after_card_played(card: CardData, context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_after_card_played", [card], event_context)
 	_notify_curse_effects("on_after_card_played", [card], event_context)
 	_notify_equipment_effects("on_after_card_played", [card], event_context)
+	_resolve_distortion_after_card(card, event_context)
 
 
 func notify_ranger_stealth_cancelled(context: Dictionary = {}) -> void:
@@ -657,15 +667,37 @@ func can_be_friendly_target(source: BattleUnitState, context: Dictionary = {}) -
 	return true
 
 
+func can_be_targeted_by_other_card(source: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> bool:
+	if source == null or source == self:
+		return true
+	return not distortion_state.has_field("night_veil") \
+		or bool(distortion_state.battle_flags.get("night_veil_broken", false))
+
+
 func should_counter_hostile_card(source: BattleUnitState, card: CardData, context: Dictionary = {}) -> bool:
 	for curse in curse_zone:
 		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
 			if curse.definition.effect.should_counter_card(self, curse, source, card, context):
 				return true
+	if distortion_state.has_field("empty_eye") and card != null and battle_controller != null \
+			and not distortion_state.was_round_flag_used("empty_eye", battle_controller.battle_round):
+		var target_type := card.get_target_type_for_mode(CardEnums.CardPlayMode.NORMAL, {
+			"controller": battle_controller,
+			"user": source,
+			"card": card,
+		})
+		if target_type == CardEnums.TargetType.SINGLE:
+			distortion_state.mark_round_flag("empty_eye", battle_controller.battle_round)
+			battle_action_flags["empty_eye_countered"] = true
+			return true
 	return false
 
 
 func can_use_action_category(category: int, context: Dictionary = {}) -> bool:
+	if distortion_state.bloodseeking_ready:
+		var card := context.get("card") as CardData
+		if card != null and not card.is_attack_card():
+			return false
 	for status in statuses:
 		if status != null and status.has_method("can_use_action_category") and not status.can_use_action_category(self, category, context):
 			return false
@@ -736,6 +768,8 @@ func get_agility() -> int:
 	elif enemy_state != null:
 		result = enemy_state.get_agility()
 	result = _modify_equipment_attribute("agility", result)
+	if distortion_state.has_field("stampede"):
+		result += maxi(0, get_strength())
 	return ChapterOneEnemyRules.modify_agility(self, result) if enemy_state != null else result
 
 
@@ -808,6 +842,7 @@ func get_attack_range(equipment_slot: String = "", context: Dictionary = {}) -> 
 			result = effect.modify_attack_range(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, result, range_context)
 	if not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
 		return 0
+	result += distortion_state.lashing_range_bonus
 	return maxi(0, result)
 
 
@@ -1132,9 +1167,11 @@ func discard_card(card: CardData, context: Dictionary = {}) -> bool:
 	if index < 0:
 		return false
 
+	var previous_hand_size := hand.size()
 	hand.remove_at(index)
-	add_card_to_discard(card, context)
-	return true
+	var moved := add_card_to_discard(card, context)
+	_notify_hand_size_changed(previous_hand_size, context)
+	return moved
 
 
 func add_card_to_discard(card: CardData, context: Dictionary = {}) -> bool:
@@ -1166,6 +1203,7 @@ func add_card_to_enchant_zone(card: CardData, context: Dictionary = {}) -> void:
 		return
 
 	enchant_zone.append(card)
+	distortion_state.register_manifestation(card)
 	_notify_card_entered_special_zone(card, "enchant", context)
 
 
@@ -1175,6 +1213,7 @@ func move_enchant_card_to_discard(card: CardData, context: Dictionary = {}) -> b
 		return false
 
 	enchant_zone.remove_at(index)
+	distortion_state.unregister_manifestation(card)
 	clear_card_runtime_state(card)
 	return add_card_to_discard(card, context)
 
@@ -1191,8 +1230,10 @@ func move_hand_card_to_mana(card: CardData, context: Dictionary = {}) -> bool:
 	if index < 0:
 		return false
 
+	var previous_hand_size := hand.size()
 	hand.remove_at(index)
 	add_card_to_mana_zone(card, context)
+	_notify_hand_size_changed(previous_hand_size, context)
 	return true
 
 
@@ -1201,9 +1242,82 @@ func move_hand_card_to_enchant(card: CardData, context: Dictionary = {}) -> bool
 	if index < 0:
 		return false
 
+	var previous_hand_size := hand.size()
 	hand.remove_at(index)
 	add_card_to_enchant_zone(card, context)
+	_notify_hand_size_changed(previous_hand_size, context)
 	return true
+
+
+func get_active_distortion_fields() -> PackedStringArray:
+	return distortion_state.get_active_fields()
+
+
+func get_active_distortion_summary() -> String:
+	var labels := PackedStringArray()
+	for field_id in get_active_distortion_fields():
+		var source_count := distortion_state.get_source_count(field_id)
+		var label := DistortionCatalog.get_display_name(field_id)
+		labels.append("%s×%d" % [label, source_count] if source_count > 1 else label)
+	return "、".join(labels)
+
+
+func get_manifestable_hand_cards() -> Array[CardData]:
+	var result: Array[CardData] = []
+	for card in hand:
+		if card != null and card.has_mutation_fields() and distortion_state.card_adds_new_field(card):
+			result.append(card)
+	return result
+
+
+func manifest_cards_from_hand(cards: Array[CardData], context: Dictionary = {}) -> int:
+	if cards.size() > 2:
+		return 0
+	var unique_cards: Array[CardData] = []
+	for card in cards:
+		if card == null or unique_cards.has(card) or not hand.has(card) \
+				or not card.has_mutation_fields() or not distortion_state.card_adds_new_field(card):
+			return 0
+		unique_cards.append(card)
+	var manifested := 0
+	for card in unique_cards:
+		var manifest_context := context.duplicate()
+		manifest_context["reason"] = str(manifest_context.get("reason", "manual_manifest"))
+		if move_hand_card_to_enchant(card, manifest_context):
+			manifested += 1
+	distortion_state.pending_manual_manifest = false
+	return manifested
+
+
+func manifest_card_from_draw_pile(card: CardData, context: Dictionary = {}) -> CardData:
+	if card == null or not card.has_mutation_fields():
+		return null
+	var index := draw_pile.find(card)
+	if index < 0:
+		return null
+	draw_pile.remove_at(index)
+	add_card_to_enchant_zone(card, context)
+	return card
+
+
+func release_all_manifestations(context: Dictionary = {}) -> int:
+	var released := 0
+	for card in distortion_state.manifested_cards.duplicate():
+		if card != null and enchant_zone.has(card) and move_enchant_card_to_discard(card, context):
+			released += 1
+	return released
+
+
+func decay_turn_start_manifestations(context: Dictionary = {}) -> int:
+	var decayed := 0
+	for card in distortion_state.decay_snapshot:
+		if card != null and enchant_zone.has(card):
+			var decay_context := context.duplicate()
+			decay_context["reason"] = "mutation_decay"
+			if move_enchant_card_to_discard(card, decay_context):
+				decayed += 1
+	distortion_state.decay_snapshot.clear()
+	return decayed
 
 
 func get_curse(curse_id: String) -> CurseInstance:
@@ -1398,6 +1512,7 @@ func discard_all_hand(context: Dictionary = {}) -> int:
 		if card != null:
 			add_card_to_discard(card, context)
 	hand.clear()
+	_notify_hand_size_changed(count, context)
 	return count
 
 
@@ -1577,15 +1692,30 @@ func move_card_to_exile(card: CardData) -> bool:
 		clear_card_runtime_state(card)
 		return true
 
-	var zones: Array = [hand, draw_pile, discard_pile, enchant_zone]
-	for zone_value in zones:
+	var hand_index := hand.find(card)
+	if hand_index >= 0:
+		var previous_hand_size := hand.size()
+		hand.remove_at(hand_index)
+		exiled_pile.append(card)
+		clear_card_runtime_state(card)
+		_notify_hand_size_changed(previous_hand_size, {"reason": "move_to_exile"})
+		return true
+	var simple_zones: Array = [draw_pile, discard_pile]
+	for zone_value in simple_zones:
 		var zone: Array = zone_value as Array
-		var index: int = zone.find(card)
-		if index >= 0:
-			zone.remove_at(index)
+		var zone_index: int = zone.find(card)
+		if zone_index >= 0:
+			zone.remove_at(zone_index)
 			exiled_pile.append(card)
 			clear_card_runtime_state(card)
 			return true
+	var enchant_index := enchant_zone.find(card)
+	if enchant_index >= 0:
+		enchant_zone.remove_at(enchant_index)
+		distortion_state.unregister_manifestation(card)
+		exiled_pile.append(card)
+		clear_card_runtime_state(card)
+		return true
 	return false
 
 
@@ -1623,6 +1753,8 @@ func notify_after_damage_dealt(context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_after_damage_dealt", [], event_context)
 	_notify_curse_effects("on_after_damage_dealt", [], event_context)
 	_notify_equipment_effects("on_after_damage_dealt", [], event_context)
+	if distortion_state.has_field("night_veil") and not bool(distortion_state.battle_flags.get("night_veil_broken", false)):
+		_reserve_night_veil_break(int(event_context.get("action_id", 0)))
 
 
 func notify_after_damage_taken(context: Dictionary = {}) -> void:
@@ -1650,6 +1782,8 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 	_notify_status_effects("on_after_strike", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_strike", [], event_context)
 	_notify_equipment_effects("on_after_strike", [], event_context)
+	_resolve_distortion_scorch_throat(event_context)
+	_finish_night_veil_action(int(event_context.get("action_id", 0)))
 
 
 func notify_before_strike(context: Dictionary = {}) -> Dictionary:
@@ -1667,6 +1801,10 @@ func notify_movement_completed(context: Dictionary = {}) -> void:
 	for card in discard_pile.duplicate():
 		if card != null and card.effect != null and card.effect.has_method("on_discard_owner_movement_completed"):
 			card.effect.call("on_discard_owner_movement_completed", self, card, event_context)
+	if not bool(event_context.get("forced", false)):
+		if distortion_state.has_field("bloodseeking"):
+			distortion_state.bloodseeking_ready = true
+		_resolve_distortion_stampede(event_context)
 
 
 func notify_ranger_combo_milestone(threshold: int, context: Dictionary = {}) -> void:
@@ -1794,6 +1932,8 @@ func notify_armor_changed(previous: int, current: int, context: Dictionary = {})
 
 func _reset_druid_state() -> void:
 	mana_zone.clear()
+	for card in enchant_zone:
+		distortion_state.unregister_manifestation(card)
 	enchant_zone.clear()
 	curse_zone.clear()
 	druid_transformed = false
@@ -1809,9 +1949,245 @@ func add_status(status: StatusEffect) -> void:
 	var existing := get_status(status.status_id)
 	if existing != null:
 		existing.add_stacks(status.stacks)
+		_notify_distortion_negative_status_added(status)
 		return
 
 	statuses.append(status if status.resource_path.is_empty() else status.duplicate(true))
+	_notify_distortion_negative_status_added(status)
+
+
+func get_distortion_draw_count() -> int:
+	var result := preview_distortion_draw_count()
+	if distortion_state.has_field("enlightenment") and curse_wave > 0:
+		consume_curse_wave(1, {"controller": battle_controller, "reason": "distortion_enlightenment"})
+	return result
+
+
+func preview_distortion_draw_count() -> int:
+	var result := 3 if distortion_state.has_field("beast_heart") else 1
+	if distortion_state.has_field("enlightenment") and curse_wave > 0:
+		result += 1
+	return result
+
+
+func resolve_distortion_turn_start() -> void:
+	if battle_controller == null or not distortion_state.has_field("irradiation"):
+		return
+	var affected := 0
+	for other in battle_controller.units:
+		if other == null or other == self or not other.is_alive() or cell_distance_to(other) > 2:
+			continue
+		var anomaly := DruidDelayedDamageStatus.new()
+		anomaly.stacks = 1
+		other.add_status(anomaly)
+		affected += 1
+	if affected > 0:
+		gain_curse_wave(mini(3, affected), {
+			"controller": battle_controller,
+			"reason": "distortion_irradiation",
+		})
+		battle_controller._emit_log("%s 的辐照令 %d 个单位获得异常。" % [get_display_name(), affected])
+
+
+func get_distortion_actions() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if distortion_state.can_use_lashing():
+		for amount in range(1, 4):
+			result.append({
+				"id": "lashing_%d" % amount,
+				"label": "鞭笞 %d：伤害加值-%d，攻击范围+%d" % [amount, amount, amount],
+			})
+	return result
+
+
+func activate_distortion_action(action_id: String) -> bool:
+	if not action_id.begins_with("lashing_"):
+		return false
+	var amount := int(action_id.trim_prefix("lashing_"))
+	if not distortion_state.apply_lashing(amount):
+		return false
+	if battle_controller != null:
+		battle_controller._emit_log("%s 发动鞭笞：本回合伤害加值-%d，攻击范围+%d。" % [get_display_name(), amount, amount])
+		battle_controller.state_changed.emit()
+	return true
+
+
+func consume_empty_eye_counter_flag() -> bool:
+	if not bool(battle_action_flags.get("empty_eye_countered", false)):
+		return false
+	battle_action_flags.erase("empty_eye_countered")
+	return true
+
+
+func _resolve_distortion_after_card(card: CardData, context: Dictionary) -> void:
+	if battle_controller == null or card == null:
+		return
+	_notify_hand_size_changed(1, context)
+	if distortion_state.bloodseeking_ready and card.is_attack_card():
+		distortion_state.bloodseeking_ready = false
+	if distortion_state.has_field("appendage"):
+		var target_units: Array[BattleUnitState] = []
+		for target_value in context.get("targets", []):
+			var target := target_value as BattleUnitState
+			if target != null and target.is_alive() and target.faction != faction and not target_units.has(target):
+				target_units.append(target)
+		if not target_units.is_empty():
+			battle_controller.enqueue_trigger(
+				Callable(self, "_resolve_appendage_targets"),
+				[target_units],
+				-10,
+				"畸变·附肢",
+				context
+			)
+	if distortion_state.has_field("beast_heart") and not hand.is_empty():
+		var discard_index := battle_controller.rng.randi_range(0, hand.size() - 1)
+		var discarded: CardData = hand[discard_index]
+		if discard_card(discarded, {
+			"controller": battle_controller,
+			"reason": "distortion_beast_heart",
+			"source_card": card,
+		}):
+			gain_curse_wave(1, {"controller": battle_controller, "reason": "distortion_beast_heart"})
+			battle_controller._emit_log("%s 的兽心随机弃置了%s。" % [get_display_name(), discarded.card_name])
+	_finish_night_veil_action(int(context.get("action_id", 0)))
+
+
+func _resolve_appendage_targets(targets: Array[BattleUnitState]) -> void:
+	if battle_controller == null:
+		return
+	for target in targets:
+		if target != null and target.is_alive():
+			battle_controller.apply_damage(self, target, 1, "附肢", {
+				"fixed_damage": true,
+				"distortion_field": "appendage",
+			})
+
+
+func _resolve_distortion_stampede(context: Dictionary) -> void:
+	if battle_controller == null or not distortion_state.has_field("stampede") \
+			or bool(distortion_state.turn_flags.get("stampede_used", false)):
+		return
+	distortion_state.turn_flags["stampede_used"] = true
+	var wave_before := curse_wave
+	var effect_range := 1
+	var base_damage := 1
+	if wave_before >= 10:
+		consume_curse_wave(10, {"controller": battle_controller, "reason": "distortion_stampede"})
+		effect_range = 3
+		base_damage = 5
+	elif wave_before >= 5:
+		consume_curse_wave(wave_before, {"controller": battle_controller, "reason": "distortion_stampede"})
+		effect_range = 2
+		base_damage = ceili(float(wave_before) / 2.0)
+	var damage := maxi(0, base_damage + get_agility() + get_damage_bonus({
+		"controller": battle_controller,
+		"damage_type": CardEnums.DamageType.AGILITY,
+		"distortion_field": "stampede",
+	}))
+	for other in battle_controller.units:
+		if other != null and other != self and other.is_alive() and cell_distance_to(other) <= effect_range:
+			battle_controller.apply_damage(self, other, damage, "奔踏", {
+				"distortion_field": "stampede",
+			})
+	battle_controller._emit_log("%s 的奔踏波及范围 %d。" % [get_display_name(), effect_range])
+
+
+func _resolve_distortion_scorch_throat(context: Dictionary) -> void:
+	if battle_controller == null or not distortion_state.has_field("scorch_throat"):
+		return
+	var target := context.get("target") as BattleUnitState
+	if target == null:
+		return
+	var equipment_slot := str(context.get("equipment_slot", ""))
+	var max_range := battle_controller.get_effective_attack_range_against(self, target, equipment_slot)
+	if get_range_distance_to(target, {"controller": battle_controller, "equipment_slot": equipment_slot}) != max_range:
+		return
+	battle_controller.apply_base_surface_element(target.cell, BattleSurfaceState.Element.FIRE)
+	if curse_wave < 2:
+		return
+	consume_curse_wave(2, {"controller": battle_controller, "reason": "distortion_scorch_throat"})
+	for neighbor in BattleHexGrid.neighbors(target.cell):
+		if battle_controller.map_data.is_valid_cell(neighbor):
+			battle_controller.apply_base_surface_element(neighbor, BattleSurfaceState.Element.FIRE)
+
+
+func _notify_distortion_negative_status_added(status: StatusEffect) -> void:
+	if battle_controller == null or not distortion_state.has_field("mud_lung") or not _is_negative_status(status):
+		return
+	battle_controller.heal_unit(self, self, 2, "泥肺")
+
+
+func _is_negative_status(status: StatusEffect) -> bool:
+	if status == null:
+		return false
+	var negative_ids := PackedStringArray([
+		"stun",
+		"breach",
+		"cripple",
+		"druid_anomaly",
+		"druid_weakness",
+		"ranger_blind",
+		"ranger_move_surcharge",
+		"ranger_rooted",
+		"ranger_burn",
+		"ranger_discard_debt",
+		"ranger_dagger_damage_penalty",
+		"abyss_card_surcharge",
+		"temporary_curse_report",
+	])
+	return negative_ids.has(status.status_id) or status.status_id.begins_with("curse_disease_pending:")
+
+
+func _notify_hand_size_changed(previous_size: int, context: Dictionary = {}) -> void:
+	if previous_size <= 0 or not hand.is_empty() or battle_controller == null \
+			or battle_controller.battle_round <= 0 or not distortion_state.has_field("rock_scale") \
+			or distortion_state.was_round_flag_used("rock_scale", battle_controller.battle_round):
+		return
+	distortion_state.mark_round_flag("rock_scale", battle_controller.battle_round)
+	var block := BlockStatus.new()
+	block.stacks = 1
+	add_status(block)
+	var consumed := consume_curse_wave(2, context.merged({
+		"controller": battle_controller,
+		"reason": "distortion_rock_scale",
+	}))
+	if consumed > 0:
+		gain_armor(consumed * 2, context.merged({"controller": battle_controller}))
+	battle_controller._emit_log("%s 的岩鳞在失去最后一张手牌时生效。" % get_display_name())
+
+
+func _get_night_veil_damage_bonus(context: Dictionary) -> int:
+	var action_id := int(context.get("action_id", battle_controller.get_current_action_id() if battle_controller != null else 0))
+	var pending_action := int(distortion_state.battle_flags.get("night_veil_break_action_id", -1))
+	if pending_action >= 0:
+		if pending_action == action_id:
+			return int(distortion_state.battle_flags.get("night_veil_reserved_wave", 0))
+		_finish_night_veil_action(pending_action)
+		return 0
+	return mini(3, curse_wave)
+
+
+func _reserve_night_veil_break(action_id: int) -> void:
+	if distortion_state.battle_flags.has("night_veil_break_action_id"):
+		return
+	var reserved := consume_curse_wave(mini(3, curse_wave), {
+		"controller": battle_controller,
+		"reason": "distortion_night_veil",
+	})
+	distortion_state.battle_flags["night_veil_reserved_wave"] = reserved
+	if action_id <= 0:
+		distortion_state.battle_flags["night_veil_broken"] = true
+	else:
+		distortion_state.battle_flags["night_veil_break_action_id"] = action_id
+
+
+func _finish_night_veil_action(action_id: int) -> void:
+	var pending_action := int(distortion_state.battle_flags.get("night_veil_break_action_id", -1))
+	if pending_action < 0 or pending_action != action_id:
+		return
+	distortion_state.battle_flags.erase("night_veil_break_action_id")
+	distortion_state.battle_flags.erase("night_veil_reserved_wave")
+	distortion_state.battle_flags["night_veil_broken"] = true
 
 
 func get_status(status_id: String) -> StatusEffect:

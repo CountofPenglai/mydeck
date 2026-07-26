@@ -48,7 +48,40 @@ static func build_plan(controller: BattleController, unit: BattleUnitState, roun
 			"defense": 0,
 		})
 	_append_public_fallback(controller, unit, plan, ap_budget - int(best.get("ap", 0)))
+	_plan_manifestations(unit, plan)
 	return plan
+
+
+static func _plan_manifestations(unit: BattleUnitState, plan: EnemyIntentPlan) -> void:
+	plan.expected_decay_life = unit.distortion_state.manifested_cards.size()
+	var reserved_card_ids := PackedInt64Array()
+	for step in plan.steps:
+		var step_card := step.get("card") as CardData
+		if step_card != null:
+			reserved_card_ids.append(step_card.get_instance_id())
+	var candidates: Array[CardData] = []
+	for card in unit.hand:
+		if card != null and card.has_mutation_fields() and not reserved_card_ids.has(card.get_instance_id()):
+			candidates.append(card)
+	var projected_draw_count := unit.preview_distortion_draw_count()
+	var available_draws := mini(projected_draw_count, unit.draw_pile.size())
+	for index in range(available_draws):
+		var draw_index := unit.draw_pile.size() - 1 - index
+		var drawn_card: CardData = unit.draw_pile[draw_index]
+		if drawn_card != null and drawn_card.has_mutation_fields() and not reserved_card_ids.has(drawn_card.get_instance_id()):
+			candidates.append(drawn_card)
+	var planned_fields := unit.get_active_distortion_fields()
+	for card in candidates:
+		var adds_field := false
+		for field_id in card.mutation_fields:
+			if not planned_fields.has(field_id):
+				planned_fields.append(field_id)
+				plan.planned_manifest_fields.append(DistortionCatalog.get_display_name(field_id))
+				adds_field = true
+		if adds_field:
+			plan.planned_manifest_card_ids.append(card.get_instance_id())
+		if plan.planned_manifest_card_ids.size() >= 2:
+			break
 
 
 static func _build_candidates(controller: BattleController, unit: BattleUnitState) -> Array[Dictionary]:

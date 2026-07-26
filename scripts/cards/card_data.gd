@@ -1,13 +1,29 @@
 extends Resource
 class_name CardData
 
+const MUTATION_FIELD_LABELS: Dictionary = {
+	"lashing": "鞭笞",
+	"empty_eye": "空目",
+	"appendage": "附肢",
+	"bloodseeking": "觅血",
+	"mud_lung": "泥肺",
+	"beast_heart": "兽心",
+	"rock_scale": "岩鳞",
+	"scorch_throat": "灼喉",
+	"night_veil": "披夜",
+	"enlightenment": "启明",
+	"irradiation": "辐照",
+	"stampede": "奔踏",
+}
+
 @export_group("Display")
 @export var card_name: String = "未命名卡牌"
 @export_multiline var description: String = ""
 @export var artwork: Texture2D
 
 @export_group("Gameplay")
-@export_enum("普通", "稀有", "史诗", "传说") var rarity: int = CardEnums.Rarity.COMMON
+@export_enum("普通", "稀有", "史诗", "传说", "基础") var rarity: int = CardEnums.Rarity.COMMON
+@export var reward_eligible: bool = true
 @export_enum("中立", "战士", "法师", "游侠", "德鲁伊", "术士") var card_class: int = CardEnums.CardClass.NEUTRAL
 @export var allowed_classes: PackedInt32Array = []
 @export_enum("攻击", "技能", "附魔", "诅咒") var card_type: int = CardEnums.CardType.SKILL
@@ -20,6 +36,9 @@ class_name CardData
 @export var override_range: bool = false
 @export_range(0, 12, 1) var card_range: int = 2
 @export var effect: CardEffect
+
+@export_group("Mutation")
+@export var mutation_fields: PackedStringArray = []
 
 var bound_curse_instance: CurseInstance
 
@@ -229,6 +248,27 @@ func is_attack_card() -> bool:
 
 func is_curse_card() -> bool:
 	return card_type == CardEnums.CardType.CURSE
+
+
+func can_appear_in_rewards() -> bool:
+	return reward_eligible and rarity != CardEnums.Rarity.BASIC and not is_curse_card()
+
+
+func has_mutation_fields() -> bool:
+	return not mutation_fields.is_empty()
+
+
+func get_mutation_field_label(field_id: String) -> String:
+	return str(MUTATION_FIELD_LABELS.get(field_id, field_id))
+
+
+func get_mutation_label() -> String:
+	if mutation_fields.is_empty():
+		return ""
+	var labels := PackedStringArray()
+	for field_id in mutation_fields:
+		labels.append(get_mutation_field_label(field_id))
+	return "畸变~%s" % "、".join(labels)
 
 
 func has_card_tag(tag: int) -> bool:

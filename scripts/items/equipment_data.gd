@@ -36,6 +36,7 @@ enum PairedAttackMode {
 @export_enum("力量", "敏捷", "智力") var damage_type: int = CardEnums.DamageType.STRENGTH
 @export var damage_bonus: int = 0
 @export var damage_reduction: int = 0
+@export var curse_load_limit_bonus: int = 0
 
 @export_group("Use Rules")
 @export_enum("武器", "防具", "饰品") var equip_slot: int = EquipSlot.WEAPON

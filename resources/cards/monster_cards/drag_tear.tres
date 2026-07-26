@@ -8,6 +8,7 @@ kind = 1
 [resource]
 script = ExtResource("1")
 card_name = "拖曳撕扯"
+reward_eligible = false
 description = "武器打击；造成生命伤害后将目标拉近1格。"
 artwork = ExtResource("3")
 card_type = 0

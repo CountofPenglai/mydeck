@@ -90,6 +90,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 
 	var trigger_context := {
 		"controller": controller,
+		"action_id": controller.get_current_action_id(),
 		"attacker": attacker,
 		"target": target,
 		"source": source,

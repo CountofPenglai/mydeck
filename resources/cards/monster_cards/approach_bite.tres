@@ -8,6 +8,7 @@ kind = 0
 [resource]
 script = ExtResource("1")
 card_name = "逼近啃咬"
+reward_eligible = false
 description = "移动至多1格；进入武器范围后打击。"
 artwork = ExtResource("3")
 card_type = 0

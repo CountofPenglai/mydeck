@@ -23,7 +23,12 @@ var modal_layer: ColorRect
 var modal_title: Label
 var modal_body: VBoxContainer
 var inventory_hero_id: String = ""
+var curse_hero_id: String = ""
 var syncing_enemy_health_control: bool = false
+var event_altar_controls: Dictionary = {}
+var event_card_controls: Dictionary = {}
+var event_nature_controls: Dictionary = {}
+var event_modal_feedback: Label
 
 
 func _ready() -> void:
@@ -281,6 +286,17 @@ func _refresh_detail(preview_room_id: String = "") -> void:
 			lines.append("[color=#b9aa83]风险[/color]  %s" % str(event.get("risk", "未知")))
 			lines.append("[color=#b9aa83]回报[/color]  %s" % str(event.get("reward", "未知")))
 			lines.append("\n%s" % str(event.get("summary", "")))
+			var rules := str(event.get("rules", ""))
+			if not rules.is_empty():
+				lines.append("\n[color=#d7c797]结算规则[/color]\n%s" % rules)
+			var event_options := session.get_current_event_options(room)
+			if not event_options.is_empty():
+				lines.append("\n[color=#d7c797]可选行动[/color]")
+				for option in event_options:
+					var option_line := "• [b]%s[/b]：%s" % [str(option.get("label", "选择")), str(option.get("preview", ""))]
+					if not bool(option.get("available", true)):
+						option_line += " [color=#d57568]不可用：%s[/color]" % str(option.get("reason", "条件不足"))
+					lines.append(option_line)
 		else:
 			lines.append("具体事件进入房间后揭示。")
 	if displayed_room_id != selected_room_id:
@@ -307,6 +323,8 @@ func _build_current_room_actions(room: AdventureRoomState) -> void:
 			_add_action("开始战斗", _start_battle)
 		AdventureEnums.RoomType.SHELTER:
 			_add_action("免费休息", _rest, room.rest_used)
+			if session.can_deliver_adventurer_remains():
+				_add_action("交付冒险者遗骨 · 本层装备三选一", _begin_remains_delivery, false, "选择装备和接收者后，遗骨任务物品消失。")
 			_add_action("包扎选中角色 (2)", _camp_action.bind("bandage"))
 			_add_action("战术推演 (2)", _camp_action.bind("tactics"))
 			_add_action("侦察 (1)", _camp_action.bind("scout"))
@@ -319,10 +337,12 @@ func _build_current_room_actions(room: AdventureRoomState) -> void:
 		AdventureEnums.RoomType.SHOP:
 			_build_shop_actions()
 		AdventureEnums.RoomType.EVENT:
-			var event := session.get_event_definition(room)
-			for option_data in event.get("options", []):
-				if option_data is Dictionary:
-					_add_action(str(option_data.get("label", "选择")), _resolve_event.bind(str(option_data.get("id", "leave"))))
+			for option_data in session.get_current_event_options(room):
+				var option_id := str(option_data.get("id", "leave"))
+				var tooltip := str(option_data.get("preview", ""))
+				if not bool(option_data.get("available", true)):
+					tooltip = "%s\n不可用：%s" % [tooltip, str(option_data.get("reason", "条件不足"))]
+				_add_action(str(option_data.get("label", "选择")), _begin_event_option.bind(option_id), not bool(option_data.get("available", true)), tooltip)
 			if room.content_id == "wilderness_merchant":
 				_build_shop_actions()
 
@@ -335,9 +355,11 @@ func _build_shop_actions() -> void:
 		if bool(entry.get("sold", false)):
 			label = "%s  [售罄]" % str(entry.get("name", "物品"))
 		_add_action(label, _buy_stock.bind(index), bool(entry.get("sold", false)))
+	var room := run_state.floor_state.get_current_room()
+	if room != null and room.content_id == "wilderness_merchant":
+		return
 	_add_action("购买补给  5 金", _buy_provision)
 	_add_action("购买扎营物资  15 金", _buy_camp_supply)
-	var room := run_state.floor_state.get_current_room()
 	var removal_price := session.definition.get_economy().get_card_removal_price(run_state.card_removals_used)
 	_add_action("删牌服务  %d 金" % removal_price, _show_card_removal, bool(room.runtime_data.get("card_removal_used", false)))
 
@@ -389,7 +411,199 @@ func _refresh_party() -> void:
 		equipment_button.custom_minimum_size = Vector2(0.0, 28.0)
 		equipment_button.pressed.connect(_show_inventory.bind(hero.adventure_character_id))
 		stack.add_child(equipment_button)
+		var curse_button := Button.new()
+		var has_reward := hero.has_pending_distortion_reward()
+		curse_button.text = "诅咒与畸变%s" % (" · 奖励待选" if has_reward else "")
+		curse_button.tooltip_text = "查看诅咒区、封印状态与永久畸变"
+		curse_button.custom_minimum_size = Vector2(0.0, 28.0)
+		curse_button.pressed.connect(_show_curse_zone.bind(hero.adventure_character_id))
+		if has_reward:
+			curse_button.add_theme_color_override("font_color", Color("#ffe09a"))
+			curse_button.add_theme_color_override("font_hover_color", Color("#fff1c2"))
+			var highlight := StyleBoxFlat.new()
+			highlight.bg_color = Color("#493a20")
+			highlight.border_color = Color("#d9a441")
+			highlight.set_border_width_all(2)
+			highlight.corner_radius_top_left = 4
+			highlight.corner_radius_top_right = 4
+			highlight.corner_radius_bottom_left = 4
+			highlight.corner_radius_bottom_right = 4
+			curse_button.add_theme_stylebox_override("normal", highlight)
+		stack.add_child(curse_button)
 		party_list.add_child(panel)
+
+
+func _show_curse_zone(hero_id: String) -> void:
+	curse_hero_id = hero_id
+	_refresh_curse_zone_modal()
+
+
+func _refresh_curse_zone_modal() -> void:
+	var hero := _get_hero_state(curse_hero_id)
+	if hero == null:
+		_hide_modal()
+		return
+	modal_layer.visible = true
+	modal_title.text = "%s · 诅咒与畸变" % hero.get_character_name()
+	_clear_children(modal_body)
+	_add_curse_hero_selector()
+
+	var overview := Label.new()
+	overview.text = "负荷 %d/%d   畸变进度 %d   恩典 %d 次" % [
+		hero.get_curse_load(),
+		hero.get_curse_load_limit(),
+		hero.distortion_progress,
+		hero.distortion_grace_count,
+	]
+	overview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	overview.add_theme_font_size_override("font_size", 18)
+	if hero.is_curse_overloaded():
+		overview.add_theme_color_override("font_color", Color("#e47b6c"))
+	modal_body.add_child(overview)
+
+	var track := Label.new()
+	var track_parts: PackedStringArray = []
+	var pending_index := hero.get_pending_distortion_milestone()
+	var next_index := hero.get_next_unclaimed_distortion_milestone()
+	for milestone_index in range(DistortionCatalog.MILESTONES.size()):
+		var base_threshold: int = DistortionCatalog.MILESTONES[milestone_index]
+		if hero.claimed_distortion_milestones.has(milestone_index):
+			track_parts.append("%d 已领取" % base_threshold)
+		elif milestone_index == pending_index:
+			track_parts.append("%d 待选择" % hero.get_effective_distortion_threshold(milestone_index))
+		elif milestone_index == next_index:
+			track_parts.append("%d 进行中" % hero.get_effective_distortion_threshold(milestone_index))
+		else:
+			track_parts.append("%d 未解锁" % base_threshold)
+	track.text = "里程碑  " + "  |  ".join(track_parts)
+	track.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	track.add_theme_color_override(
+		"font_color",
+		Color("#ffe09a") if pending_index >= 0 else Color("#c9c1ad"),
+	)
+	modal_body.add_child(track)
+	modal_body.add_child(HSeparator.new())
+
+	var curse_heading := Label.new()
+	curse_heading.text = "诅咒区"
+	curse_heading.add_theme_font_size_override("font_size", 19)
+	modal_body.add_child(curse_heading)
+	if hero.curse_instances.is_empty():
+		var empty_curses := Label.new()
+		empty_curses.text = "当前没有永久诅咒。"
+		empty_curses.add_theme_color_override("font_color", Color("#aaa69b"))
+		modal_body.add_child(empty_curses)
+	else:
+		for curse in hero.curse_instances:
+			if curse == null or curse.definition == null:
+				continue
+			var curse_label := Label.new()
+			var zone_state := "牌库中的业"
+			if curse.sealed:
+				zone_state = "已封印 · 效果停用 · 负荷 0"
+			elif curse.state == CurseInstance.State.REPORT:
+				zone_state = "报 · 生效中 · 成熟 %d/%d" % [curse.maturity, curse.definition.maturity_threshold]
+			elif curse.state == CurseInstance.State.FRUIT:
+				zone_state = "果 · 生效中"
+			curse_label.text = "%s  深度 %d  |  %s\n%s" % [
+				curse.get_display_name(),
+				curse.depth,
+				zone_state,
+				curse.definition.get_description_for_state(curse.state),
+			]
+			curse_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			curse_label.add_theme_color_override(
+				"font_color",
+				Color("#8e8a81") if curse.sealed else Color("#ded7c5"),
+			)
+			modal_body.add_child(curse_label)
+
+	modal_body.add_child(HSeparator.new())
+	var field_heading := Label.new()
+	field_heading.text = "永久畸变"
+	field_heading.add_theme_font_size_override("font_size", 19)
+	modal_body.add_child(field_heading)
+	if hero.selected_distortion_fields.is_empty():
+		var empty_fields := Label.new()
+		empty_fields.text = "尚未选择永久畸变。"
+		empty_fields.add_theme_color_override("font_color", Color("#aaa69b"))
+		modal_body.add_child(empty_fields)
+	else:
+		for field_id in hero.selected_distortion_fields:
+			var field_label := Label.new()
+			field_label.text = "%s\n%s" % [
+				DistortionCatalog.get_display_name(field_id),
+				DistortionCatalog.get_description(field_id),
+			]
+			field_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			modal_body.add_child(field_label)
+
+	if pending_index >= 0:
+		modal_body.add_child(HSeparator.new())
+		var reward_heading := Label.new()
+		reward_heading.text = "畸变奖励待选择"
+		reward_heading.add_theme_font_size_override("font_size", 20)
+		reward_heading.add_theme_color_override("font_color", Color("#ffe09a"))
+		modal_body.add_child(reward_heading)
+		var reward_hint := Label.new()
+		reward_hint.text = "选择一项永久畸变；也可以放弃三项并获得恩典。领取不会关闭或替代战斗后的选牌奖励。"
+		reward_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		modal_body.add_child(reward_hint)
+		var reward_state := session.get_distortion_reward_state(hero.adventure_character_id)
+		for option_value in reward_state.get("options", []):
+			if not (option_value is Dictionary):
+				continue
+			var option := option_value as Dictionary
+			_add_distortion_reward_button(hero, option)
+		var grace := reward_state.get("grace", {}) as Dictionary
+		if not grace.is_empty():
+			_add_distortion_reward_button(hero, grace)
+
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.pressed.connect(_hide_modal)
+	modal_body.add_child(close_button)
+
+
+func _add_curse_hero_selector() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	for hero in run_state.party:
+		if hero == null:
+			continue
+		var button := Button.new()
+		button.text = "%s%s" % [
+			hero.get_character_name(),
+			" · 待选" if hero.has_pending_distortion_reward() else "",
+		]
+		button.disabled = hero.adventure_character_id == curse_hero_id
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_show_curse_zone.bind(hero.adventure_character_id))
+		if hero.has_pending_distortion_reward():
+			button.add_theme_color_override("font_color", Color("#ffe09a"))
+		row.add_child(button)
+	modal_body.add_child(row)
+
+
+func _add_distortion_reward_button(hero: CharacterState, reward: Dictionary) -> void:
+	var reward_id := str(reward.get("id", ""))
+	if reward_id.is_empty():
+		return
+	var button := Button.new()
+	button.text = "%s\n%s" % [
+		str(reward.get("name", reward_id)),
+		str(reward.get("description", "")),
+	]
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.custom_minimum_size = Vector2(0.0, 62.0)
+	button.pressed.connect(_choose_distortion_reward.bind(hero.adventure_character_id, reward_id))
+	modal_body.add_child(button)
+
+
+func _choose_distortion_reward(hero_id: String, reward_id: String) -> void:
+	if not session.choose_distortion_reward(hero_id, reward_id):
+		_show_status("畸变奖励已失效或不在本次候选中。")
+	_refresh_curse_zone_modal()
 
 
 func _show_inventory(hero_id: String) -> void:
@@ -575,6 +789,8 @@ func _show_pending_state() -> void:
 		_show_simple_modal("冒险失败", "小队已经覆灭。", "以同一种子重开", session.restart_same_seed)
 	elif session.has_pending_reward():
 		_show_reward_modal()
+	elif session.has_pending_event_reward():
+		_show_event_battle_reward_modal()
 	elif run_state.run_complete:
 		_show_simple_modal("Demo 通关", "第二层首领已被击败，本次冒险完成。", "关闭", _hide_modal)
 	elif run_state.pending_transaction != null and run_state.pending_transaction.transaction_type == AdventureEnums.TransactionType.BATTLE:
@@ -718,10 +934,12 @@ func _show_simple_modal(title: String, body: String, action_text: String, callba
 	modal_body.add_child(button)
 
 
-func _add_action(label: String, callback: Callable, disabled: bool = false) -> void:
+func _add_action(label: String, callback: Callable, disabled: bool = false, tooltip: String = "") -> void:
 	var button := Button.new()
 	button.text = label
 	button.disabled = disabled
+	button.tooltip_text = tooltip
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.custom_minimum_size = Vector2(0.0, 38.0)
 	button.pressed.connect(callback)
 	action_list.add_child(button)
@@ -767,6 +985,14 @@ func _exchange_supply() -> void:
 	session.exchange_camp_supply()
 
 
+func _begin_remains_delivery() -> void:
+	var result := session.begin_adventurer_remains_delivery()
+	if not bool(result.get("ok", false)):
+		_show_status(str(result.get("message", "当前无法交付遗骨。")))
+		return
+	_show_event_battle_reward_modal()
+
+
 func _buy_stock(index: int) -> void:
 	session.buy_shop_entry(index)
 
@@ -803,10 +1029,363 @@ func _ritual_transfer(source_id: String, curse_id: String, target_id: String) ->
 	session.transfer_curse_at_camp(source_id, curse_id, target_id)
 
 
-func _resolve_event(option_id: String) -> void:
-	var hero_id := run_state.party[0].adventure_character_id if not run_state.party.is_empty() else ""
-	var result := session.resolve_current_event(option_id, hero_id)
-	_show_status(str(result.get("message", "")))
+func _begin_event_option(option_id: String) -> void:
+	if option_id == "leave":
+		_resolve_event_selection(option_id, {})
+		return
+	var selection := session.get_event_selection(option_id)
+	match str(selection.get("kind", "none")):
+		"hero":
+			_show_event_hero_choice(option_id, selection)
+		"hero_item":
+			_show_event_hero_item_choice(option_id, selection)
+		"altar":
+			_show_event_altar_choice(option_id, selection)
+		"cards":
+			_show_event_card_choice(option_id, selection)
+		"nature":
+			_show_event_nature_choice(option_id, selection)
+		_:
+			_resolve_event_selection(option_id, {})
+
+
+func _prepare_event_modal(title: String, intro: String) -> void:
+	modal_layer.visible = true
+	modal_title.text = title
+	_clear_children(modal_body)
+	event_altar_controls.clear()
+	event_card_controls.clear()
+	event_nature_controls.clear()
+	var intro_label := Label.new()
+	intro_label.text = intro
+	intro_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	intro_label.add_theme_color_override("font_color", Color("#d7c797"))
+	modal_body.add_child(intro_label)
+	event_modal_feedback = Label.new()
+	event_modal_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	event_modal_feedback.add_theme_color_override("font_color", Color("#d57568"))
+	modal_body.add_child(event_modal_feedback)
+
+
+func _show_event_hero_choice(option_id: String, selection: Dictionary) -> void:
+	_prepare_event_modal(str(selection.get("title", "选择角色")), "选择后会立即锁定并结算该事件分支。")
+	for hero_data in selection.get("heroes", []):
+		if not (hero_data is Dictionary):
+			continue
+		var entry := hero_data as Dictionary
+		var button := Button.new()
+		button.text = "%s · 生命 %d/%d · 负荷 %d/%d" % [str(entry.get("name", "角色")), int(entry.get("health", 0)), int(entry.get("max_health", 0)), int(entry.get("load", 0)), int(entry.get("load_limit", 0))]
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.disabled = not bool(entry.get("available", true)) \
+			or (option_id == "accept_fall" and int(entry.get("curse_capacity", 0)) < 2) \
+			or (option_id == "share" and int(entry.get("curse_capacity", 0)) < 1)
+		button.tooltip_text = "还能获得 %d 个普通业。" % int(entry.get("curse_capacity", 0))
+		button.pressed.connect(_resolve_event_selection.bind(option_id, {"hero_id": str(entry.get("id", ""))}))
+		modal_body.add_child(button)
+	_add_modal_close_button()
+
+
+func _show_event_hero_item_choice(option_id: String, selection: Dictionary) -> void:
+	_prepare_event_modal(str(selection.get("title", "选择物品")), "每个按钮同时确定获得的消耗品与收入背包的角色。")
+	for item_data in selection.get("items", []):
+		if not (item_data is Dictionary):
+			continue
+		var item := item_data as Dictionary
+		var heading := Label.new()
+		heading.text = "%s\n%s" % [str(item.get("name", "消耗品")), str(item.get("description", ""))]
+		heading.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		heading.add_theme_font_size_override("font_size", 17)
+		modal_body.add_child(heading)
+		var row := HBoxContainer.new()
+		for hero_data in selection.get("heroes", []):
+			if not (hero_data is Dictionary):
+				continue
+			var hero := hero_data as Dictionary
+			var button := Button.new()
+			button.text = "交给 %s · 空位 %d" % [str(hero.get("name", "角色")), int(hero.get("inventory_space", 0))]
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.disabled = not bool(hero.get("available", true))
+			button.pressed.connect(_resolve_event_selection.bind(option_id, {"hero_id": str(hero.get("id", "")), "item_path": str(item.get("path", ""))}))
+			row.add_child(button)
+		modal_body.add_child(row)
+	_add_modal_close_button()
+
+
+func _show_event_altar_choice(option_id: String, selection: Dictionary) -> void:
+	_prepare_event_modal(str(selection.get("title", "分配献祭")), "每个 x 恢复 10 点生命并获得 1 个随机普通业。选择 0 不影响其他角色。")
+	for hero_data in selection.get("heroes", []):
+		if not (hero_data is Dictionary):
+			continue
+		var hero := hero_data as Dictionary
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.text = "%s · 生命 %d/%d · 负荷 %d/%d" % [str(hero.get("name", "角色")), int(hero.get("health", 0)), int(hero.get("max_health", 0)), int(hero.get("load", 0)), int(hero.get("load_limit", 0))]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(label)
+		var spin := SpinBox.new()
+		spin.min_value = 0
+		spin.max_value = mini(3, int(hero.get("curse_capacity", 0)))
+		spin.step = 1
+		spin.value = 0
+		spin.suffix = " 个业"
+		spin.custom_minimum_size = Vector2(130.0, 34.0)
+		row.add_child(spin)
+		event_altar_controls[str(hero.get("id", ""))] = spin
+		modal_body.add_child(row)
+	var confirm := Button.new()
+	confirm.text = "确认全队献祭选择"
+	confirm.pressed.connect(_confirm_event_altar.bind(option_id))
+	modal_body.add_child(confirm)
+	_add_modal_close_button()
+
+
+func _confirm_event_altar(option_id: String) -> void:
+	var counts := {}
+	for hero_id in event_altar_controls:
+		var spin := event_altar_controls[hero_id] as SpinBox
+		counts[hero_id] = roundi(spin.value) if spin != null else 0
+	_resolve_event_selection(option_id, {"curse_counts": counts})
+
+
+func _show_event_card_choice(option_id: String, selection: Dictionary) -> void:
+	_prepare_event_modal(str(selection.get("title", "选择牌")), "只能选择同一名角色的 1 至 2 张牌。每移除 1 张，该角色获得 1 个随机普通业。")
+	for hero_data in selection.get("heroes", []):
+		if not (hero_data is Dictionary):
+			continue
+		var hero := hero_data as Dictionary
+		var heading := Label.new()
+		heading.text = "%s · 最多选择 %d 张 · 可承担 %d 个业" % [str(hero.get("name", "角色")), int(hero.get("max_count", 1)), int(hero.get("curse_capacity", 0))]
+		heading.add_theme_font_size_override("font_size", 17)
+		modal_body.add_child(heading)
+		var controls: Array[Dictionary] = []
+		for card_data in hero.get("cards", []):
+			if not (card_data is Dictionary):
+				continue
+			var card := card_data as Dictionary
+			var check := CheckBox.new()
+			check.text = "%s · %s" % [str(card.get("name", "卡牌")), str(card.get("description", ""))]
+			check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			controls.append({"button": check, "stack_id": str(card.get("id", ""))})
+			modal_body.add_child(check)
+		event_card_controls[str(hero.get("id", ""))] = controls
+	var confirm := Button.new()
+	confirm.text = "确认焚毁所选牌"
+	confirm.pressed.connect(_confirm_event_cards.bind(option_id))
+	modal_body.add_child(confirm)
+	_add_modal_close_button()
+
+
+func _confirm_event_cards(option_id: String) -> void:
+	var selected_hero_id := ""
+	var selected_stack_ids: Array[String] = []
+	for hero_id in event_card_controls:
+		var hero_selected: Array[String] = []
+		for control_data in event_card_controls[hero_id]:
+			var button := control_data.get("button") as CheckBox
+			if button != null and button.button_pressed:
+				hero_selected.append(str(control_data.get("stack_id", "")))
+		if hero_selected.is_empty():
+			continue
+		if not selected_hero_id.is_empty():
+			_set_event_feedback("只能选择同一名角色的牌。")
+			return
+		selected_hero_id = str(hero_id)
+		selected_stack_ids = hero_selected
+	if selected_stack_ids.size() < 1 or selected_stack_ids.size() > 2:
+		_set_event_feedback("请选择 1 至 2 张牌。")
+		return
+	_resolve_event_selection(option_id, {"hero_id": selected_hero_id, "stack_ids": selected_stack_ids})
+
+
+func _show_event_nature_choice(option_id: String, selection: Dictionary) -> void:
+	_prepare_event_modal(str(selection.get("title", "大自然的恩惠")), "负荷达到上限者失去 10% 最大生命；请为其选择移除一个业或令一个报成熟 +1。")
+	for hero_data in selection.get("heroes", []):
+		if not (hero_data is Dictionary):
+			continue
+		var hero := hero_data as Dictionary
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.text = str(hero.get("name", "角色"))
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(label)
+		var options := OptionButton.new()
+		for choice_data in hero.get("choices", []):
+			if choice_data is Dictionary:
+				options.add_item(str(choice_data.get("label", "处理诅咒")))
+				options.set_item_metadata(options.item_count - 1, str(choice_data.get("id", "")))
+		if options.item_count == 0:
+			options.add_item("没有可处理的业或报")
+			options.set_item_metadata(0, "")
+			options.disabled = true
+		row.add_child(options)
+		event_nature_controls[str(hero.get("id", ""))] = options
+		modal_body.add_child(row)
+	var confirm := Button.new()
+	confirm.text = "确认接受恩惠"
+	confirm.pressed.connect(_confirm_event_nature.bind(option_id))
+	modal_body.add_child(confirm)
+	_add_modal_close_button()
+
+
+func _confirm_event_nature(option_id: String) -> void:
+	var actions := {}
+	for hero_id in event_nature_controls:
+		var options := event_nature_controls[hero_id] as OptionButton
+		actions[hero_id] = str(options.get_item_metadata(options.selected)) if options != null and options.item_count > 0 else ""
+	_resolve_event_selection(option_id, {"curse_actions": actions})
+
+
+func _resolve_event_selection(option_id: String, selection: Dictionary) -> void:
+	var room := run_state.floor_state.get_current_room()
+	var event_title := str(session.get_event_definition(room).get("title", "事件"))
+	var result := session.resolve_current_event(option_id, selection)
+	if bool(result.get("battle", false)):
+		return
+	if not bool(result.get("ok", false)):
+		_set_event_feedback(str(result.get("message", "当前无法执行该选择。")))
+		return
+	_refresh()
+	if bool(result.get("pending_event_reward", false)):
+		_show_event_battle_reward_modal()
+		return
+	_show_event_result(event_title, str(result.get("message", "事件完成结算。")), bool(result.get("completed", false)))
+
+
+func _show_event_result(event_title: String, message: String, completed: bool) -> void:
+	modal_layer.visible = true
+	modal_title.text = "%s · %s" % [event_title, "结算完成" if completed else "暂缓处理"]
+	_clear_children(modal_body)
+	var label := Label.new()
+	label.text = message
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 17)
+	modal_body.add_child(label)
+	var close_button := Button.new()
+	close_button.text = "返回地图"
+	close_button.pressed.connect(_hide_modal)
+	modal_body.add_child(close_button)
+
+
+func _set_event_feedback(message: String) -> void:
+	if event_modal_feedback != null and is_instance_valid(event_modal_feedback):
+		event_modal_feedback.text = message
+	else:
+		_show_status(message)
+
+
+func _show_event_battle_reward_modal() -> void:
+	var reward := session.get_pending_event_reward()
+	if reward.is_empty():
+		return
+	modal_layer.visible = true
+	modal_title.text = "%s · 奖励选择" % str(reward.get("title", "事件战"))
+	_clear_children(modal_body)
+	var instructions := Label.new()
+	instructions.text = str(reward.get("instructions", "请选择事件奖励。"))
+	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	instructions.add_theme_color_override("font_color", Color("#d7c797"))
+	modal_body.add_child(instructions)
+	event_modal_feedback = Label.new()
+	event_modal_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	event_modal_feedback.add_theme_color_override("font_color", Color("#d57568"))
+	modal_body.add_child(event_modal_feedback)
+	var kind := str(reward.get("kind", ""))
+	if kind == "sealed_reliquary":
+		_add_event_reward_hero_buttons("封印圣匣", "sealed_reliquary", "")
+		return
+	if kind == "arcanist":
+		var load_heading := Label.new()
+		load_heading.text = "方案一 · 本次冒险负荷上限 +2"
+		load_heading.add_theme_font_size_override("font_size", 18)
+		modal_body.add_child(load_heading)
+		_add_event_reward_hero_buttons("负荷上限 +2", "arcanist_load", "")
+		var pendant_heading := Label.new()
+		pendant_heading.text = "方案二 · 获得奥能坠饰（装备后智力 +2）"
+		pendant_heading.add_theme_font_size_override("font_size", 18)
+		modal_body.add_child(pendant_heading)
+		_add_event_reward_hero_buttons("奥能坠饰", "arcanist_pendant", "")
+		return
+	if kind == "remains_curse":
+		_add_event_reward_hero_buttons("承受普通业", "remains_curse", "")
+		return
+	var equipment_entries := reward.get("equipment", []) as Array
+	if not equipment_entries.is_empty():
+		var claimed_equipment := str(reward.get("claimed_equipment", ""))
+		var equipment_heading := Label.new()
+		equipment_heading.text = "下一档装备 · %s" % ("已锁定" if not claimed_equipment.is_empty() else "选择 1 件")
+		equipment_heading.add_theme_font_size_override("font_size", 18)
+		modal_body.add_child(equipment_heading)
+		for equipment_data in equipment_entries:
+			if not (equipment_data is Dictionary):
+				continue
+			var equipment := equipment_data as Dictionary
+			var item_label := Label.new()
+			item_label.text = "%s%s" % [str(equipment.get("name", "装备")), " · 已选择" if claimed_equipment == str(equipment.get("id", "")) else ""]
+			item_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			modal_body.add_child(item_label)
+			if claimed_equipment.is_empty():
+				_add_event_reward_hero_buttons("接收", "equipment", str(equipment.get("id", "")))
+	if kind in ["chaos", "single_card"]:
+		var claimed_cards := reward.get("claimed_cards", {}) as Dictionary
+		for hero in run_state.party:
+			if hero == null:
+				continue
+			var heading := Label.new()
+			heading.text = "%s · 职业牌%s" % [hero.get_character_name(), " · 已锁定" if claimed_cards.has(hero.adventure_character_id) else ""]
+			heading.add_theme_font_size_override("font_size", 18)
+			modal_body.add_child(heading)
+			for card_data in reward.get("cards", []):
+				if not (card_data is Dictionary) or str(card_data.get("hero_id", "")) != hero.adventure_character_id:
+					continue
+				var card := card_data as Dictionary
+				var button := Button.new()
+				button.text = "[%s] %s · %d AP\n%s" % [CardEnums.rarity_label(int(card.get("rarity", CardEnums.Rarity.RARE))), str(card.get("name", "卡牌")), int(card.get("ap", 0)), str(card.get("description", ""))]
+				button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				button.disabled = claimed_cards.has(hero.adventure_character_id)
+				button.pressed.connect(_claim_event_battle_reward.bind("card", hero.adventure_character_id, str(card.get("id", ""))))
+				modal_body.add_child(button)
+	var finish := Button.new()
+	finish.text = "确认所选奖励%s" % ("并立即进入战斗" if bool(reward.get("starts_battle", false)) else "")
+	finish.pressed.connect(_settle_event_battle_reward)
+	modal_body.add_child(finish)
+
+
+func _add_event_reward_hero_buttons(prefix: String, action_id: String, candidate_id: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	for hero in run_state.party:
+		if hero == null:
+			continue
+		var button := Button.new()
+		button.text = "%s：%s\n背包 %d/%d · 负荷 %d/%d" % [prefix, hero.get_character_name(), hero.get_inventory_item_count(), CharacterState.INVENTORY_LIMIT, hero.get_curse_load(), hero.get_curse_load_limit()]
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.disabled = action_id in ["sealed_reliquary", "arcanist_pendant", "equipment"] and hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT
+		button.pressed.connect(_claim_event_battle_reward.bind(action_id, hero.adventure_character_id, candidate_id))
+		row.add_child(button)
+	modal_body.add_child(row)
+
+
+func _claim_event_battle_reward(action_id: String, hero_id: String, candidate_id: String) -> void:
+	var result := session.claim_pending_event_reward(action_id, hero_id, candidate_id)
+	if not bool(result.get("ok", false)):
+		_set_event_feedback(str(result.get("message", "无法领取该奖励。")))
+		return
+	_refresh()
+	if session.has_pending_event_reward():
+		_show_event_battle_reward_modal()
+	else:
+		_show_event_result("事件战", str(result.get("message", "奖励结算完成。")), true)
+
+
+func _settle_event_battle_reward() -> void:
+	var result := session.settle_pending_event_reward()
+	if not bool(result.get("ok", false)):
+		_set_event_feedback(str(result.get("message", "奖励尚未选择完整。")))
+		return
+	if bool(result.get("battle", false)):
+		return
+	_hide_modal()
 	_refresh()
 
 

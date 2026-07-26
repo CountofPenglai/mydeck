@@ -8,7 +8,8 @@ kind = 9
 [resource]
 script = ExtResource("1")
 card_name = "觅血口器"
-description = "吸血武器打击。显化：每回合首次造成生命伤害后回复2生命。"
+reward_eligible = false
+description = "吸血武器打击。\n畸变~觅血"
 artwork = ExtResource("3")
 rarity = 1
 card_type = 0
@@ -16,4 +17,5 @@ card_tags = 1
 damage_type = 3
 target_type = 1
 ap_cost = 2
+mutation_fields = PackedStringArray("bloodseeking")
 effect = SubResource("Effect")

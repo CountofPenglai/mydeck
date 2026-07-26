@@ -8,6 +8,7 @@ kind = 7
 [resource]
 script = ExtResource("1")
 card_name = "空目择食"
+reward_eligible = false
 description = "查看牌库顶3张，选择1张加入手牌，其余置于牌库底。"
 artwork = ExtResource("3")
 target_type = 0

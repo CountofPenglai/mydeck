@@ -9,7 +9,7 @@ script = ExtResource("1_card_data")
 card_name = "根系洞察"
 description = "正位：抽 2 张牌。若能支付共鸣，获得 1 点本回合临时法力。"
 artwork = ExtResource("2_scroll")
-rarity = 0
+rarity = 4
 card_class = 4
 card_type = 1
 target_type = 0
@@ -21,4 +21,3 @@ inverted_description = "逆位：抽 1 张牌，获得 1 点本回合临时法�
 inverted_ap_cost = 1
 inverted_target_type = 0
 resonance_cost = 1
-

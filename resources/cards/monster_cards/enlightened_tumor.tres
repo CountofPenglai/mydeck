@@ -8,9 +8,11 @@ kind = 12
 [resource]
 script = ExtResource("1")
 card_name = "启明之瘤"
-description = "从牌库显化另一张畸变牌。"
+reward_eligible = false
+description = "从牌库显化另一张畸变牌。\n畸变~启明"
 artwork = ExtResource("3")
 rarity = 1
 target_type = 0
 ap_cost = 1
+mutation_fields = PackedStringArray("enlightenment")
 effect = SubResource("Effect")

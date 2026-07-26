@@ -32,6 +32,9 @@ class_name CharacterState
 @export var curse_load_limit_bonus: int = 0
 @export var sealed_curse_id: String = ""
 @export var distortion_progress: int = 0
+@export var selected_distortion_fields: PackedStringArray = []
+@export var claimed_distortion_milestones: PackedInt32Array = []
+@export_range(0, 4, 1) var distortion_grace_count: int = 0
 @export var persistent_max_health_modifier: int = 0
 @export var adventure_damage_bonus: int = 0
 @export_group("Attribute Bonuses")
@@ -683,6 +686,9 @@ func create_industry_cards() -> Array[CardData]:
 
 func get_curse_load_limit() -> int:
 	var result := maxi(0, base_curse_load_limit + curse_load_limit_bonus)
+	for equipment in get_equipped_items():
+		if equipment != null:
+			result += equipment.curse_load_limit_bonus
 	var universal_love := get_curse("universal_love")
 	if universal_love != null and universal_love.state == CurseInstance.State.FRUIT and not universal_love.sealed:
 		result += 2 * universal_love.depth
@@ -702,16 +708,67 @@ func is_curse_overloaded() -> bool:
 
 
 func get_next_distortion_threshold() -> int:
-	var milestones: Array[int] = [2, 5, 8, 11]
-	var threshold: int = milestones.back() + 3
-	for milestone in milestones:
-		if distortion_progress < milestone:
-			threshold = milestone
-			break
+	var milestone_index := get_next_unclaimed_distortion_milestone()
+	if milestone_index < 0:
+		return int(DistortionCatalog.MILESTONES[DistortionCatalog.MILESTONES.size() - 1]) + 3
+	return get_effective_distortion_threshold(milestone_index)
+
+
+func get_next_unclaimed_distortion_milestone() -> int:
+	for milestone_index in range(DistortionCatalog.MILESTONES.size()):
+		if not claimed_distortion_milestones.has(milestone_index):
+			return milestone_index
+	return -1
+
+
+func get_effective_distortion_threshold(milestone_index: int) -> int:
+	if milestone_index < 0 or milestone_index >= DistortionCatalog.MILESTONES.size():
+		return -1
+	var threshold := int(DistortionCatalog.MILESTONES[milestone_index])
+	if milestone_index != get_next_unclaimed_distortion_milestone():
+		return threshold
 	var counterfeit := get_curse("counterfeit")
 	if counterfeit != null and counterfeit.state == CurseInstance.State.REPORT and not counterfeit.sealed:
 		threshold += counterfeit.depth
 	return threshold
+
+
+func get_pending_distortion_milestone() -> int:
+	var milestone_index := get_next_unclaimed_distortion_milestone()
+	if milestone_index < 0:
+		return -1
+	return milestone_index if distortion_progress >= get_effective_distortion_threshold(milestone_index) else -1
+
+
+func has_pending_distortion_reward() -> bool:
+	return get_pending_distortion_milestone() >= 0
+
+
+func apply_distortion_reward(reward_id: String) -> bool:
+	var milestone_index := get_pending_distortion_milestone()
+	if milestone_index < 0:
+		return false
+	if reward_id == DistortionCatalog.GRACE_ID:
+		if distortion_grace_count >= DistortionCatalog.MILESTONES.size():
+			return false
+		var previous_max_health := get_max_health()
+		strength_bonus += 1
+		agility_bonus += 1
+		intelligence_bonus += 1
+		distortion_grace_count += 1
+		current_health += maxi(0, get_max_health() - previous_max_health)
+	else:
+		var available_for_tier := (
+			milestone_index < 2 and reward_id in DistortionCatalog.LOW_FIELDS
+		) or (
+			milestone_index >= 2 and reward_id in DistortionCatalog.HIGH_FIELDS
+		)
+		if selected_distortion_fields.has(reward_id) or not available_for_tier:
+			return false
+		selected_distortion_fields.append(reward_id)
+	claimed_distortion_milestones.append(milestone_index)
+	_normalize_distortion_state()
+	return true
 
 
 func seal_curse(curse: CurseInstance, run_state: PartyRunState, resolves_overload: bool = false) -> bool:
@@ -774,6 +831,9 @@ func commit_curse_state_to(target: CharacterState) -> void:
 	target.curse_load_limit_bonus = curse_load_limit_bonus
 	target.sealed_curse_id = sealed_curse_id
 	target.distortion_progress = distortion_progress
+	target.selected_distortion_fields = selected_distortion_fields.duplicate()
+	target.claimed_distortion_milestones = claimed_distortion_milestones.duplicate()
+	target.distortion_grace_count = distortion_grace_count
 	target.persistent_max_health_modifier = persistent_max_health_modifier
 	target.adventure_damage_bonus = adventure_damage_bonus
 
@@ -800,3 +860,21 @@ func _normalize_curses() -> void:
 			sealed_curse_id = ""
 		else:
 			sealed.sealed = true
+	_normalize_distortion_state()
+
+
+func _normalize_distortion_state() -> void:
+	var normalized_fields := PackedStringArray()
+	for field_id in selected_distortion_fields:
+		if (field_id in DistortionCatalog.LOW_FIELDS or field_id in DistortionCatalog.HIGH_FIELDS) \
+			and not normalized_fields.has(field_id):
+			normalized_fields.append(field_id)
+	selected_distortion_fields = normalized_fields
+	var normalized_milestones := PackedInt32Array()
+	for milestone_index in claimed_distortion_milestones:
+		if milestone_index >= 0 and milestone_index < DistortionCatalog.MILESTONES.size() \
+			and not normalized_milestones.has(milestone_index):
+			normalized_milestones.append(milestone_index)
+	normalized_milestones.sort()
+	claimed_distortion_milestones = normalized_milestones
+	distortion_grace_count = clampi(distortion_grace_count, 0, DistortionCatalog.MILESTONES.size())

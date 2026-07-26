@@ -8,7 +8,8 @@ kind = 8
 [resource]
 script = ExtResource("1")
 card_name = "鞭笞触腕"
-description = "范围1武器打击并施加眩晕2。显化：武器范围+1。"
+reward_eligible = false
+description = "范围1武器打击并施加眩晕2。\n畸变~鞭笞"
 artwork = ExtResource("3")
 rarity = 1
 card_type = 0
@@ -18,4 +19,5 @@ target_type = 1
 ap_cost = 2
 override_range = true
 card_range = 1
+mutation_fields = PackedStringArray("lashing")
 effect = SubResource("Effect")

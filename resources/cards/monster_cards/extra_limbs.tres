@@ -8,7 +8,8 @@ kind = 10
 [resource]
 script = ExtResource("1")
 card_name = "增生附肢"
-description = "对合法敌方均匀分配三段基础伤害1的攻击。显化：每回合首次武器打击追加一段。"
+reward_eligible = false
+description = "对合法敌方均匀分配三段基础伤害1的攻击。\n畸变~附肢"
 artwork = ExtResource("3")
 rarity = 1
 card_type = 0
@@ -16,4 +17,5 @@ card_tags = 1
 damage_type = 3
 target_type = 5
 ap_cost = 2
+mutation_fields = PackedStringArray("appendage")
 effect = SubResource("Effect")

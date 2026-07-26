@@ -70,6 +70,9 @@ var _curse_choice_list: VBoxContainer
 var _curse_choice_card: CardData
 var _curse_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _curse_choice_extra_context: Dictionary = {}
+var _manifest_popup: PopupPanel
+var _manifest_list: VBoxContainer
+var _manifest_selected: Array[CardData] = []
 var _pending_curse: CurseInstance
 var _pending_curse_action_id: String = ""
 var _adventure_result: BattleResult
@@ -127,6 +130,7 @@ func _ready() -> void:
 	_create_ranger_blend_popup()
 	_create_curse_popup()
 	_create_curse_choice_popup()
+	_create_manifest_popup()
 	_create_return_to_map_button()
 	var startup_scenario := scenario
 	var adventure_session := get_node_or_null("/root/AdventureSession")
@@ -725,7 +729,10 @@ func _refresh() -> void:
 
 	var actions_locked := _actions_locked()
 	start_button.disabled = actions_locked or controller.phase != BattleController.Phase.DEPLOYMENT or not controller.can_start_battle()
-	var is_player_turn := not actions_locked and controller.phase == BattleController.Phase.BATTLE and controller.current_unit != null and controller.current_unit.faction == BattleUnitState.Faction.PLAYER
+	var is_player_turn := not actions_locked and controller.phase == BattleController.Phase.BATTLE \
+			and controller.turn_flow_state == BattleController.TurnFlowState.ACTIVE \
+			and controller.current_unit != null \
+			and controller.current_unit.faction == BattleUnitState.Faction.PLAYER
 	move_button.disabled = not is_player_turn
 	attack_button.disabled = not is_player_turn
 	deck_button.disabled = not is_player_turn
@@ -739,6 +746,7 @@ func _refresh() -> void:
 	_refresh_discard_popup()
 	_refresh_curse_button()
 	_refresh_curse_popup()
+	_refresh_manifest_popup()
 	if inspected_enemy != null and inspected_enemy.is_alive():
 		enemy_inspect_panel.bind_unit(inspected_enemy)
 	else:
@@ -950,7 +958,12 @@ func _refresh_curse_button() -> void:
 	var load_text := "-"
 	if unit.character_state != null:
 		load_text = "%d/%d" % [unit.character_state.get_curse_load(), unit.character_state.get_curse_load_limit()]
-	curse_button.text = "诅咒区 %d · 负荷 %s · 咒波 %d" % [_get_display_curses(unit).size(), load_text, unit.curse_wave]
+	curse_button.text = "诅咒 %d · 畸变 %d · 负荷 %s · 咒波 %d" % [
+		_get_display_curses(unit).size(),
+		unit.get_active_distortion_fields().size(),
+		load_text,
+		unit.curse_wave,
+	]
 
 
 func _refresh_discard_popup() -> void:
@@ -1876,6 +1889,78 @@ func _create_curse_popup() -> void:
 	scroll.add_child(_curse_list)
 
 
+func _create_manifest_popup() -> void:
+	_manifest_popup = PopupPanel.new()
+	_manifest_popup.title = "选择显化牌"
+	_manifest_popup.exclusive = true
+	add_child(_manifest_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	_manifest_popup.add_child(margin)
+	_manifest_list = VBoxContainer.new()
+	_manifest_list.custom_minimum_size = Vector2(480, 260)
+	_manifest_list.add_theme_constant_override("separation", 8)
+	margin.add_child(_manifest_list)
+
+
+func _refresh_manifest_popup() -> void:
+	if _manifest_popup == null or _manifest_list == null:
+		return
+	var unit := controller.current_unit
+	var waiting := controller.phase == BattleController.Phase.BATTLE \
+			and controller.turn_flow_state == BattleController.TurnFlowState.MANIFEST_PENDING \
+			and unit != null and unit.faction == BattleUnitState.Faction.PLAYER
+	if not waiting:
+		_manifest_selected.clear()
+		_manifest_popup.hide()
+		return
+	var eligible := unit.get_manifestable_hand_cards()
+	for selected in _manifest_selected.duplicate():
+		if not eligible.has(selected):
+			_manifest_selected.erase(selected)
+	_clear_children(_manifest_list)
+	var title := Label.new()
+	title.text = "%s · 显化 0–2 张" % unit.get_display_name()
+	title.add_theme_font_size_override("font_size", 18)
+	_manifest_list.add_child(title)
+	for card in eligible:
+		var toggle := CheckBox.new()
+		toggle.text = "%s · %s" % [card.card_name, card.get_mutation_label()]
+		toggle.tooltip_text = card.description
+		toggle.button_pressed = _manifest_selected.has(card)
+		toggle.disabled = _manifest_selected.size() >= 2 and not toggle.button_pressed
+		toggle.toggled.connect(_on_manifest_card_toggled.bind(card))
+		_manifest_list.add_child(toggle)
+	var confirm := Button.new()
+	confirm.text = "确认显化" if not _manifest_selected.is_empty() else "跳过显化"
+	confirm.pressed.connect(_confirm_manifest_selection)
+	_manifest_list.add_child(confirm)
+	if not _manifest_popup.visible:
+		_manifest_popup.popup_centered()
+
+
+func _on_manifest_card_toggled(enabled: bool, card: CardData) -> void:
+	if enabled:
+		if not _manifest_selected.has(card) and _manifest_selected.size() < 2:
+			_manifest_selected.append(card)
+	else:
+		_manifest_selected.erase(card)
+	_refresh_manifest_popup()
+
+
+func _confirm_manifest_selection() -> void:
+	var unit := controller.current_unit
+	var selected: Array[CardData] = []
+	selected.assign(_manifest_selected)
+	if controller.submit_manifestation_selection(unit, selected):
+		_manifest_selected.clear()
+		_manifest_popup.hide()
+		_refresh()
+
+
 func _show_curse_popup() -> void:
 	_refresh_curse_popup(true)
 	_curse_popup.popup_centered()
@@ -1889,7 +1974,8 @@ func _refresh_curse_popup(force: bool = false) -> void:
 		if unit == null:
 			continue
 		var display_curses := _get_display_curses(unit)
-		if display_curses.is_empty() and unit.curse_wave <= 0:
+		var distortion_fields := unit.get_active_distortion_fields()
+		if display_curses.is_empty() and unit.curse_wave <= 0 and distortion_fields.is_empty():
 			continue
 		var heading := Label.new()
 		var load_text := ""
@@ -1902,6 +1988,19 @@ func _refresh_curse_popup(force: bool = false) -> void:
 			var empty := Label.new()
 			empty.text = "无常驻诅咒"
 			_curse_list.add_child(empty)
+		if not distortion_fields.is_empty():
+			var mutation_summary := Label.new()
+			mutation_summary.text = "畸变：%s" % unit.get_active_distortion_summary()
+			mutation_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			mutation_summary.add_theme_color_override("font_color", Color("#d9a96e"))
+			_curse_list.add_child(mutation_summary)
+			for card in unit.distortion_state.manifested_cards:
+				if card == null:
+					continue
+				var source_label := Label.new()
+				source_label.text = "显化牌 · %s · %s" % [card.card_name, card.get_mutation_label()]
+				source_label.modulate = Color(0.78, 0.72, 0.66)
+				_curse_list.add_child(source_label)
 		for curse in display_curses:
 			if curse == null:
 				continue
@@ -1926,9 +2025,28 @@ func _refresh_curse_popup(force: bool = false) -> void:
 				var action_id := str(action.get("id", ""))
 				var button := Button.new()
 				button.text = str(action.get("label", "诅咒行动"))
-				button.disabled = _actions_locked()
+				button.disabled = controller.turn_flow_state != BattleController.TurnFlowState.ACTIVE or _actions_locked()
 				button.pressed.connect(_on_curse_action_pressed.bind(curse, action_id, str(action.get("selection", "none"))))
 				_curse_list.add_child(button)
+		var distortion_actions := controller.current_unit.get_distortion_actions()
+		if not distortion_actions.is_empty():
+			var distortion_title := Label.new()
+			distortion_title.text = "畸变行动"
+			distortion_title.add_theme_font_size_override("font_size", 16)
+			_curse_list.add_child(distortion_title)
+			for action in distortion_actions:
+				var distortion_button := Button.new()
+				distortion_button.text = str(action.get("label", "畸变行动"))
+				distortion_button.disabled = controller.turn_flow_state != BattleController.TurnFlowState.ACTIVE or _actions_locked()
+				distortion_button.pressed.connect(_on_distortion_action_pressed.bind(str(action.get("id", ""))))
+				_curse_list.add_child(distortion_button)
+
+
+func _on_distortion_action_pressed(action_id: String) -> void:
+	var unit := controller.current_unit
+	if unit != null and controller.turn_flow_state == BattleController.TurnFlowState.ACTIVE:
+		unit.activate_distortion_action(action_id)
+	_refresh_curse_popup(true)
 
 
 func _get_display_curses(unit: BattleUnitState) -> Array[CurseInstance]:

@@ -8,11 +8,13 @@ kind = 13
 [resource]
 script = ExtResource("1")
 card_name = "披夜薄膜"
-description = "解放全部显化牌，对范围1目标造成显化数量×2的固定生命损失。"
+reward_eligible = false
+description = "解放全部显化牌，对范围1目标造成显化数量×2的固定生命损失。\n畸变~披夜"
 artwork = ExtResource("3")
 rarity = 1
 target_type = 1
 ap_cost = 1
 override_range = true
 card_range = 1
+mutation_fields = PackedStringArray("night_veil")
 effect = SubResource("Effect")

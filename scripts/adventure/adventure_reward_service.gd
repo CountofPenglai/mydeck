@@ -46,7 +46,9 @@ func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array
 	_ensure_catalog()
 	var existing = room.runtime_data.get("shop_stock", [])
 	if existing is Array and not existing.is_empty():
-		return (existing as Array).duplicate(true)
+		var sanitized := _sanitize_shop_stock(existing as Array)
+		room.runtime_data["shop_stock"] = sanitized.duplicate(true)
+		return sanitized
 	var rng := RandomNumberGenerator.new()
 	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "shop", room.room_id.hash() + run_state.floor_index * 1000)
 	var stock: Array[Dictionary] = []
@@ -69,9 +71,34 @@ func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array
 	return stock
 
 
-func create_card_stack(card_path: String, stack_id: String) -> CardStack:
+func get_wilderness_merchant_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array[Dictionary]:
+	_ensure_catalog()
+	var existing = room.runtime_data.get("shop_stock", [])
+	if existing is Array and not existing.is_empty():
+		var sanitized := _sanitize_shop_stock(existing as Array)
+		room.runtime_data["shop_stock"] = sanitized.duplicate(true)
+		return sanitized
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "wilderness_merchant", room.room_id.hash() + run_state.floor_index * 1000)
+	var stock: Array[Dictionary] = []
+	var consumables: Array[ConsumableData] = _consumable_pool.duplicate()
+	_shuffle(consumables, rng)
+	if not consumables.is_empty():
+		for index in range(3):
+			var consumable: ConsumableData = consumables[index % consumables.size()]
+			stock.append(_stock_entry("consumable", consumable.resource_path, consumable.item_name, 12))
+	for equipment in _pick_equipment(run_state, rng, 2):
+		stock.append(_stock_entry("equipment", equipment.resource_path, equipment.item_name, _equipment_price(equipment.rarity)))
+	stock.append(_stock_entry("camp_supply", "", "扎营物资", 15))
+	room.runtime_data["shop_stock"] = stock.duplicate(true)
+	return stock
+
+
+func create_card_stack(card_path: String, stack_id: String, card_class: int = -1) -> CardStack:
 	var card := load(card_path) as CardData
-	if card == null:
+	if card == null or not card.can_appear_in_rewards():
+		return null
+	if card_class >= 0 and not card.is_available_to_class(card_class):
 		return null
 	var stack := CardStack.new()
 	stack.card_data = card
@@ -104,7 +131,7 @@ func get_random_card(card_class: int, rarity: int, run_seed: int, salt: int) -> 
 	_ensure_catalog()
 	var candidates: Array[CardData] = []
 	for card in _card_pool:
-		if card.rarity == rarity and card.is_available_to_class(card_class):
+		if card.can_appear_in_rewards() and card.rarity == rarity and card.is_available_to_class(card_class):
 			candidates.append(card)
 	if candidates.is_empty():
 		candidates = _cards_for_class(card_class)
@@ -113,6 +140,51 @@ func get_random_card(card_class: int, rarity: int, run_seed: int, salt: int) -> 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = AdventureMapGenerator.derive_seed(run_seed, "event_card", salt)
 	return candidates[rng.randi_range(0, candidates.size() - 1)]
+
+
+func get_consumable_candidates(run_seed: int, salt: int, count: int = 3) -> Array[Dictionary]:
+	_ensure_catalog()
+	var candidates: Array[ConsumableData] = _consumable_pool.duplicate()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_seed, "event_consumables", salt)
+	_shuffle(candidates, rng)
+	var result: Array[Dictionary] = []
+	for index in range(mini(maxi(0, count), candidates.size())):
+		var item: ConsumableData = candidates[index]
+		result.append({"id": "consumable_%02d" % index, "path": item.resource_path, "name": item.item_name, "description": item.description})
+	return result
+
+
+func get_card_candidates(card_class: int, rarity: int, run_seed: int, salt: int, count: int = 3) -> Array[Dictionary]:
+	_ensure_catalog()
+	var candidates: Array[CardData] = []
+	for card in _card_pool:
+		if card.can_appear_in_rewards() and card.rarity == rarity and card.is_available_to_class(card_class):
+			candidates.append(card)
+	if candidates.is_empty():
+		candidates = _cards_for_class(card_class)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_seed, "event_cards", salt)
+	_shuffle(candidates, rng)
+	var result: Array[Dictionary] = []
+	for index in range(mini(maxi(0, count), candidates.size())):
+		var card: CardData = candidates[index]
+		result.append({
+			"id": "card_%02d" % index,
+			"path": card.resource_path,
+			"name": card.card_name,
+			"description": card.description,
+			"ap": card.ap_cost,
+			"rarity": card.rarity,
+		})
+	return result
+
+
+func get_equipment_candidates(run_state: PartyRunState, salt: int, count: int = 3, floor_override: int = -1) -> Array[Dictionary]:
+	_ensure_catalog()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "event_equipment", salt)
+	return _equipment_candidates(run_state, rng, count, floor_override)
 
 
 func _add_normal_card_candidates(reward: Dictionary, party: Array[CharacterState], tier: int, rng: RandomNumberGenerator) -> void:
@@ -140,7 +212,7 @@ func _add_card_candidate(reward: Dictionary, hero: CharacterState, rarity: int, 
 		return
 	var candidates: Array[CardData] = []
 	for card in _card_pool:
-		if card.rarity == rarity and card.is_available_to_class(hero.character_data.character_class):
+		if card.can_appear_in_rewards() and card.rarity == rarity and card.is_available_to_class(hero.character_data.character_class):
 			candidates.append(card)
 	if candidates.is_empty():
 		candidates = _cards_for_class(hero.character_data.character_class)
@@ -190,7 +262,7 @@ func _pick_equipment(run_state: PartyRunState, rng: RandomNumberGenerator, count
 func _cards_for_class(card_class: int) -> Array[CardData]:
 	var result: Array[CardData] = []
 	for card in _card_pool:
-		if card.is_available_to_class(card_class):
+		if card.can_appear_in_rewards() and card.is_available_to_class(card_class):
 			result.append(card)
 	return result
 
@@ -208,6 +280,20 @@ func _roll_normal_rarity(tier: int, rng: RandomNumberGenerator) -> int:
 
 func _stock_entry(kind: String, path: String, name: String, price: int, hero_id: String = "") -> Dictionary:
 	return {"kind": kind, "path": path, "name": name, "price": price, "hero_id": hero_id, "sold": false}
+
+
+func _sanitize_shop_stock(stock: Array) -> Array[Dictionary]:
+	var sanitized: Array[Dictionary] = []
+	for entry_data in stock:
+		if not (entry_data is Dictionary):
+			continue
+		var entry := entry_data as Dictionary
+		if str(entry.get("kind", "")) == "card":
+			var card := load(str(entry.get("path", ""))) as CardData
+			if card == null or not card.can_appear_in_rewards():
+				continue
+		sanitized.append(entry.duplicate(true))
+	return sanitized
 
 
 func _card_price(rarity: int) -> int:
@@ -237,14 +323,18 @@ func _ensure_catalog() -> void:
 		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
 			continue
 		var resource := load("res://resources/cards/%s" % file_name)
-		if resource is CardData and not (resource as CardData).is_curse_card():
-			_card_pool.append(resource as CardData)
+		if resource is CardData:
+			var card := resource as CardData
+			if card.can_appear_in_rewards():
+				_card_pool.append(card)
 	for file_name in DirAccess.get_files_at("res://resources/items"):
 		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
 			continue
 		var resource := load("res://resources/items/%s" % file_name)
 		if resource is EquipmentData:
-			_equipment_pool.append(resource as EquipmentData)
+			var equipment := resource as EquipmentData
+			if not equipment.has_tag("事件"):
+				_equipment_pool.append(equipment)
 		elif resource is ConsumableData:
 			_consumable_pool.append(resource as ConsumableData)
 

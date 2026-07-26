@@ -5,6 +5,9 @@ class_name EnemyIntentPlan
 @export var steps: Array[Dictionary] = []
 @export var attack_total: int = 0
 @export var defense_total: int = 0
+@export var planned_manifest_card_ids: PackedInt64Array = []
+@export var planned_manifest_fields: PackedStringArray = []
+@export var expected_decay_life: int = 0
 
 
 func clear() -> void:
@@ -12,6 +15,9 @@ func clear() -> void:
 	steps.clear()
 	attack_total = 0
 	defense_total = 0
+	planned_manifest_card_ids.clear()
+	planned_manifest_fields.clear()
+	expected_decay_life = 0
 
 
 func is_empty() -> bool:
@@ -30,5 +36,8 @@ func get_summary() -> String:
 		parts.append("攻 %d" % attack_total)
 	if defense_total > 0:
 		parts.append("防 %d" % defense_total)
+	if not planned_manifest_fields.is_empty():
+		parts.append("显化 %s" % "、".join(planned_manifest_fields))
+	if expected_decay_life > 0:
+		parts.append("衰退 -%d生命" % expected_decay_life)
 	return " / ".join(parts) if not parts.is_empty() else "无伤害预告"
-
