@@ -43,7 +43,9 @@ func _execute_step(controller: BattleController, unit: BattleUnitState, step: Di
 		"move":
 			return controller.move_unit_to_cell(unit, step.get("cell", BattleHexGrid.INVALID_CELL))
 		"switch":
-			return ChapterOneEnemyRules.switch_champion_weapon(controller, unit, _find_unit(controller, int(step.get("target_id", -1))))
+			return EnemyRuleDispatcher.execute_intent_step(controller, unit, step)
+		"chapter_two_special":
+			return EnemyRuleDispatcher.execute_intent_step(controller, unit, step)
 	return false
 
 

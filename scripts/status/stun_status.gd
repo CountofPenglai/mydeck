@@ -3,6 +3,7 @@ class_name StunStatus
 
 func _init() -> void:
 	status_id = "stun"
+	is_corruptible_counter = true
 	display_name = "眩晕"
 
 

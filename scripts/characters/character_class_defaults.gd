@@ -6,13 +6,13 @@ static func get_resource_pools(character_class: int) -> Array[ResourcePoolData]:
 		CardEnums.CardClass.WARRIOR:
 			return [_pool("势", 5, 1)]
 		CardEnums.CardClass.MAGE:
-			return [_pool("火焰法力", 3, 1), _pool("冰霜法力", 3, 1), _pool("奥术法力", 3, 1)]
+			return []
 		CardEnums.CardClass.RANGER:
 			return [_pool("专注", 5, 2)]
 		CardEnums.CardClass.DRUID:
 			return []
 		CardEnums.CardClass.WARLOCK:
-			return [_pool("灵魂碎片", 5, 1)]
+			return []
 		_:
 			return []
 

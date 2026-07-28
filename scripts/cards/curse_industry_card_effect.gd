@@ -3,6 +3,7 @@ class_name CurseIndustryCardEffect
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 const DISEASE_CARD := preload("res://resources/cards/curse_disease.tres")
+const TEMPORARY_JINX := preload("res://resources/cards/monster_cards/temporary_jinx.tres")
 
 @export var curse_id: String = ""
 
@@ -28,6 +29,8 @@ func can_pay_play_cost(context: Dictionary = {}) -> bool:
 	match curse_id:
 		"blood":
 			return user.get_current_health() > 3 + 2 * _depth(card)
+		"gospel":
+			return user.get_current_health() > 3 * _depth(card)
 		"counterfeit", "preservation":
 			return context.get("selected_curse") is CurseInstance or not get_curse_choice_options(context).is_empty()
 		_:
@@ -44,6 +47,8 @@ func pay_play_cost(context: Dictionary = {}) -> bool:
 	match curse_id:
 		"blood":
 			return controller.lose_life(user, user, 3 + 2 * depth, "鲜血之业代价", {"curse_source": true}) > 0
+		"gospel":
+			return controller.lose_life(user, user, 3 * depth, "福音之业代价", {"curse_source": true}) > 0
 		"disease":
 			controller.lose_life(user, user, user.hand.size(), "痼病之业代价", {"curse_source": true})
 		"passing", "universal_love":
@@ -181,6 +186,8 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			_play_offspring(user, depth, controller, targets)
 		"preservation":
 			_play_preservation(user, depth, controller, targets, context)
+		"gospel":
+			_play_gospel(user, depth, controller, card)
 		"unbound":
 			controller.activate_unbound_industry(user, depth)
 
@@ -190,6 +197,31 @@ func _play_blood(user: BattleUnitState, depth: int, controller: BattleController
 		var actual := controller.apply_damage(user, target, 8 + 4 * depth, "鲜血之业", {"source_card": context.get("card"), "fixed_damage": true})
 		if actual > 0:
 			controller.heal_unit(user, user, actual, "鲜血之业吸血")
+
+
+func _play_gospel(user: BattleUnitState, depth: int, controller: BattleController, card: CardData) -> void:
+	var jinx_template := TEMPORARY_JINX as CardData
+	for target in controller.units:
+		if target == null or target == user or not target.is_alive() or user.cell_distance_to(target) > 3:
+			continue
+		var damage := 4 + 2 * depth + user.get_damage_bonus({
+			"controller": controller,
+			"card": card,
+			"target": target,
+			"resolved_damage_type": CardEnums.DamageType.INTELLIGENCE,
+		})
+		var dealt := controller.apply_damage(user, target, damage, "福音之业", {
+			"source_card": card,
+			"resolved_damage_type": CardEnums.DamageType.INTELLIGENCE,
+		})
+		if dealt <= 0:
+			continue
+		target.gain_curse_wave(depth, {"controller": controller, "reason": "gospel_industry"})
+		if jinx_template != null:
+			var jinx := jinx_template.duplicate(true) as CardData
+			target.draw_pile.append(jinx)
+			target.mark_temporary_card(jinx, 0, false, false)
+			target.shuffle_draw_pile(controller.rng)
 
 
 func _play_greed(user: BattleUnitState, _depth: int, _controller: BattleController, context: Dictionary) -> void:

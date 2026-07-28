@@ -144,7 +144,7 @@ func get_intelligence() -> int:
 	if enemy_data == null:
 		return 0
 
-	return enemy_data.base_intelligence + intelligence_bonus
+	return int(runtime_state.get("intelligence_override", enemy_data.base_intelligence)) + intelligence_bonus
 
 
 func get_battle_token_radius() -> float:

@@ -1,7 +1,6 @@
 extends RefCounted
 class_name ChapterOneEnemyRules
 
-const ABYSS_SURCHARGE := preload("res://scripts/status/abyss_card_surcharge_status.gd")
 
 
 static func on_battle_started(controller: BattleController) -> void:
@@ -78,10 +77,7 @@ static func on_armor_changed(controller: BattleController, unit: BattleUnitState
 	unit.enemy_state.runtime_state["abyss_phase"] = 2
 	unit.enemy_state.active_weapon_index = 1
 	for cell in controller.map_data.get_all_cells():
-		controller.surface_state.set_base_element(cell, BattleSurfaceState.Element.WATER)
-	for player in controller.player_units:
-		if player.get_status("abyss_card_surcharge") == null:
-			player.add_status(ABYSS_SURCHARGE.new() as StatusEffect)
+		controller.surface_state.set_terrain(cell, BattleSurfaceState.Terrain.ABYSS)
 	controller._emit_log("渊鳞击穿共有护甲，战场坠入深渊。")
 	controller.state_changed.emit()
 
@@ -179,7 +175,7 @@ static func _is_on_water(controller: BattleController, unit: BattleUnitState) ->
 
 
 static func _cell_has_water(controller: BattleController, cell: Vector2i) -> bool:
-	return controller.surface_state.get_component_elements(controller.surface_state.get_element(cell)).has(BattleSurfaceState.Element.WATER)
+	return controller.surface_state.get_readable_elements(cell).has(BattleSurfaceState.Element.WATER)
 
 
 static func _id(unit: BattleUnitState) -> StringName:

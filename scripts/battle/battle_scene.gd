@@ -254,6 +254,7 @@ func handle_map_click(position: Vector2) -> void:
 	if controller.phase != BattleController.Phase.BATTLE:
 		return
 	var clicked_unit := controller.get_unit_at_cell(cell)
+	var clicked_object := controller.get_battle_object_at_cell(cell)
 	if input_mode == InputMode.NONE and clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
 		_inspect_enemy(clicked_unit)
 		_refresh()
@@ -262,9 +263,9 @@ func handle_map_click(position: Vector2) -> void:
 		return
 	match input_mode:
 		InputMode.BASIC_ATTACK_TARGET:
-			_handle_basic_attack_target(clicked_unit)
+			_handle_basic_attack_target(clicked_unit, clicked_object)
 		InputMode.CARD_TARGET:
-			_handle_card_target(cell, clicked_unit)
+			_handle_card_target(cell, clicked_unit, clicked_object)
 		InputMode.CARD_LANDING:
 			_handle_card_landing(cell)
 		InputMode.MOVE:
@@ -300,15 +301,25 @@ func _handle_deployment_click(cell: Vector2i) -> void:
 	_refresh()
 
 
-func _handle_basic_attack_target(clicked_unit: BattleUnitState) -> void:
+func _handle_basic_attack_target(
+	clicked_unit: BattleUnitState,
+	clicked_object: BattleObjectState = null
+) -> void:
 	if clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
 		controller.basic_attack(controller.current_unit, clicked_unit, pending_equipment_slot)
 		_clear_input()
+	elif clicked_object != null and clicked_object.is_targetable():
+		controller.basic_attack_object(controller.current_unit, clicked_object, pending_equipment_slot)
+		_clear_input()
 	else:
-		_append_log("请选择一个敌方目标进行普通攻击。")
+		_append_log("请选择一个敌方目标或可破坏对象进行普通攻击。")
 
 
-func _handle_card_target(cell: Vector2i, clicked_unit: BattleUnitState) -> void:
+func _handle_card_target(
+	cell: Vector2i,
+	clicked_unit: BattleUnitState,
+	clicked_object: BattleObjectState = null
+) -> void:
 	if pending_card == null:
 		_clear_input()
 		return
@@ -330,8 +341,16 @@ func _handle_card_target(cell: Vector2i, clicked_unit: BattleUnitState) -> void:
 			_show_ranger_enemy_hand_choice(clicked_unit)
 			return
 		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
+	elif clicked_object != null and pending_card.can_target_battle_objects:
+		played = controller.play_card(
+			controller.current_unit,
+			pending_card,
+			[clicked_object],
+			play_context,
+			pending_play_mode
+		)
 	else:
-		_append_log("请选择一个单位目标打出卡牌。")
+		_append_log("请选择一个合法单位或战场对象打出卡牌。")
 
 	if played:
 		_clear_input()

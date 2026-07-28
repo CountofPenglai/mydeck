@@ -233,6 +233,14 @@ controller.queue_unit_status_event("on_block_spent", unit, damage_context)
 
 “切换装备时”是读取旧装备状态的 before 信号，必须在实际替换前同步发出；“切换掉当前装备”和“切换出新的装备”属于 after trigger，继续使用 `enqueue_trigger()`。
 
+### 环境与战场对象
+
+- 环境伤害通过 `BattleController.apply_environment_damage()` 进入单位伤害管线，正常经过伤害减免与护甲，但不创建攻击者伤害后、吸血或打击 trigger。
+- 战场对象使用独立的 `apply_object_damage()`，不得伪装为 `BattleUnitState`，也不得进入行动序、AI 或胜负判断。
+- 对象生命归零时同步标记 `destroyed` 并移除其永久元素源，确保占格、视线和元素状态立即失效；`destruction_queued` 只保护爆炸、倒塌等销毁副作用一次性进入当前效果队列。即使 32 项效果预算耗尽，关键销毁状态也不能依赖可丢弃的队列条目。
+- 武器打击以战场对象为目标时仍经过攻击模式校验、打击前后 hook、潜行消耗和基础攻击 trigger；仅单位专属的减免、护甲、状态与职业目标效果明确跳过。
+- 同一次行动中的对象连锁使用 action id 和对象级触发记录阻止重复触发。元素施加导致的爆炸仍属于原行动的附属效果。
+
 ## 快速检查清单
 
 新增或修改结算代码时，先检查：

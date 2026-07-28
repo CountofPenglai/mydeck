@@ -7,7 +7,7 @@ var _exit_code := 0
 
 func _ready() -> void:
 	_test_charge_direction_movement()
-	_test_battle_master_path_movement()
+	_test_card_path_movement()
 	_test_ranger_movement_queries()
 	print("CARD_MOVE_DIAG: completed")
 	get_tree().quit(_exit_code)
@@ -47,14 +47,12 @@ func _test_charge_direction_movement() -> void:
 	print("CARD_MOVE_DIAG: charge %d cells, %.2f us/query" % [cells.size(), average_usec])
 
 
-func _test_battle_master_path_movement() -> void:
+func _test_card_path_movement() -> void:
 	var controller := _create_controller()
 	var warrior := controller.player_units[0] as BattleUnitState
 	warrior.set_hex_cell(Vector2i(2, 4), controller.map_data)
-	var card := load("res://resources/cards/battle_master.tres") as CardData
-	var effect := card.effect as BattleMasterCardEffect
-	var context := {"controller": controller, "user": warrior, "card": card}
-	var cells := effect.get_area_target_cells(context)
+	var move_ap_limit := 1
+	var cells := controller.get_reachable_cells_for_ap(warrior, move_ap_limit, false)
 	var destination := BattleHexGrid.INVALID_CELL
 	var path: Array[Vector2i] = []
 	for candidate in cells:
@@ -64,22 +62,19 @@ func _test_battle_master_path_movement() -> void:
 			path = candidate_path
 			break
 	if destination == BattleHexGrid.INVALID_CELL:
-		_fail("CARD_MOVE_DIAG: battle master had no two-cell path")
-		return
-	if not effect.are_targets_valid(context, [destination], false):
-		_fail("CARD_MOVE_DIAG: battle master preview and target validation disagree")
+		_fail("CARD_MOVE_DIAG: card path movement had no two-cell path")
 		return
 	controller.surface_state.create_advanced_surface(path[1], BattleSurfaceState.Element.LAVA, controller.battle_round)
 	var movement_logs: Array[String] = []
 	controller.log_message.connect(func(message: String) -> void: movement_logs.append(message))
-	if not controller.apply_card_path_movement_to_cell(warrior, destination, effect.move_ap_limit, false, "diagnostic"):
-		_fail("CARD_MOVE_DIAG: battle master rejected a previewed path")
+	if not controller.apply_card_path_movement_to_cell(warrior, destination, move_ap_limit, false, "diagnostic"):
+		_fail("CARD_MOVE_DIAG: card movement rejected a reachable path")
 		return
 	if warrior.cell != destination:
-		_fail("CARD_MOVE_DIAG: battle master ended at %s instead of %s" % [warrior.cell, destination])
-	if not movement_logs.any(func(message: String) -> bool: return message.contains("熔岩地表")):
-		_fail("CARD_MOVE_DIAG: battle master skipped an intermediate lava surface")
-	print("CARD_MOVE_DIAG: battle master %d legal cells, path length %d" % [cells.size(), path.size()])
+		_fail("CARD_MOVE_DIAG: card movement ended at %s instead of %s" % [warrior.cell, destination])
+	if not movement_logs.any(func(message: String) -> bool: return message.contains("熔岩")):
+		_fail("CARD_MOVE_DIAG: card movement skipped an intermediate lava surface")
+	print("CARD_MOVE_DIAG: path movement %d legal cells, path length %d" % [cells.size(), path.size()])
 
 
 func _test_ranger_movement_queries() -> void:

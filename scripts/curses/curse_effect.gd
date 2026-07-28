@@ -60,6 +60,10 @@ func on_after_life_lost(_owner: BattleUnitState, _curse: CurseInstance, _amount:
 	pass
 
 
+func on_after_life_gained(_owner: BattleUnitState, _curse: CurseInstance, _context: Dictionary = {}) -> void:
+	pass
+
+
 func on_kill(_owner: BattleUnitState, _curse: CurseInstance, _target: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 
@@ -133,6 +137,10 @@ func can_use_action_category(_owner: BattleUnitState, _curse: CurseInstance, _ca
 
 
 func on_action_category_used(_owner: BattleUnitState, _curse: CurseInstance, _category: int, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_curse_resource_changed(_owner: BattleUnitState, _curse: CurseInstance, _resource_id: String, _delta: int, _context: Dictionary = {}) -> void:
 	pass
 
 

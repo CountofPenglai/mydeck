@@ -4,6 +4,7 @@ class_name DruidDelayedDamageStatus
 
 func _init() -> void:
 	status_id = "druid_anomaly"
+	is_corruptible_counter = true
 	display_name = "异常"
 
 

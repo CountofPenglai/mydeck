@@ -33,7 +33,11 @@ func are_targets_valid(context: Dictionary = {}, _targets: Array = [], write_log
 		BattleController.UnitFilter.OPPONENTS,
 		str(context.get("equipment_slot", ""))
 	)
-	if targets.is_empty():
+	var objects := controller.get_battle_objects_in_range(
+		user.cell,
+		user.get_attack_range(str(context.get("equipment_slot", ""))) + attack_range_bonus
+	)
+	if targets.is_empty() and objects.is_empty():
 		if write_log:
 			controller._emit_log("%s 攻击范围 + %.0f 内没有敌人。" % [user.get_display_name(), attack_range_bonus])
 		return false
@@ -87,4 +91,15 @@ func _play_whirlwind(context: Dictionary, controller: BattleController, user: Ba
 				"momentum_stacks": momentum_stacks,
 				"damage_modifier": damage_modifier,
 			}
+		)
+	for battle_object in controller.get_battle_objects_in_range(
+		user.cell,
+		user.get_attack_range(equipment_slot) + attack_range_bonus
+	):
+		controller.enqueue_effect(
+			Callable(controller, "perform_object_strike_with_modifier"),
+			[user, battle_object, card, damage_modifier, "\u56de\u65cb\u65a9", equipment_slot],
+			effect_priority,
+			"\u56de\u65cb\u65a9\uff1a\u5bf9\u8c61\u6253\u51fb",
+			context
 		)

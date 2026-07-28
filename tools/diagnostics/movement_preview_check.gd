@@ -17,8 +17,12 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	var neighbors := BattleHexGrid.neighbors(unit.cell)
-	controller.surface_state.set_base_element(neighbors[0], BattleSurfaceState.Element.WATER)
-	controller.surface_state.set_base_element(neighbors[1], BattleSurfaceState.Element.ICE)
+	controller.surface_state.add_residue(neighbors[0], BattleSurfaceState.Element.WATER, controller.battle_round)
+	controller.surface_state.create_advanced_surface(
+		neighbors[1],
+		BattleSurfaceState.Element.ICE,
+		controller.battle_round
+	)
 	for ap_budget in [1, 2, 4]:
 		unit.current_ap = ap_budget
 		var reference := _reference_reachable_cells(controller, unit)

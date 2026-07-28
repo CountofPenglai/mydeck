@@ -91,7 +91,11 @@ func _test_marrow_collection(controller: BattleController, ranger: BattleUnitSta
 	_set_weapon(ranger, weapon)
 	ranger.ranger_state.element_inventory.clear()
 	ranger.set_current_health(maxi(1, ranger.get_max_health() - 4))
-	controller.surface_state.set_base_element(ranger.cell, BattleSurfaceState.Element.FIRE)
+	controller.surface_state.add_residue(
+		ranger.cell,
+		BattleSurfaceState.Element.FIRE,
+		controller.battle_round
+	)
 	var before := ranger.get_current_health()
 	var added := controller.collect_surface_elements(ranger, ranger.cell, "diagnostic", {"from_melee_strike": true})
 	if added != 2 or ranger.get_current_health() - before != 2:

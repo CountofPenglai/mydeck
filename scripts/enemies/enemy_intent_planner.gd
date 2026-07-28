@@ -47,6 +47,7 @@ static func build_plan(controller: BattleController, unit: BattleUnitState, roun
 			"attack": projected_momentum * 2,
 			"defense": 0,
 		})
+	ChapterTwoEnemyRules.decorate_intent_plan(controller, unit, plan)
 	_append_public_fallback(controller, unit, plan, ap_budget - int(best.get("ap", 0)))
 	_plan_manifestations(unit, plan)
 	return plan

@@ -5,6 +5,7 @@ class_name StatusEffect
 @export var display_name: String = ""
 @export var effect_priority: int = 0
 @export_range(0, 99, 1) var stacks: int = 1
+@export var is_corruptible_counter: bool = false
 
 func add_stacks(amount: int) -> void:
 	stacks = maxi(0, stacks + amount)
@@ -63,6 +64,10 @@ func on_after_heal_given(_unit: BattleUnitState, _context: Dictionary = {}) -> v
 
 
 func on_after_heal_received(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_after_life_gained(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 
 

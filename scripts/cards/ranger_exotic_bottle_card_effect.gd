@@ -112,23 +112,35 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			_apply_bottle_damage(controller, user, adjacent_cell, adjacent_base_damage, damage_bonus, ambush_multiplier, "异域爆瓶波及")
 	user.remove_expired_statuses()
 
-	controller.surface_state.create_advanced_surface(target_cell, blend, controller.battle_round)
+	controller.apply_advanced_surface(target_cell, blend, {
+		"source": user,
+		"source_cell": user.cell,
+		"source_card": card,
+	})
 	for adjacent_cell in BattleHexGrid.neighbors(target_cell):
 		if controller.map_data.is_valid_cell(adjacent_cell):
-			controller.surface_state.create_advanced_surface(adjacent_cell, blend, controller.battle_round)
-	controller.state_changed.emit()
+			controller.apply_advanced_surface(adjacent_cell, blend, {
+				"source": user,
+				"source_cell": target_cell,
+				"source_card": card,
+			})
 
 
 func _apply_bottle_damage(controller: BattleController, user: BattleUnitState, cell: Vector2i, base_damage: int, damage_bonus: int, multiplier: float, label: String) -> void:
-	var target := controller.get_unit_at_cell(cell)
-	if target == null or target.faction == user.faction or not target.is_alive():
-		return
 	var total := maxi(0, ceili(float(base_damage + damage_bonus) * multiplier))
-	controller.apply_damage(user, target, total, label, {
-		"source_card": null,
-		"area": true,
-		"agility_damage": true,
-	})
+	var target := controller.get_unit_at_cell(cell)
+	if target != null and target.faction != user.faction and target.is_alive():
+		controller.apply_damage(user, target, total, label, {
+			"source_card": null,
+			"area": true,
+			"agility_damage": true,
+		})
+	var battle_object := controller.get_battle_object_at_cell(cell)
+	if battle_object != null:
+		controller.apply_object_damage(user, battle_object, total, label, {
+			"area": true,
+			"source_cell": user.cell,
+		})
 
 
 func _resolve_payment(context: Dictionary, user: BattleUnitState) -> Dictionary:

@@ -1,6 +1,6 @@
 # my_deck
 
-`my_deck` 是一个使用 Godot 4.6 开发的六边形战棋卡组构筑游戏原型。当前可运行内容以两层冒险 Demo 为主，队伍由战士、游侠和德鲁伊组成，包含大地图探索、战斗、卡牌、装备、诅咒、奖励、商店、营地和存档框架。
+`my_deck` 是一个使用 Godot 4.7 开发的六边形战棋卡组构筑游戏原型。当前可运行内容以两层冒险 Demo 为主，队伍由战士、游侠和德鲁伊组成，包含大地图探索、战斗、卡牌、装备、诅咒、奖励、商店、营地和存档框架。
 
 ## 快速入口
 
@@ -13,7 +13,7 @@
 
 ## 运行项目
 
-使用 Godot 4.6.3 打开 `project.godot`，运行项目即可进入大地图。项目使用：
+使用 Godot 4.7.1 打开 `project.godot`，运行项目即可进入大地图。项目使用：
 
 - 基准分辨率 `1280x720`
 - `canvas_items` 拉伸模式
@@ -23,7 +23,7 @@
 命令行严格加载检查：
 
 ```powershell
-& "D:\deep_learning_tool\godot\Godot_v4.6.3-stable_win64_console.exe" --headless --disable-crash-handler --log-file "tmp\project_compile.log" --path "D:\py_work\my-deck" --editor --quit
+& "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --disable-crash-handler --log-file "tmp\project_compile.log" --path "D:\py_work\my-deck" --editor --quit
 ```
 
 Godot 会写入 `%APPDATA%\Godot`。在 Codex 受限沙箱中运行时，应按 [environment_memory.md](non_project_docs/environment_memory.md) 的说明申请沙箱外执行。

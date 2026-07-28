@@ -8,6 +8,7 @@ class_name CurseDefinition
 @export_multiline var industry_description: String = ""
 @export_multiline var report_description: String = ""
 @export_multiline var fruit_description: String = ""
+@export var hex_keywords: PackedStringArray = []
 @export var industry_card: CardData
 @export var effect: CurseEffect
 

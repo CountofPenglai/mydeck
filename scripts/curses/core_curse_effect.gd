@@ -28,6 +28,10 @@ func on_battle_started(owner: BattleUnitState, curse: CurseInstance, context: Di
 			_state(owner, curse)["counter_used"] = false
 		"offspring":
 			_spawn_battle_root(owner, curse, context)
+		"gospel":
+			_state(owner, curse)["gospel_spent"] = 0
+			_state(owner, curse)["gospel_draw_triggered"] = false
+			_state(owner, curse)["gospel_ap_triggered"] = false
 		_:
 			pass
 
@@ -53,6 +57,8 @@ func on_action_phase_started(owner: BattleUnitState, curse: CurseInstance, conte
 			_start_possession_turn(owner, curse, context)
 		"unbound":
 			_start_unbound_phase(owner, curse, context)
+		"gospel":
+			_start_gospel_phase(owner, curse, context)
 		_:
 			pass
 
@@ -147,6 +153,8 @@ func on_turn_end(owner: BattleUnitState, curse: CurseInstance, context: Dictiona
 			_resolve_universal_love_turn_end(owner, curse, context)
 		"offspring":
 			_resolve_hostile_root_attack(owner, curse, context)
+		"gospel":
+			_resolve_gospel_turn_end(owner, curse, context)
 		_:
 			pass
 
@@ -160,6 +168,37 @@ func on_battle_finished(owner: BattleUnitState, curse: CurseInstance, victory: b
 	elif victory and bool(curse.persistent_data.get("max_health_penalty_pending", false)):
 		owner.character_state.persistent_max_health_modifier += 2 * curse.depth
 		curse.persistent_data.erase("max_health_penalty_pending")
+
+
+func on_curse_resource_changed(owner: BattleUnitState, curse: CurseInstance, resource_id: String, delta: int, context: Dictionary = {}) -> void:
+	if curse_id != "gospel" or resource_id != "curse_wave" or delta >= 0 \
+			or curse.state == CurseInstance.State.INDUSTRY:
+		return
+	var spent := int(_state(owner, curse).get("gospel_spent", 0)) + -delta
+	_state(owner, curse)["gospel_spent"] = spent
+	var controller := _controller(context, owner)
+	if controller == null:
+		return
+	if curse.state == CurseInstance.State.REPORT:
+		var previous := spent + delta
+		var draws := floori(float(spent) / 3.0) - floori(float(previous) / 3.0)
+		if draws > 0:
+			owner.draw_cards(draws, controller.rng, {
+				"controller": controller,
+				"reason": "gospel_report_spend",
+				"draw_source": "gospel",
+			})
+		return
+	if spent >= 2 and not bool(_state(owner, curse).get("gospel_draw_triggered", false)):
+		_state(owner, curse)["gospel_draw_triggered"] = true
+		owner.draw_cards(1, controller.rng, {
+			"controller": controller,
+			"reason": "gospel_fruit_spend",
+			"draw_source": "gospel",
+		})
+	if spent >= 4 and not bool(_state(owner, curse).get("gospel_ap_triggered", false)):
+		_state(owner, curse)["gospel_ap_triggered"] = true
+		owner.current_ap += 1
 
 
 func modify_healing_received(owner: BattleUnitState, curse: CurseInstance, amount: int, context: Dictionary = {}) -> int:
@@ -551,6 +590,31 @@ func _start_unbound_phase(owner: BattleUnitState, curse: CurseInstance, _context
 	else:
 		state["unbound_previous"] = (state.get("unbound_current", []) as Array).duplicate()
 		state["unbound_current"] = []
+
+
+func _start_gospel_phase(owner: BattleUnitState, curse: CurseInstance, context: Dictionary) -> void:
+	if curse.state == CurseInstance.State.INDUSTRY:
+		return
+	var state := _state(owner, curse)
+	state["gospel_spent"] = 0
+	state["gospel_draw_triggered"] = false
+	state["gospel_ap_triggered"] = false
+	var active_curses := 0
+	for active_curse in owner.curse_zone:
+		if owner.is_curse_effect_active(active_curse):
+			active_curses += 1
+	var cap := curse.depth * (4 if curse.state == CurseInstance.State.FRUIT else 3)
+	owner.gain_curse_wave(mini(cap, active_curses), context.merged({"reason": "gospel_action_phase"}))
+
+
+func _resolve_gospel_turn_end(owner: BattleUnitState, curse: CurseInstance, context: Dictionary) -> void:
+	if curse.state == CurseInstance.State.INDUSTRY:
+		return
+	var divisor := 5 if curse.state == CurseInstance.State.FRUIT else 3
+	var loss := mini(curse.depth, floori(float(owner.curse_wave) / float(divisor)))
+	var controller := _controller(context, owner)
+	if loss > 0 and controller != null:
+		controller.lose_life(owner, owner, loss, "福音余波", {"curse_source": true})
 
 
 func _inject_diseases(owner: BattleUnitState, count: int, context: Dictionary) -> void:

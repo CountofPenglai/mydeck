@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CurseDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/curses/curse_definition.gd" id="1_definition"]
+[ext_resource type="Resource" path="res://resources/cards/curse_industry_gospel.tres" id="2_card"]
+[ext_resource type="Script" path="res://scripts/curses/core_curse_effect.gd" id="3_effect"]
+
+[sub_resource type="Resource" id="Effect"]
+script = ExtResource("3_effect")
+curse_id = "gospel"
+
+[resource]
+script = ExtResource("1_definition")
+curse_id = "gospel"
+display_name = "福音"
+is_boss_curse = true
+maturity_threshold = 4
+industry_description = "失去3D生命；对范围3内所有其他单位造成4+2D智力伤害，散播咒波与临时咒害。"
+report_description = "负荷上限+D；行动阶段开始按活动诅咒获得咒波，上限3D；每累计消耗3点抽1；回合末每剩3点失去1生命，上限D。"
+fruit_description = "负荷上限+2D；咒波获取上限4D；累计消耗2/4点时依次抽1、获得1AP；回合末每剩5点失去1生命，上限D。"
+hex_keywords = PackedStringArray("福音", "咒波")
+industry_card = ExtResource("2_card")
+effect = SubResource("Effect")

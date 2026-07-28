@@ -7,6 +7,12 @@ class_name BattleScenario
 @export var seed: int = 1001
 @export var players: Array[Resource] = []
 @export var enemies: Array[Resource] = []
+@export_group("Battlefield Features")
+@export var generate_battlefield_features: bool = false
+@export_range(1, 8, 1) var feature_chapter: int = 1
+@export var feature_encounter_tier: int = 0
+@export var feature_seed: int = 0
+@export var force_abyss_features: bool = false
 
 func get_map_data() -> BattleMapData:
 	if scene_prototype != null and scene_prototype.map_data != null:

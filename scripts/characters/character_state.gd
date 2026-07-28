@@ -692,6 +692,9 @@ func get_curse_load_limit() -> int:
 	var universal_love := get_curse("universal_love")
 	if universal_love != null and universal_love.state == CurseInstance.State.FRUIT and not universal_love.sealed:
 		result += 2 * universal_love.depth
+	var gospel := get_curse("gospel")
+	if gospel != null and gospel.state != CurseInstance.State.INDUSTRY and not gospel.sealed:
+		result += gospel.depth * (2 if gospel.state == CurseInstance.State.FRUIT else 1)
 	return result
 
 

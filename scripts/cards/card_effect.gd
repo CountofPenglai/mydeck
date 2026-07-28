@@ -45,6 +45,10 @@ func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = 
 	return user != null and target != null and target.faction != user.faction
 
 
+func is_object_target_allowed(_context: Dictionary = {}, target: BattleObjectState = null) -> bool:
+	return target != null and target.is_targetable()
+
+
 func are_targets_valid(_context: Dictionary = {}, _targets: Array = [], _write_log: bool = true) -> bool:
 	return true
 

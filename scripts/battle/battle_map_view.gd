@@ -162,9 +162,13 @@ func _draw() -> void:
 func _draw_map_space() -> void:
 	draw_set_transform(view_offset, 0.0, Vector2(view_zoom, view_zoom))
 	_draw_background()
-	_draw_element_surfaces()
+	_draw_terrain_layers()
+	_draw_ground_effects()
+	_draw_air_effects()
+	_draw_element_markers()
 	_draw_static_zones()
 	_draw_target_preview()
+	_draw_battle_objects()
 	_draw_units()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -190,15 +194,62 @@ func _draw_static_zones() -> void:
 			_draw_hex_cell(cell, Color(0.85, 0.25, 0.18, 0.14), Color(0.9, 0.38, 0.25, 0.48))
 
 
-func _draw_element_surfaces() -> void:
+func _draw_terrain_layers() -> void:
 	if controller == null or controller.surface_state == null:
 		return
 	for cell in controller.map_data.get_all_cells():
-		var element: int = controller.surface_state.get_element(cell)
+		var terrain := controller.surface_state.get_terrain(cell)
+		if terrain == BattleSurfaceState.Terrain.NONE:
+			continue
+		var fill := BattleSurfaceState.terrain_color(terrain)
+		_draw_hex_cell(cell, fill, fill.lightened(0.24))
+
+
+func _draw_ground_effects() -> void:
+	if controller == null or controller.surface_state == null:
+		return
+	for cell in controller.map_data.get_all_cells():
+		var element := controller.surface_state.get_ground_effect(cell)
 		if element == BattleSurfaceState.Element.NONE:
 			continue
-		var fill: Color = BattleSurfaceState.color(element)
-		_draw_hex_cell(cell, fill, fill.lightened(0.24))
+		var fill := BattleSurfaceState.color(element)
+		_draw_hex_cell(cell, fill, fill.lightened(0.18))
+
+
+func _draw_air_effects() -> void:
+	if controller == null or controller.surface_state == null:
+		return
+	for cell in controller.map_data.get_all_cells():
+		var element := controller.surface_state.get_air_effect(cell)
+		if element == BattleSurfaceState.Element.NONE:
+			continue
+		var polygon := controller.map_data.get_cell_polygon(cell)
+		var color := BattleSurfaceState.color(element)
+		draw_colored_polygon(polygon, Color(color.r, color.g, color.b, color.a * 0.45))
+		draw_dashed_line(
+			polygon[0],
+			polygon[3],
+			color.lightened(0.25),
+			2.0,
+			6.0
+		)
+
+
+func _draw_element_markers() -> void:
+	if controller == null or controller.surface_state == null:
+		return
+	for cell in controller.map_data.get_all_cells():
+		var elements: Array[int] = controller.surface_state.get_readable_elements(cell)
+		if elements.is_empty():
+			continue
+		var center := controller.map_data.cell_to_map(cell)
+		var offset := Vector2(-18.0, -22.0)
+		for index in range(elements.size()):
+			var element := elements[index]
+			var marker_center := center + offset + Vector2(float(index) * 12.0, 0.0)
+			var color := BattleSurfaceState.color(element)
+			draw_circle(marker_center, 5.0, Color(color.r, color.g, color.b, 0.96))
+			draw_arc(marker_center, 5.0, 0.0, TAU, 16, Color(0.95, 0.95, 0.88, 0.9), 1.0)
 
 
 func _draw_target_preview() -> void:
@@ -237,13 +288,30 @@ func _draw_basic_attack_preview() -> void:
 		return
 
 	var equipment_slot := str(battle_scene.pending_equipment_slot)
+	var profile := unit.build_strike_profile_object(equipment_slot)
 	for cell in controller.map_data.get_all_cells():
 		var attack_range := controller.get_effective_attack_range_at_cell(unit, cell, equipment_slot)
-		if BattleHexGrid.distance(unit.cell, cell) <= attack_range:
+		if BattleHexGrid.distance(unit.cell, cell) <= attack_range \
+				and (profile.primary_range_type != EquipmentData.WeaponRangeType.RANGED \
+				or controller.targeting.has_line_of_sight(unit.cell, cell)):
 			_draw_hex_cell(cell, LEGAL_FILL, LEGAL_STROKE)
 	for target in controller.get_opposing_units(unit):
-		if unit.cell_distance_to(target) <= controller.get_effective_attack_range_against(unit, target, equipment_slot):
+		if unit.cell_distance_to(target) <= controller.get_effective_attack_range_against(unit, target, equipment_slot) \
+				and (profile.primary_range_type != EquipmentData.WeaponRangeType.RANGED \
+				or controller.targeting.has_line_of_sight_between_units(unit, target)):
 			_draw_target_marker(target)
+	for battle_object in controller.battle_objects:
+		if battle_object == null or not battle_object.is_targetable():
+			continue
+		var attack_range := controller.get_effective_attack_range_at_cell(
+			unit,
+			battle_object.cell,
+			equipment_slot
+		)
+		if BattleHexGrid.distance(unit.cell, battle_object.cell) <= attack_range:
+			if profile.primary_range_type != EquipmentData.WeaponRangeType.RANGED \
+					or controller.targeting.has_line_of_sight(unit.cell, battle_object.cell):
+				_draw_object_target_marker(battle_object)
 
 
 func _draw_card_target_preview(preview: Dictionary) -> void:
@@ -278,6 +346,18 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 			_card_target_preview_valid = true
 		for target in _card_target_preview_units:
 			_draw_target_marker(target)
+		if card.can_target_battle_objects:
+			for battle_object in controller.battle_objects:
+				if battle_object != null and battle_object.is_targetable() \
+						and controller.can_preview_card_targets(
+							unit,
+							card,
+							[battle_object],
+							equipment_slot,
+							play_mode,
+							extra_context
+						):
+					_draw_object_target_marker(battle_object)
 	elif target_type == CardEnums.TargetType.AREA:
 		_draw_area_card_preview(unit, card, equipment_slot, play_mode, extra_context)
 
@@ -333,6 +413,59 @@ func _build_effect_preview_context(unit: BattleUnitState, card: CardData, equipm
 func _draw_target_marker(unit: BattleUnitState) -> void:
 	draw_circle(unit.position, unit.token_radius + 8.0, LEGAL_FILL)
 	draw_arc(unit.position, unit.token_radius + 8.0, 0.0, TAU, 48, LEGAL_STROKE, 3.0)
+
+
+func _draw_object_target_marker(battle_object: BattleObjectState) -> void:
+	var position := controller.map_data.cell_to_map(battle_object.cell)
+	draw_circle(position, 26.0, LEGAL_FILL)
+	draw_arc(position, 26.0, 0.0, TAU, 32, LEGAL_STROKE, 3.0)
+
+
+func _draw_battle_objects() -> void:
+	if controller == null:
+		return
+	for battle_object in controller.battle_objects:
+		if battle_object == null or not battle_object.is_active():
+			continue
+		var center := controller.map_data.cell_to_map(battle_object.cell)
+		var color := battle_object.definition.map_color
+		match battle_object.definition.kind:
+			BattleObjectDefinition.Kind.EXPLOSIVE_BARREL:
+				draw_circle(center, 17.0, color)
+				draw_arc(center, 17.0, 0.0, TAU, 24, color.lightened(0.4), 3.0)
+				draw_line(center + Vector2(-12.0, -4.0), center + Vector2(12.0, -4.0), Color(0.2, 0.08, 0.03), 3.0)
+			BattleObjectDefinition.Kind.WATER_CISTERN:
+				var rect := Rect2(center - Vector2(18.0, 20.0), Vector2(36.0, 40.0))
+				draw_rect(rect, color, true)
+				draw_rect(rect, color.lightened(0.38), false, 3.0)
+			BattleObjectDefinition.Kind.WIND_TOTEM:
+				var points := PackedVector2Array([
+					center + Vector2(0.0, -24.0),
+					center + Vector2(17.0, 18.0),
+					center + Vector2(-17.0, 18.0),
+				])
+				draw_colored_polygon(points, color)
+				draw_polyline(points + PackedVector2Array([points[0]]), color.lightened(0.35), 2.0)
+			BattleObjectDefinition.Kind.UNSTABLE_PILLAR:
+				var rect := Rect2(center - Vector2(15.0, 25.0), Vector2(30.0, 50.0))
+				draw_rect(rect, color, true)
+				draw_rect(rect, color.lightened(0.28), false, 3.0)
+			BattleObjectDefinition.Kind.RUBBLE:
+				var points := PackedVector2Array([
+					center + Vector2(-24.0, 12.0),
+					center + Vector2(-10.0, -18.0),
+					center + Vector2(8.0, -12.0),
+					center + Vector2(23.0, 15.0),
+				])
+				draw_colored_polygon(points, color)
+				draw_polyline(points + PackedVector2Array([points[0]]), color.lightened(0.3), 2.0)
+		var bar_rect := Rect2(center + Vector2(-22.0, 27.0), Vector2(44.0, 5.0))
+		draw_rect(bar_rect, Color(0.08, 0.08, 0.08, 0.9), true)
+		draw_rect(
+			Rect2(bar_rect.position, Vector2(bar_rect.size.x * battle_object.get_health_ratio(), bar_rect.size.y)),
+			Color(0.42, 0.9, 0.46, 0.95),
+			true
+		)
 
 
 func _draw_units() -> void:
@@ -460,3 +593,10 @@ func _clamp_view_offset() -> void:
 		view_offset.y = clampf(view_offset.y, center_y - keep_visible_margin, center_y + keep_visible_margin)
 	else:
 		view_offset.y = clampf(view_offset.y, size.y - map_screen_size.y - keep_visible_margin, keep_visible_margin)
+
+
+func _get_tooltip(at_position: Vector2) -> String:
+	if controller == null or controller.map_data == null:
+		return ""
+	var cell := controller.map_data.map_to_cell(screen_to_map(at_position))
+	return controller.get_cell_detail_text(cell)

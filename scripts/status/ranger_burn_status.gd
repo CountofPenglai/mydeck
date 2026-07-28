@@ -7,6 +7,7 @@ class_name RangerBurnStatus
 
 func _init() -> void:
 	status_id = "ranger_burn"
+	is_corruptible_counter = true
 	display_name = "灼烧"
 
 

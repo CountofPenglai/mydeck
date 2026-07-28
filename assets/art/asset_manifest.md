@@ -8,6 +8,10 @@ See `non_project_docs/art_style_guide.md` for the durable style rules.
 
 ## Assets
 
+- `enemies/chapter_two_monsters.svg`
+  - 12-panel compact atlas for Chapter 2 military units, aberrations, bosses, and the Triumph Statue.
+  - Each panel is `128x128`; `ChapterTwoEnemyCatalog` slices it with `AtlasTexture`.
+
 - `battlefields/ruined_keep_courtyard.png`
   - Top-down-ish 2D no-grid ruined keep courtyard battlefield, open center, grim Western fantasy hand-painted style.
 - `cards/scroll_card_background.png`

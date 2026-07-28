@@ -18,7 +18,7 @@ static func find_path(map_data: BattleMapData, surfaces: BattleSurfaceState, sta
 		var current := _take_lowest(frontier, costs)
 		if current == goal:
 			break
-		if current != start and surfaces != null and surfaces.get_element(current) == BattleSurfaceState.Element.ICE:
+		if current != start and surfaces != null and surfaces.stops_movement_on_entry(current):
 			continue
 		for neighbor in BattleHexGrid.neighbors(current):
 			if not map_data.is_valid_cell(neighbor):
@@ -60,7 +60,7 @@ static func find_reachable_costs(map_data: BattleMapData, surfaces: BattleSurfac
 	while pending_index < pending.size():
 		var current := pending[pending_index]
 		pending_index += 1
-		if current != start and surfaces != null and surfaces.get_element(current) == BattleSurfaceState.Element.ICE:
+		if current != start and surfaces != null and surfaces.stops_movement_on_entry(current):
 			continue
 		for neighbor in BattleHexGrid.neighbors(current):
 			if not map_data.is_valid_cell(neighbor):

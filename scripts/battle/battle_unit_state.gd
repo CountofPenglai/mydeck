@@ -3,6 +3,8 @@ class_name BattleUnitState
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
+const MageCombatState = preload("res://scripts/mage/mage_combat_state.gd")
+const WarlockCombatState = preload("res://scripts/warlock/warlock_combat_state.gd")
 
 enum Faction {
 	PLAYER,
@@ -45,6 +47,8 @@ var druid_temporary_mana: int = 0
 var druid_max_health_loss: int = 0
 var battle_controller: BattleController
 var ranger_state := RangerCombatState.new()
+var mage_state := MageCombatState.new()
+var warlock_state := WarlockCombatState.new()
 var is_curse_proxy: bool = false
 var curse_proxy_owner: BattleUnitState
 var curse_proxy_name: String = ""
@@ -76,6 +80,8 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	distortion_state.reset_for_battle(character_state)
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
+	mage_state.reset_for_battle()
+	warlock_state.reset_for_battle()
 	if character_state != null:
 		ranger_state.load_element_inventory(character_state.ranger_element_inventory)
 
@@ -103,8 +109,12 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	distortion_state.reset_for_battle()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
+	mage_state.reset_for_battle()
+	warlock_state.reset_for_battle()
 	if enemy_state != null:
 		enemy_state.reset_battle_runtime()
+		if enemy_state.enemy_data != null:
+			distortion_state.permanent_fields = enemy_state.enemy_data.permanent_distortion_fields.duplicate()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:
@@ -127,6 +137,7 @@ func start_turn(config: BattleConfig) -> void:
 	_reset_curse_turn_runtime()
 	distortion_state.start_turn()
 	ranger_state.start_turn(turn_serial)
+	warlock_state.start_turn()
 
 
 func get_display_name() -> String:
@@ -209,7 +220,7 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 	result -= distortion_state.lashing_damage_penalty
 	if distortion_state.has_field("night_veil") and not bool(distortion_state.battle_flags.get("night_veil_broken", false)):
 		result += _get_night_veil_damage_bonus(merged_context)
-	return ChapterOneEnemyRules.modify_damage_bonus(self, result) if enemy_state != null else result
+	return EnemyRuleDispatcher.modify_damage_bonus(self, result, merged_context) if enemy_state != null else result
 
 
 func get_damage_reduction(context: Dictionary = {}) -> int:
@@ -222,6 +233,8 @@ func get_damage_reduction(context: Dictionary = {}) -> int:
 		result += enemy_state.get_damage_reduction()
 	if battle_controller != null:
 		result += battle_controller.get_surface_damage_reduction(self, merged_context)
+	if enemy_state != null:
+		result = EnemyRuleDispatcher.modify_damage_reduction(self, result, merged_context)
 	return result
 
 
@@ -236,6 +249,22 @@ func get_character_class() -> int:
 
 func is_ranger() -> bool:
 	return get_character_class() == CardEnums.CardClass.RANGER
+
+
+func is_mage() -> bool:
+	return get_character_class() == CardEnums.CardClass.MAGE
+
+
+func is_mage_adventurer() -> bool:
+	return character_state != null and is_mage()
+
+
+func is_warlock() -> bool:
+	return get_character_class() == CardEnums.CardClass.WARLOCK
+
+
+func is_warlock_adventurer() -> bool:
+	return character_state != null and is_warlock()
 
 
 func setup_curse_proxy(id: int, owner: BattleUnitState, display_name: String, max_health: int, hostile: bool, mirrors_damage: bool, depth: int) -> void:
@@ -572,6 +601,13 @@ func notify_life_lost(amount: int, context: Dictionary = {}) -> void:
 	_notify_curse_effects("on_after_life_lost", [amount], _with_unit_context(context))
 
 
+func notify_after_life_gained(context: Dictionary = {}) -> void:
+	var event_context := _with_unit_context(context)
+	_notify_status_effects("on_after_life_gained", [], event_context)
+	_notify_curse_effects("on_after_life_gained", [], event_context)
+	_notify_zone_card_effects("on_zone_owner_after_life_gained", [], event_context)
+
+
 func notify_kill(target: BattleUnitState, context: Dictionary = {}) -> void:
 	_notify_curse_effects("on_kill", [target], _with_unit_context(context))
 
@@ -583,7 +619,7 @@ func notify_death(context: Dictionary = {}) -> void:
 func get_curse_actions(context: Dictionary = {}) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for curse in curse_zone:
-		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+		if not is_curse_effect_active(curse) or curse.definition == null or curse.definition.effect == null:
 			continue
 		for raw_action in curse.definition.effect.get_active_actions(self, curse, context):
 			var action := raw_action.duplicate(true)
@@ -593,7 +629,7 @@ func get_curse_actions(context: Dictionary = {}) -> Array[Dictionary]:
 
 
 func can_activate_curse_action(curse: CurseInstance, action_id: String, context: Dictionary = {}) -> bool:
-	return curse != null and curse in curse_zone and curse.is_active_in_curse_zone() \
+	return curse != null and curse in curse_zone and is_curse_effect_active(curse) \
 		and curse.definition != null and curse.definition.effect != null \
 		and curse.definition.effect.can_activate_action(self, curse, action_id, context)
 
@@ -625,7 +661,7 @@ func get_status_damage_reduction(context: Dictionary = {}) -> int:
 func get_curse_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := 0
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			bonus += curse.definition.effect.modify_damage_bonus(self, curse, context)
 	return bonus
 
@@ -633,7 +669,7 @@ func get_curse_damage_bonus(context: Dictionary = {}) -> int:
 func get_curse_damage_reduction(context: Dictionary = {}) -> int:
 	var reduction := 0
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			reduction += curse.definition.effect.modify_damage_reduction(self, curse, context)
 	return reduction
 
@@ -641,7 +677,7 @@ func get_curse_damage_reduction(context: Dictionary = {}) -> int:
 func modify_healing_received(amount: int, context: Dictionary = {}) -> int:
 	var result := maxi(0, amount)
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			result = curse.definition.effect.modify_healing_received(self, curse, result, context)
 	return maxi(0, result)
 
@@ -652,7 +688,7 @@ func get_lethal_health_floor(context: Dictionary = {}) -> int:
 		if status != null and status.has_method("get_lethal_health_floor"):
 			result = maxi(result, int(status.get_lethal_health_floor(self, context)))
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			result = maxi(result, curse.definition.effect.get_lethal_health_floor(self, curse, context))
 	return maxi(0, result)
 
@@ -661,7 +697,7 @@ func can_be_friendly_target(source: BattleUnitState, context: Dictionary = {}) -
 	if source == null or source.faction != faction or source == self:
 		return true
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if not curse.definition.effect.can_be_friendly_target(self, curse, source, context):
 				return false
 	return true
@@ -676,7 +712,7 @@ func can_be_targeted_by_other_card(source: BattleUnitState, _card: CardData, _co
 
 func should_counter_hostile_card(source: BattleUnitState, card: CardData, context: Dictionary = {}) -> bool:
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if curse.definition.effect.should_counter_card(self, curse, source, card, context):
 				return true
 	if distortion_state.has_field("empty_eye") and card != null and battle_controller != null \
@@ -702,7 +738,7 @@ func can_use_action_category(category: int, context: Dictionary = {}) -> bool:
 		if status != null and status.has_method("can_use_action_category") and not status.can_use_action_category(self, category, context):
 			return false
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if not curse.definition.effect.can_use_action_category(self, curse, category, context):
 				return false
 	return true
@@ -710,7 +746,7 @@ func can_use_action_category(category: int, context: Dictionary = {}) -> bool:
 
 func can_auto_reshuffle(context: Dictionary = {}) -> bool:
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if not curse.definition.effect.can_auto_reshuffle(self, curse, context):
 				return false
 	return true
@@ -739,7 +775,7 @@ func modify_incoming_damage(damage_context: DamageContext) -> void:
 		if status != null:
 			status.modify_incoming_damage(self, damage_context)
 	for curse in curse_zone.duplicate():
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			curse.definition.effect.modify_incoming_damage(self, curse, damage_context)
 	remove_expired_statuses()
 
@@ -770,7 +806,7 @@ func get_agility() -> int:
 	result = _modify_equipment_attribute("agility", result)
 	if distortion_state.has_field("stampede"):
 		result += maxi(0, get_strength())
-	return ChapterOneEnemyRules.modify_agility(self, result) if enemy_state != null else result
+	return EnemyRuleDispatcher.modify_agility(self, result) if enemy_state != null else result
 
 
 func get_strength() -> int:
@@ -951,7 +987,7 @@ func get_max_ap(config: BattleConfig) -> int:
 	if character_state != null:
 		return character_state.get_max_ap(config)
 	if enemy_state != null:
-		return enemy_state.get_max_ap(config)
+		return EnemyRuleDispatcher.modify_max_ap(self, enemy_state.get_max_ap(config))
 
 	return config.base_ap
 
@@ -973,6 +1009,8 @@ func get_move_distance_per_ap(config: BattleConfig, agility_modifier: int = 0) -
 		var effect := entry.get("effect") as EquipmentEffect
 		if effect != null:
 			distance = effect.modify_move_distance_per_ap(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, distance, context)
+	if enemy_state != null:
+		distance = EnemyRuleDispatcher.modify_move_distance(self, distance)
 
 	return maxi(1, distance)
 
@@ -992,7 +1030,7 @@ func get_move_ap_cost(distance: int, config: BattleConfig) -> int:
 		if status != null and status.has_method("modify_move_ap_cost"):
 			cost = status.modify_move_ap_cost(self, cost, context)
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			cost = curse.definition.effect.modify_move_ap_cost(self, curse, cost, context)
 
 	return maxi(0, cost)
@@ -1059,7 +1097,7 @@ func get_alternate_range_origins(context: Dictionary = {}) -> Array[Vector2i]:
 			if not result.has(origin):
 				result.append(origin)
 	for curse in curse_zone:
-		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+		if not is_curse_effect_active(curse) or curse.definition == null or curse.definition.effect == null:
 			continue
 		for origin in curse.definition.effect.get_alternate_range_origins(self, curse, context):
 			if origin != BattleHexGrid.INVALID_CELL and not result.has(origin):
@@ -1116,7 +1154,7 @@ func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictio
 			_notify_curse_effects("on_before_reshuffle", [], _with_unit_context(context))
 			if not is_alive():
 				break
-			draw_pile = discard_pile.duplicate()
+			draw_pile.assign(discard_pile)
 			discard_pile.clear()
 			_shuffle_cards(draw_pile, rng)
 
@@ -1223,6 +1261,16 @@ func add_curse_to_zone(curse: CurseInstance, context: Dictionary = {}) -> void:
 		return
 	curse_zone.append(curse)
 	_notify_curse_state_changed(curse, context)
+
+
+func remove_curse_from_zone(curse: CurseInstance, context: Dictionary = {}) -> bool:
+	if curse == null or not curse_zone.has(curse):
+		return false
+	curse_zone.erase(curse)
+	warlock_state.remove_curse(curse)
+	curse_runtime_states.erase(curse)
+	_notify_curse_state_changed(curse, context)
+	return true
 
 
 func move_hand_card_to_mana(card: CardData, context: Dictionary = {}) -> bool:
@@ -1342,19 +1390,98 @@ func consume_curse_wave(amount: int, context: Dictionary = {}) -> int:
 		return 0
 	curse_wave -= actual
 	_notify_curse_resource_changed("curse_wave", -actual, context)
+	if is_warlock_adventurer() and not bool(context.get("skip_warlock_draw", false)) and battle_controller != null:
+		draw_cards(mini(2, actual), battle_controller.rng, {
+			"controller": battle_controller,
+			"reason": "warlock_curse_wave_spent",
+			"draw_source": "warlock_curse_wave",
+			"extra_draw": true,
+		})
 	return actual
+
+
+func can_pay_warlock_mana(amount: int, curse_wave_amount: int = 0) -> bool:
+	if not is_warlock_adventurer():
+		return false
+	var cost := maxi(0, amount)
+	var wave_cost := clampi(curse_wave_amount, 0, cost)
+	return curse_wave >= wave_cost and warlock_state.get_mana() >= cost - wave_cost
+
+
+func pay_warlock_mana(amount: int, curse_wave_amount: int = 0, context: Dictionary = {}) -> bool:
+	if not can_pay_warlock_mana(amount, curse_wave_amount):
+		return false
+	var cost := maxi(0, amount)
+	var wave_cost := clampi(curse_wave_amount, 0, cost)
+	if not warlock_state.pay_mana(cost - wave_cost):
+		return false
+	if wave_cost > 0:
+		consume_curse_wave(wave_cost, context)
+	return true
+
+
+func is_curse_effect_active(curse: CurseInstance) -> bool:
+	return curse != null and curse.is_active_in_curse_zone() \
+		and (not is_warlock_adventurer() or not warlock_state.is_face_down(curse))
+
+
+func meets_warlock_hex_conditions(minimum_face_down_count: int, required_keywords: PackedStringArray = []) -> bool:
+	return is_warlock_adventurer() and warlock_state.meets_hex_conditions(
+		curse_zone,
+		minimum_face_down_count,
+		required_keywords
+	)
+
+
+func set_warlock_curse_face_down(curse: CurseInstance, face_down: bool, context: Dictionary = {}) -> bool:
+	if not is_warlock_adventurer() or curse == null or not curse_zone.has(curse):
+		return false
+	if not warlock_state.set_face_down(curse, face_down):
+		return false
+	_notify_curse_state_changed(curse, context)
+	return true
+
+
+func add_warlock_curse_counter(curse: CurseInstance, counter_id: String, amount: int = 1, context: Dictionary = {}) -> int:
+	if not is_warlock_adventurer() or curse == null or not curse_zone.has(curse) \
+			or not warlock_state.is_face_down(curse):
+		return 0
+	var added := warlock_state.add_curse_counter(curse, counter_id, amount)
+	if added > 0:
+		_notify_curse_state_changed(curse, context)
+	return added
+
+
+func corrupt_existing_indicators(amount: int = 1) -> int:
+	if not is_warlock_adventurer() or amount <= 0:
+		return 0
+	var changed_types := 0
+	for status in statuses.duplicate():
+		if status == null or status.should_remove() or not status.is_corruptible_counter or status.stacks <= 0:
+			continue
+		var increment := status.duplicate(false) as StatusEffect
+		increment.stacks = amount
+		add_status(increment)
+		changed_types += 1
+	if curse_wave > 0:
+		gain_curse_wave(amount, {
+			"controller": battle_controller,
+			"reason": "warlock_corruption",
+		})
+		changed_types += 1
+	changed_types += warlock_state.corrupt_face_down_curse_counters(curse_zone, amount)
+	return changed_types
 
 
 func get_curse_runtime_state(curse: CurseInstance, create_if_missing: bool = true) -> Dictionary:
 	if curse == null:
 		return {}
-	var key := curse.get_curse_id()
-	if curse_runtime_states.has(key):
-		return curse_runtime_states[key] as Dictionary
+	if curse_runtime_states.has(curse):
+		return curse_runtime_states[curse] as Dictionary
 	if not create_if_missing:
 		return {}
 	var state: Dictionary = {}
-	curse_runtime_states[key] = state
+	curse_runtime_states[curse] = state
 	return state
 
 
@@ -1570,7 +1697,7 @@ func move_exiled_card_to_discard(card: CardData, context: Dictionary = {}) -> bo
 
 func has_pending_curse_choice(context: Dictionary = {}) -> bool:
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if curse.definition.effect.has_pending_choice(self, curse, context):
 				return true
 	return false
@@ -1667,6 +1794,30 @@ func clear_card_runtime_state(card: CardData) -> void:
 		card_runtime_states.erase(card)
 
 
+func get_effective_card_elements(card: CardData) -> Array[int]:
+	var result: Array[int] = []
+	if card == null:
+		return result
+	for element in card.get_printed_elements():
+		if not result.has(element):
+			result.append(element)
+	var runtime_state := get_card_runtime_state(card, false)
+	var infused_element := int(runtime_state.get("adventure_element_infusion", BattleSurfaceState.Element.NONE))
+	if BattleSurfaceState.BASE_ELEMENTS.has(infused_element) and not result.has(infused_element):
+		result.append(infused_element)
+	return result
+
+
+func initialize_mage_opening_hand() -> Dictionary:
+	if not is_mage_adventurer():
+		return {}
+	var gains: Dictionary = {}
+	for card in hand:
+		for element in get_effective_card_elements(card):
+			gains[element] = int(gains.get(element, 0)) + 1
+	return mage_state.gain_mana_batch(gains)
+
+
 func mark_temporary_card(card: CardData, ap_delta: int, exile_after_play: bool, exile_at_turn_end: bool) -> void:
 	var state := get_card_runtime_state(card)
 	state["ap_delta"] = ap_delta
@@ -1753,6 +1904,8 @@ func notify_after_damage_dealt(context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_after_damage_dealt", [], event_context)
 	_notify_curse_effects("on_after_damage_dealt", [], event_context)
 	_notify_equipment_effects("on_after_damage_dealt", [], event_context)
+	if enemy_state != null and battle_controller != null:
+		EnemyRuleDispatcher.on_after_damage_dealt(battle_controller, self, event_context)
 	if distortion_state.has_field("night_veil") and not bool(distortion_state.battle_flags.get("night_veil_broken", false)):
 		_reserve_night_veil_break(int(event_context.get("action_id", 0)))
 
@@ -1763,6 +1916,8 @@ func notify_after_damage_taken(context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_after_damage_taken", [], event_context)
 	_notify_curse_effects("on_after_damage_taken", [], event_context)
 	_notify_equipment_effects("on_after_damage_taken", [], event_context)
+	if enemy_state != null and battle_controller != null:
+		EnemyRuleDispatcher.on_after_damage_taken(battle_controller, self, event_context)
 
 
 func notify_after_heal_given(context: Dictionary = {}) -> void:
@@ -1782,6 +1937,8 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 	_notify_status_effects("on_after_strike", [], event_context)
 	_notify_zone_card_effects("on_zone_owner_after_strike", [], event_context)
 	_notify_equipment_effects("on_after_strike", [], event_context)
+	if enemy_state != null and battle_controller != null:
+		EnemyRuleDispatcher.on_after_strike(battle_controller, self, event_context)
 	_resolve_distortion_scorch_throat(event_context)
 	_finish_night_veil_action(int(event_context.get("action_id", 0)))
 
@@ -1797,7 +1954,7 @@ func notify_movement_completed(context: Dictionary = {}) -> void:
 	_notify_curse_effects("on_movement_completed", [], event_context)
 	_notify_equipment_effects("on_movement_completed", [], event_context)
 	if enemy_state != null and battle_controller != null:
-		ChapterOneEnemyRules.on_movement_completed(battle_controller, self, event_context)
+		EnemyRuleDispatcher.on_movement_completed(battle_controller, self, event_context)
 	for card in discard_pile.duplicate():
 		if card != null and card.effect != null and card.effect.has_method("on_discard_owner_movement_completed"):
 			card.effect.call("on_discard_owner_movement_completed", self, card, event_context)
@@ -1927,7 +2084,7 @@ func notify_armor_changed(previous: int, current: int, context: Dictionary = {})
 	_notify_status_effects("on_armor_changed", [previous, current], event_context)
 	_notify_zone_card_effects("on_zone_owner_armor_changed", [previous, current], event_context)
 	if enemy_state != null and battle_controller != null:
-		ChapterOneEnemyRules.on_armor_changed(battle_controller, self, previous, current)
+		EnemyRuleDispatcher.on_armor_changed(battle_controller, self, previous, current)
 
 
 func _reset_druid_state() -> void:
@@ -2395,7 +2552,7 @@ func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String
 
 func _notify_curse_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:
 	for curse in curse_zone.duplicate():
-		if curse == null or not curse.is_active_in_curse_zone() or curse.definition == null or curse.definition.effect == null:
+		if not is_curse_effect_active(curse) or curse.definition == null or curse.definition.effect == null:
 			continue
 		var effect: CurseEffect = curse.definition.effect
 		if not effect.has_method(method_name):
@@ -2514,7 +2671,10 @@ func _notify_curse_state_changed(curse: CurseInstance, context: Dictionary = {})
 		controller.state_changed.emit()
 
 
-func _notify_curse_resource_changed(_resource_id: String, _delta: int, context: Dictionary = {}) -> void:
+func _notify_curse_resource_changed(resource_id: String, delta: int, context: Dictionary = {}) -> void:
+	for curse in curse_zone:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
+			curse.definition.effect.on_curse_resource_changed(self, curse, resource_id, delta, context)
 	var controller: BattleController = context.get("controller", battle_controller) as BattleController
 	if controller != null:
 		controller.state_changed.emit()
@@ -2522,7 +2682,7 @@ func _notify_curse_resource_changed(_resource_id: String, _delta: int, context: 
 
 func _should_exile_discarded_card(card: CardData, context: Dictionary = {}) -> bool:
 	for curse in curse_zone:
-		if curse != null and curse.is_active_in_curse_zone() and curse.definition != null and curse.definition.effect != null:
+		if is_curse_effect_active(curse) and curse.definition != null and curse.definition.effect != null:
 			if curse.definition.effect.should_exile_discarded_card(self, curse, card, context):
 				return true
 	return false

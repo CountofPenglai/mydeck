@@ -1,7 +1,7 @@
 [gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/cards/card_view.gd" id="1_card_view"]
-[ext_resource type="Resource" path="res://resources/cards/sample_card.tres" id="2_sample_card"]
+[ext_resource type="Resource" path="res://resources/cards/battle_slam.tres" id="2_battle_slam"]
 [ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
@@ -32,7 +32,7 @@ anchors_preset = 0
 offset_right = 280.0
 offset_bottom = 420.0
 script = ExtResource("1_card_view")
-card_data = ExtResource("2_sample_card")
+card_data = ExtResource("2_battle_slam")
 
 [node name="CardFrame" type="PanelContainer" parent="."]
 layout_mode = 1
@@ -63,14 +63,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
-text = "战术打击"
+text = "猛击"
 text_overrun_behavior = 3
 
 [node name="RarityLabel" type="Label" parent="CardFrame/CardMargin/CardLayout/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
-text = "稀有"
+text = "基础"
 horizontal_alignment = 2
 
 [node name="ArtworkPanel" type="PanelContainer" parent="CardFrame/CardMargin/CardLayout"]
@@ -91,7 +91,7 @@ custom_minimum_size = Vector2(0, 82)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 14
-text = "对一个敌方单位造成基础伤害。后续可以接入战棋格子与目标选择流程。"
+text = "对一个敌人进行一次打击。如果装备了盾牌，给予眩晕 2。"
 autowrap_mode = 3
 vertical_alignment = 1
 

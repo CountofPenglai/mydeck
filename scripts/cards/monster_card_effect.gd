@@ -179,7 +179,7 @@ func _has_adjacent_ally(controller: BattleController, user: BattleUnitState, tar
 func _is_valid_water_cell(controller: BattleController, user: BattleUnitState, cell: Vector2i) -> bool:
 	return controller.map_data.is_valid_cell(cell) \
 		and controller.map_data.get_distance(user.cell, cell) <= 4 \
-		and controller.surface_state.get_component_elements(controller.surface_state.get_element(cell)).has(BattleSurfaceState.Element.WATER) \
+		and controller.surface_state.get_readable_elements(cell).has(BattleSurfaceState.Element.WATER) \
 		and controller.targeting.is_unit_cell_clear(user, cell, false)
 
 

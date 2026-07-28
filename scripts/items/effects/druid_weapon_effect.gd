@@ -661,7 +661,7 @@ func _transmute_surface(owner: BattleUnitState, runtime: EquipmentRuntimeState, 
 		return false
 	var candidates: Array[Vector2i] = []
 	for cell in controller.map_data.get_cells_in_range(owner.cell, owner.get_attack_range()):
-		if BattleSurfaceState.BASE_ELEMENTS.has(controller.surface_state.get_element(cell)):
+		if not controller.surface_state.get_readable_elements(cell).is_empty():
 			candidates.append(cell)
 	if candidates.is_empty():
 		return false
@@ -671,11 +671,12 @@ func _transmute_surface(owner: BattleUnitState, runtime: EquipmentRuntimeState, 
 		return left_distance < right_distance or (left_distance == right_distance and (left.y < right.y or (left.y == right.y and left.x < right.x)))
 	)
 	var target_cell := candidates[0]
-	var current := controller.surface_state.get_element(target_cell)
+	var elements := controller.surface_state.get_readable_elements(target_cell)
+	var current := elements[0]
 	var replacements := BattleSurfaceState.BASE_ELEMENTS.duplicate()
 	replacements.erase(current)
 	var next: int = replacements[controller.rng.randi_range(0, replacements.size() - 1)]
-	controller.surface_state.set_base_element(target_cell, next)
+	controller.surface_state.add_residue(target_cell, next, controller.battle_round)
 	runtime.set_counter("strike_element_until", owner.turn_serial)
 	runtime.set_counter("strike_element", next)
 	return true

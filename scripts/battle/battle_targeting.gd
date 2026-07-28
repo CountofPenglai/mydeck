@@ -75,7 +75,38 @@ func is_unit_cell_clear(unit: BattleUnitState, target_cell: Vector2i, write_log:
 			if write_log:
 				controller._emit_log("目标格已被 %s 占据。" % other.get_display_name())
 			return false
+	var battle_object := controller.get_battle_object_at_cell(target_cell)
+	if battle_object != null and battle_object.blocks_movement():
+		if write_log:
+			controller._emit_log("目标格被 %s 阻挡。" % battle_object.get_display_name())
+		return false
 	return true
+
+
+func has_line_of_sight(origin: Vector2i, target: Vector2i) -> bool:
+	if controller == null or controller.map_data == null:
+		return false
+	var line: Array[Vector2i] = controller.map_data.get_line(origin, target)
+	if line.size() <= 2:
+		return true
+	for index in range(1, line.size() - 1):
+		var battle_object := controller.get_battle_object_at_cell(line[index])
+		if battle_object != null and battle_object.blocks_line_of_sight():
+			return false
+	return true
+
+
+func has_line_of_sight_between_units(
+	source: BattleUnitState,
+	target: BattleUnitState
+) -> bool:
+	if source == null or target == null:
+		return false
+	for origin in source.get_occupied_cells():
+		for destination in target.get_occupied_cells():
+			if has_line_of_sight(origin, destination):
+				return true
+	return false
 
 
 func is_unit_inside_map_bounds(unit: BattleUnitState, cell: Vector2i, write_log: bool = false) -> bool:

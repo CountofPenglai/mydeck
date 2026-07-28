@@ -53,8 +53,8 @@ func _ready() -> void:
 	if ranger.character_state == null or ranger.character_state.deck.size() != 3 \
 			or ranger.character_state.get_deck_card_count() != 8:
 		_fail("RANGER_DIAG: default ranger deck is not the 5+2+1 starter set")
-	if controller.surface_state.get_element(Vector2i(4, 2)) != BattleSurfaceState.Element.FIRE \
-			or controller.surface_state.get_element(Vector2i(7, 5)) != BattleSurfaceState.Element.AIR:
+	if not controller.surface_state.get_readable_elements(Vector2i(4, 2)).has(BattleSurfaceState.Element.FIRE) \
+			or not controller.surface_state.get_readable_elements(Vector2i(7, 5)).has(BattleSurfaceState.Element.AIR):
 		_fail("RANGER_DIAG: sample map base elements were not loaded")
 	_test_combo_rollover(controller, ranger)
 	_test_element_inventory(controller, ranger)

@@ -3,6 +3,8 @@ class_name BattleMapData
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 const BattleElementCell = preload("res://scripts/battle/battle_element_cell.gd")
+const BattleTerrainCell = preload("res://scripts/battle/battle_terrain_cell.gd")
+const BattleObjectPlacement = preload("res://scripts/battle/battle_object_placement.gd")
 
 @export var map_size: Vector2 = Vector2(900, 600)
 @export var background_texture: Texture2D
@@ -15,6 +17,9 @@ const BattleElementCell = preload("res://scripts/battle/battle_element_cell.gd")
 @export_range(1, 16, 1) var enemy_spawn_columns: int = 3
 @export_group("Elements")
 @export var element_cells: Array[BattleElementCell] = []
+@export_group("Battlefield Features")
+@export var terrain_cells: Array[BattleTerrainCell] = []
+@export var object_placements: Array[BattleObjectPlacement] = []
 
 func is_valid_cell(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.x < grid_columns and cell.y >= 0 and cell.y < grid_rows

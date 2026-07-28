@@ -1,6 +1,6 @@
 # 项目结构与 Skill 工作流
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 本文档记录项目当前工程结构、运行时数据所有权、核心结算路径、测试入口以及在 Codex 中使用 GodotPrompter Skill 的方法。设计数值仍以外部设计文档为目标，实际实现状态以代码、资源和诊断为准。
 
@@ -9,8 +9,8 @@
 - 当前验证环境：Steam 版 Godot `4.7.1-stable`；具体路径见 `environment_memory.md`。
 - 主入口：两层冒险 Demo，大地图为 `11x7` 方形布局上的房间图。
 - 可操控职业：战士、游侠、德鲁伊。
-- 战斗地图：六边形网格、`Vector2i` 格坐标、整数距离和整数移动费用。
-- 已接入框架：卡牌、装备、状态、诅咒、地表元素、职业资源、第一章怪池与公开意图、商店、奖励、营地、事件、存档和战斗结果回写。
+- 战斗地图：六边形网格、`Vector2i` 格坐标、整数距离、六层格状态、可破坏对象与章节化战场生成。
+- 已接入框架：卡牌、装备、状态、诅咒、地表元素、职业资源、第一章怪池与公开意图、商店、奖励、营地、事件、存档和战斗结果回写。法师与术士已有未开放模板及底层机制，不在当前可选职业中。
 - 当前自动存档：`user://adventure_run.json`，并使用临时文件和备份文件提交。
 
 ## 运行流程
@@ -77,7 +77,10 @@ flowchart LR
 - `DistortionBattleState`：永久字段投影、显化牌来源计数、衰退快照以及每回合/每轮字段计数器。
 - `EquipmentRuntimeState`：层数、冷却、弹仓、风向、准备次数等单场状态。
 - 卡牌运行时 Dictionary：临时减费、来源牌区、临时放逐和单场标记。
-- `BattleSurfaceState`：本场地表元素与高级地表期限。
+- `BattleSurfaceState`：永久地形、地面/空气效果、永久元素源、临时残留和采集记录。
+- `BattleObjectState`：可破坏对象的生命、占格、视线、倒塌方向和单次行动触发记录。
+- `MageCombatState` 与控制器级 `MageInfusionState`：个人四系法术力、行动阶段次数，以及按阵营共享且独立于地表的魔石。
+- `WarlockCombatState`：术士法力、诅咒战斗朝向、牌上指示物和准备窗口状态。
 - `EnemyState`：敌人阶段、当前武器、特性计数器、已见牌和实例独占意图。
 
 共享 `.tres` 上禁止保存余烬、势、成熟度、弹仓、预设模式或临时伤害加值，否则多个角色和多场战斗会共享错误状态。
@@ -88,7 +91,7 @@ flowchart LR
 
 `BattleController` 使用 `Phase` 和 `TurnFlowState` 表达部署、回合开始、行动阶段、回合结束与战斗结束。玩家命令和 AI 决策都必须经过控制器领域入口。
 
-当前回合开始顺序为：旧字段回合开始触发 → 抽牌行动 → 旧显化牌衰退 → 汇总生命损失 → 玩家选择或敌人执行锁定显化 → 行动阶段。玩家显化时进入独立 `MANIFEST_PENDING` 状态，普通移动、攻击和出牌不会提前开放。
+当前回合开始顺序为：旧字段回合开始触发 → 抽牌行动 → 术士腐化 → 旧显化牌衰退 → 汇总生命损失 → 术士批量翻面 → 玩家选择或敌人执行锁定显化 → 行动阶段。术士翻面和玩家显化分别使用独立 pending 状态，普通移动、攻击和出牌不会提前开放。
 
 行动序是每轮快照：新轮开始读取当前敏捷并排序，轮内锁定；当前轮的敏捷变化只影响下一轮。敌人使用锁定的 `EnemyIntentPlan` 执行，不在步骤失效后重新规划强牌。
 
@@ -122,6 +125,10 @@ flowchart LR
 - `BattlePathfinder` 处理普通移动路径及地表费用。
 - 普通移动、按路径卡牌移动、直线移动、特殊转移和强制移动是不同语义，预览与结算必须复用同一规则。
 - `BattleMapView` 只负责绘制和输入转发，不拥有合法性规则。
+- `BattleSurfaceState` 是格内地形、效果和元素来源的权威状态；职业机制使用 `get_readable_elements()`，不得回退到单一 `get_element()` 假设。
+- `BattleObjectState` 不进入 `units`；占格与视线统一由 `BattleTargeting` 查询，销毁连锁进入当前效果队列。
+- `BattlefieldFeatureGenerator` 使用独立派生种子；生成所需的章节、档位、种子和深渊判定固化在待处理战斗事务中。
+- 详细边界见 [地表与地图要素实现记录](battlefield_features_implementation.md)。
 
 ### 通用 hook
 
@@ -184,9 +191,11 @@ GodotPrompter 是领域 Skill；Superpowers 等框架若可用，负责 brainsto
 | `battle_flow_check.tscn` | 行动队列、非重入、行动 ID、回合边界 |
 | `diagnose_battle_load.tscn` | 全资源扫描、战斗场景实例化和开战 |
 | `hex_grid_check.tscn` | 六边坐标、距离、直线、范围和移动费用 |
+| `battlefield_features_check.tscn` | 六层格状态、元素反应、采集、章节生成、对象连锁与视线 |
 | `movement_preview_check.tscn` | 普通移动合法格与性能 |
-| `card_movement_check.tscn` | 冲锋、战斗大师和游侠移动牌预览/结算一致性 |
+| `card_movement_check.tscn` | 冲锋、通用卡牌路径移动和游侠移动牌预览/结算一致性 |
 | `curse_system_check.tscn` | 诅咒生命周期、负荷、里程碑、恩典、显化衰退、解放和战斗内选择 UI |
+| `mage_warlock_mechanics_check.tscn` | 未开放模板、四系法术力、魔石、初态锁定、诅咒翻面、腐化、混合支付与生命规则 |
 | `warrior_*_check.tscn` | 战士机制、hook 与武器 |
 | `ranger_*_check.tscn` | 游侠机制与武器 |
 | `druid_*_check.tscn` | 德鲁伊机制、hook、卡牌与武器 |
@@ -200,6 +209,16 @@ GodotPrompter 是领域 Skill；Superpowers 等框架若可用，负责 brainsto
 4. 涉及距离时增加 `hex_grid_check`；涉及冒险持久化时增加 `adventure_system_check`。
 
 命令模板和沙箱处理见 [environment_memory.md](environment_memory.md)。
+
+## 第二章敌人实现补充（2026-07-26）
+
+- 两层 Demo 现正式约定：内部 `floor_index = 0` 使用第一章敌池，`floor_index = 1` 使用第二章敌池。
+- `EnemyCatalogRouter` 是章节到敌人目录的唯一入口；战斗事务必须保存 `enemy_chapter`，遭遇洗牌袋必须按章节隔离。
+- `EnemyRuleDispatcher` 是敌人战斗规则的公共入口。控制器、单位状态和战术行为不应再次直接依赖某一章规则类。
+- `EnemyData.unit_tags` 保存军阵、支援、首领等静态标签；`permanent_distortion_fields` 保存固定畸变字段。
+- 第二章阶段、圣徽、军令、倒转、召唤等可变数据属于 `EnemyState.runtime_state`。
+- 第二章专项诊断入口为 `tools/diagnostics/chapter_two_enemy_check.tscn`，覆盖敌人模板、遭遇袋、章节路由、军阵、公开意图、Boss 阶段与福音奖励。
+- 详细边界见 [chapter_two_enemy_implementation.md](chapter_two_enemy_implementation.md)。
 
 ## 文档维护
 

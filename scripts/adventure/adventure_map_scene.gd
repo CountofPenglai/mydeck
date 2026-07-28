@@ -858,6 +858,34 @@ func _show_reward_modal() -> void:
 			button.disabled = (reward.get("claimed_equipment", []) as Array).has(str(equipment_data.get("id", "")))
 			button.pressed.connect(_claim_reward.bind(str(equipment_data.get("id", ""))))
 			modal_body.add_child(button)
+	if bool(reward.get("gospel_offer", false)):
+		var gospel_heading := Label.new()
+		gospel_heading.text = "首领诅咒 · 福音"
+		gospel_heading.add_theme_font_size_override("font_size", 19)
+		gospel_heading.add_theme_color_override("font_color", Color("#d6a0c7"))
+		modal_body.add_child(gospel_heading)
+		var receiver_id := str(reward.get("gospel_receiver", ""))
+		var declined := bool(reward.get("gospel_declined", false))
+		var gospel_hint := Label.new()
+		gospel_hint.text = "可选择一名冒险者获得深度1「福音」之业，也可以放弃。业不占负荷，成功打出后转为报。"
+		gospel_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		modal_body.add_child(gospel_hint)
+		if receiver_id.is_empty() and not declined:
+			for hero in run_state.party:
+				if hero == null:
+					continue
+				var gospel_button := Button.new()
+				gospel_button.text = "%s 接受福音" % hero.get_character_name()
+				gospel_button.pressed.connect(_claim_gospel_reward.bind(hero.adventure_character_id))
+				modal_body.add_child(gospel_button)
+			var decline_button := Button.new()
+			decline_button.text = "放弃福音"
+			decline_button.pressed.connect(_decline_gospel_reward)
+			modal_body.add_child(decline_button)
+		else:
+			var result_label := Label.new()
+			result_label.text = "已放弃" if declined else "%s 已接受" % _hero_name(receiver_id)
+			modal_body.add_child(result_label)
 	var finish := Button.new()
 	finish.text = "完成奖励选择 · 已选 %d/%d" % [claimed_cards.size(), max_cards]
 	finish.pressed.connect(_settle_reward)
@@ -1391,6 +1419,16 @@ func _settle_event_battle_reward() -> void:
 
 func _claim_reward(candidate_id: String) -> void:
 	session.claim_reward_candidate(candidate_id)
+	_show_reward_modal()
+
+
+func _claim_gospel_reward(hero_id: String) -> void:
+	session.claim_gospel_reward(hero_id)
+	_show_reward_modal()
+
+
+func _decline_gospel_reward() -> void:
+	session.decline_gospel_reward()
 	_show_reward_modal()
 
 

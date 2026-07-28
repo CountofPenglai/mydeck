@@ -1,5 +1,16 @@
 extends Node
 
+const REMOVED_TEST_CARD_PATHS := [
+	"res://resources/cards/battle_strike.tres",
+	"res://resources/cards/piercing_shot.tres",
+	"res://resources/cards/quick_flourish.tres",
+	"res://resources/cards/heavy_cleave.tres",
+	"res://resources/cards/battle_master.tres",
+	"res://resources/cards/sample_card.tres",
+	"res://resources/cards/cultist_arrow.tres",
+	"res://resources/cards/marauder_rend.tres",
+]
+
 var exit_code: int = 0
 
 
@@ -55,10 +66,7 @@ func _test_starter_deck_configuration() -> void:
 			var starter_card := load(card_path) as CardData
 			if starter_card == null or starter_card.rarity != CardEnums.Rarity.BASIC:
 				_fail("ADVENTURE_DIAG: starter card must use BASIC rarity: %s" % card_path)
-	for removed_path in [
-		"res://resources/cards/battle_strike.tres",
-		"res://resources/cards/piercing_shot.tres",
-	]:
+	for removed_path in REMOVED_TEST_CARD_PATHS:
 		if ResourceLoader.exists(removed_path):
 			_fail("ADVENTURE_DIAG: removed test card still exists: %s" % removed_path)
 	var expected_weapons := {
@@ -89,11 +97,6 @@ func _test_reward_card_filtering() -> void:
 		"res://resources/cards/druid_moonlit_mend.tres",
 		"res://resources/cards/druid_rooted_insight.tres",
 	])
-	var excluded_paths := PackedStringArray([
-		"res://resources/cards/cultist_arrow.tres",
-		"res://resources/cards/marauder_rend.tres",
-		"res://resources/cards/sample_card.tres",
-	])
 	var service := AdventureRewardService.new()
 	for card_path in basic_paths:
 		var basic_card := load(card_path) as CardData
@@ -101,15 +104,6 @@ func _test_reward_card_filtering() -> void:
 			_fail("ADVENTURE_DIAG: BASIC card is still reward eligible: %s" % card_path)
 		elif service.create_card_stack(card_path, "diag_basic", basic_card.card_class) != null:
 			_fail("ADVENTURE_DIAG: BASIC card passed reward claim validation: %s" % card_path)
-	for card_path in excluded_paths:
-		var excluded_card := load(card_path) as CardData
-		if excluded_card == null:
-			_fail("ADVENTURE_DIAG: excluded reward card is missing: %s" % card_path)
-		elif excluded_card.can_appear_in_rewards():
-			_fail("ADVENTURE_DIAG: test card is still reward eligible: %s" % card_path)
-		elif service.create_card_stack(card_path, "diag_excluded", CardEnums.CardClass.WARRIOR) != null:
-			_fail("ADVENTURE_DIAG: test card passed reward claim validation: %s" % card_path)
-
 	for file_name in DirAccess.get_files_at("res://resources/cards/monster_cards"):
 		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
 			continue
@@ -139,7 +133,7 @@ func _test_reward_card_filtering() -> void:
 					continue
 				if not card.can_appear_in_rewards():
 					_fail("ADVENTURE_DIAG: ineligible card entered reward candidates: %s" % card_path)
-				if excluded_paths.has(card_path):
+				if REMOVED_TEST_CARD_PATHS.has(card_path):
 					_fail("ADVENTURE_DIAG: test card entered reward candidates: %s" % card_path)
 	if candidate_count <= 0:
 		_fail("ADVENTURE_DIAG: reward filter test produced no candidates")
@@ -482,7 +476,7 @@ func _test_adventure_instance_modifiers() -> void:
 		return
 	var target_cell := controller.map_data.get_all_cells()[0]
 	controller._apply_adventure_card_infusion(unit, infused_card, {"adventure_infusion_cell": target_cell})
-	if controller.surface_state.get_element(target_cell) != BattleSurfaceState.Element.FIRE:
+	if not controller.surface_state.get_readable_elements(target_cell).has(BattleSurfaceState.Element.FIRE):
 		_fail("ADVENTURE_DIAG: natural infusion did not apply its element")
 		return
 	controller._apply_adventure_card_infusion(unit, infused_card, {"adventure_infusion_cell": target_cell})

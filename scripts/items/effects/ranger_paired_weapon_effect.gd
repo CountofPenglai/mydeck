@@ -197,9 +197,11 @@ func on_after_strike(owner: BattleUnitState, _root: EquipmentData, _component: E
 			if not melee and target != null and target.is_alive():
 				var controller := context.get("controller") as BattleController
 				if controller != null:
-					var element := controller.surface_state.get_element(owner.cell)
-					if BattleSurfaceState.BASE_ELEMENTS.has(element):
-						controller.apply_base_surface_element(target.cell, element)
+					for element in controller.surface_state.get_readable_elements(owner.cell):
+						controller.apply_base_surface_element(target.cell, element, {
+							"source": owner,
+							"source_cell": owner.cell,
+						})
 		WeaponKind.BLOOD:
 			if actual_damage > 0 and target != null:
 				_add_mark(runtime, target.unit_id, 1, not melee)

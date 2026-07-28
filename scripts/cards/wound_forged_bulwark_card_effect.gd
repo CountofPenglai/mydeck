@@ -52,3 +52,11 @@ func _play_momentum(controller: BattleController, user: BattleUnitState, context
 			"伤铸壁垒：范围伤害",
 			context
 		)
+	for battle_object in controller.get_battle_objects_in_range(user.cell, effect_range):
+		controller.enqueue_effect(
+			Callable(controller, "apply_object_damage"),
+			[user, battle_object, destroyed, "\u4f24\u94f8\u58c1\u5792", {"source_cell": user.cell}],
+			effect_priority,
+			"\u4f24\u94f8\u58c1\u5792\uff1a\u5bf9\u8c61\u4f24\u5bb3",
+			context
+		)

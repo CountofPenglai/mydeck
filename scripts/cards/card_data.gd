@@ -28,6 +28,7 @@ const MUTATION_FIELD_LABELS: Dictionary = {
 @export var allowed_classes: PackedInt32Array = []
 @export_enum("攻击", "技能", "附魔", "诅咒") var card_type: int = CardEnums.CardType.SKILL
 @export_flags("Physical", "Magical") var card_tags: int = 0
+@export_flags("Fire", "Water", "Earth", "Air") var element_tags: int = 0
 @export_enum("力量", "敏捷", "智力", "武器") var damage_type: int = CardEnums.DamageType.STRENGTH
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var target_type: int = CardEnums.TargetType.NONE
 @export_range(0, 99, 1) var ap_cost: int = 2
@@ -35,6 +36,7 @@ const MUTATION_FIELD_LABELS: Dictionary = {
 @export_range(-12, 12, 1) var range_modifier: int = 0
 @export var override_range: bool = false
 @export_range(0, 12, 1) var card_range: int = 2
+@export var can_target_battle_objects: bool = false
 @export var effect: CardEffect
 
 @export_group("Mutation")
@@ -62,6 +64,19 @@ var bound_curse_instance: CurseInstance
 @export_range(0, 99, 1) var resonance_cost: int = 0
 @export var auto_pay_resonance: bool = true
 @export var is_twin_spell: bool = false
+
+
+func get_printed_elements() -> Array[int]:
+	var result: Array[int] = []
+	if (element_tags & CardEnums.ElementTag.FIRE) != 0:
+		result.append(BattleSurfaceState.Element.FIRE)
+	if (element_tags & CardEnums.ElementTag.WATER) != 0:
+		result.append(BattleSurfaceState.Element.WATER)
+	if (element_tags & CardEnums.ElementTag.EARTH) != 0:
+		result.append(BattleSurfaceState.Element.EARTH)
+	if (element_tags & CardEnums.ElementTag.AIR) != 0:
+		result.append(BattleSurfaceState.Element.AIR)
+	return result
 
 func can_play(context: Dictionary = {}) -> bool:
 	if effect == null:
@@ -99,6 +114,11 @@ func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = 
 		return effect.is_unit_target_allowed(context, target)
 	var user: BattleUnitState = context.get("user") as BattleUnitState
 	return user != null and target != null and target.faction != user.faction
+
+
+func is_object_target_allowed(context: Dictionary = {}, target: BattleObjectState = null) -> bool:
+	return can_target_battle_objects and target != null and target.is_targetable() \
+		and effect != null and effect.is_object_target_allowed(context, target)
 
 
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:

@@ -1,6 +1,8 @@
 extends Node
 class_name AdventureSessionService
 
+const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
+
 signal state_changed
 signal status_message(message: String)
 
@@ -11,16 +13,7 @@ const HERO_PATHS := [
 	"res://resources/characters/battle_ranger_state.tres",
 	"res://resources/characters/battle_druid_state.tres",
 ]
-const ORDINARY_CURSE_PATHS := [
-	"res://resources/curses/blood.tres",
-	"res://resources/curses/greed.tres",
-	"res://resources/curses/cripple.tres",
-	"res://resources/curses/disease.tres",
-	"res://resources/curses/passing.tres",
-	"res://resources/curses/possession.tres",
-	"res://resources/curses/unrest.tres",
-	"res://resources/curses/counterfeit.tres",
-]
+const ORDINARY_CURSE_PATHS := CurseCatalog.ORDINARY_PATHS
 
 var current_run: PartyRunState
 var definition := AdventureDefinition.new()
@@ -284,6 +277,10 @@ func resolve_pending_battle_result(result: BattleResult) -> bool:
 			current_run.floor_state.normal_battle_victories += 1
 		var tier := int(payload.get("encounter_tier", AdventureEnums.EncounterTier.WEAK))
 		var reward := reward_service.create_battle_reward(current_run, room, tier)
+		if str(payload.get("encounter_id", "")) == "corrupt_heart_veil_boss":
+			reward["gospel_offer"] = true
+			reward["gospel_receiver"] = ""
+			reward["gospel_declined"] = false
 		_apply_fixed_reward(room, reward)
 		current_run.adventure_flags["pending_reward"] = reward
 		current_run.begin_transaction(AdventureEnums.TransactionType.REWARD, "reward_%s" % room.room_id, {"room_id": room.room_id})
@@ -455,10 +452,39 @@ func claim_reward_candidate(candidate_id: String) -> bool:
 	return false
 
 
+func claim_gospel_reward(hero_id: String) -> bool:
+	if not has_pending_reward():
+		return false
+	var reward := current_run.adventure_flags["pending_reward"] as Dictionary
+	if not bool(reward.get("gospel_offer", false)) or not str(reward.get("gospel_receiver", "")).is_empty() \
+			or bool(reward.get("gospel_declined", false)):
+		return false
+	var hero := _get_hero(hero_id)
+	var definition_resource := load("res://resources/curses/gospel.tres") as CurseDefinition
+	if hero == null or definition_resource == null or hero.acquire_curse(definition_resource) == null:
+		return false
+	reward["gospel_receiver"] = hero_id
+	_save_and_emit("%s 接受了「福音」之业。" % hero.get_character_name())
+	return true
+
+
+func decline_gospel_reward() -> bool:
+	if not has_pending_reward():
+		return false
+	var reward := current_run.adventure_flags["pending_reward"] as Dictionary
+	if not bool(reward.get("gospel_offer", false)) or not str(reward.get("gospel_receiver", "")).is_empty():
+		return false
+	reward["gospel_declined"] = true
+	_save_and_emit("队伍放弃了「福音」之业。")
+	return true
+
+
 func settle_pending_reward() -> void:
 	if not has_pending_reward():
 		return
 	var reward := current_run.adventure_flags["pending_reward"] as Dictionary
+	if bool(reward.get("gospel_offer", false)) and str(reward.get("gospel_receiver", "")).is_empty():
+		reward["gospel_declined"] = true
 	reward["settled"] = true
 	var room := current_run.floor_state.get_room(str(reward.get("room_id", "")))
 	current_run.commit_transaction()
@@ -1092,11 +1118,25 @@ func _prepare_battle_transaction(room: AdventureRoomState, ambush: bool, tier: i
 	payload["battle_seed"] = AdventureMapGenerator.derive_seed(current_run.run_seed, "encounter", room.room_id.hash() + current_run.floor_index * 1000 + (70000 if ambush else 0))
 	payload["starting_hand_bonus"] = 1 if bool(current_run.adventure_flags.get("tactical_rehearsal", false)) else 0
 	payload["enemy_health_percent"] = current_run.enemy_health_percent
+	var enemy_chapter := EnemyCatalogRouter.chapter_for_floor(current_run.floor_index)
+	payload["enemy_chapter"] = enemy_chapter
+	payload["battlefield_seed"] = AdventureMapGenerator.derive_seed(
+		int(payload["battle_seed"]),
+		"battlefield_layout",
+		0
+	)
+	payload["battlefield_generation_version"] = 1
+	payload["generate_battlefield_features"] = tier != AdventureEnums.EncounterTier.BOSS
+	payload["force_abyss_features"] = _roll_chapter_one_abyss(
+		enemy_chapter,
+		tier,
+		int(payload["battlefield_seed"])
+	)
 	current_run.adventure_flags.erase("tactical_rehearsal")
-	var last_key := "last_chapter_one_encounter_%d" % tier
-	var bag_key := "chapter_one_encounter_bag_%d" % tier
+	var last_key := "last_chapter_%d_encounter_%d" % [enemy_chapter, tier]
+	var bag_key := "chapter_%d_encounter_bag_%d" % [enemy_chapter, tier]
 	var bag_ids: Array = current_run.adventure_flags.get(bag_key, []) as Array
-	var draw := ChapterOneEnemyCatalog.draw_encounter(tier, int(payload.battle_seed), bag_ids, str(current_run.adventure_flags.get(last_key, "")))
+	var draw := EnemyCatalogRouter.draw_encounter(enemy_chapter, tier, int(payload.battle_seed), bag_ids, str(current_run.adventure_flags.get(last_key, "")))
 	var encounter := draw.get("encounter", {}) as Dictionary
 	payload["encounter_id"] = str(encounter.get("id", ""))
 	payload["enemy_archetypes"] = encounter.get("enemies", []).duplicate()
@@ -1125,8 +1165,10 @@ func _build_battle_scenario(payload: Dictionary) -> BattleScenario:
 	scenario.enemies.clear()
 	var tier := int(payload.get("encounter_tier", AdventureEnums.EncounterTier.WEAK))
 	var archetypes: Array = payload.get("enemy_archetypes", []) as Array
+	var fallback_chapter := 1 if not archetypes.is_empty() else EnemyCatalogRouter.chapter_for_floor(current_run.floor_index)
+	var enemy_chapter := int(payload.get("enemy_chapter", fallback_chapter))
 	if archetypes.is_empty():
-		var encounter := ChapterOneEnemyCatalog.pick_encounter(tier, int(payload.get("battle_seed", current_run.run_seed)))
+		var encounter := EnemyCatalogRouter.pick_encounter(enemy_chapter, tier, int(payload.get("battle_seed", current_run.run_seed)))
 		archetypes = encounter.get("enemies", []) as Array
 	var birth_index := 0
 	var enemy_health_percent := clampi(
@@ -1134,17 +1176,39 @@ func _build_battle_scenario(payload: Dictionary) -> BattleScenario:
 	)
 	for archetype in archetypes:
 		var enemy_seed := AdventureMapGenerator.derive_seed(int(payload.get("battle_seed", current_run.run_seed)), "enemy_deck", birth_index)
-		var enemy := ChapterOneEnemyCatalog.create_enemy(StringName(archetype), enemy_seed)
+		var enemy := EnemyCatalogRouter.create_enemy(enemy_chapter, StringName(archetype), enemy_seed)
 		if enemy != null:
 			enemy.max_health_percent = enemy_health_percent
 			enemy.current_health = enemy.get_max_health()
 			scenario.enemies.append(enemy)
 		birth_index += 1
 	scenario.seed = int(payload.get("battle_seed", current_run.run_seed))
+	scenario.generate_battlefield_features = bool(payload.get("generate_battlefield_features", true))
+	scenario.feature_chapter = enemy_chapter
+	scenario.feature_encounter_tier = tier
+	scenario.feature_seed = int(payload.get("battlefield_seed", scenario.seed))
+	scenario.force_abyss_features = bool(payload.get("force_abyss_features", false))
 	if scenario.battle_config != null:
 		scenario.battle_config = scenario.battle_config.duplicate(true) as BattleConfig
 		scenario.battle_config.starting_hand_size += int(payload.get("starting_hand_bonus", 0))
 	return scenario
+
+
+func _roll_chapter_one_abyss(chapter: int, tier: int, battlefield_seed: int) -> bool:
+	if current_run == null or chapter != 1 \
+			or (tier != AdventureEnums.EncounterTier.STRONG \
+			and tier != AdventureEnums.EncounterTier.ELITE):
+		return false
+	const MISS_KEY := "chapter_1_battlefield_abyss_misses"
+	var misses := int(current_run.adventure_flags.get(MISS_KEY, 0))
+	var generated := misses >= 2
+	if not generated:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = AdventureMapGenerator.derive_seed(battlefield_seed, "abyss_roll", misses)
+		var chance := 75 if tier == AdventureEnums.EncounterTier.ELITE else 50
+		generated = rng.randi_range(1, 100) <= chance
+	current_run.adventure_flags[MISS_KEY] = 0 if generated else misses + 1
+	return generated
 
 
 func _enter_pending_battle_scene() -> bool:

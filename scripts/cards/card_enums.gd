@@ -30,6 +30,13 @@ enum CardTag {
 	MAGICAL = 2,
 }
 
+enum ElementTag {
+	FIRE = 1,
+	WATER = 2,
+	EARTH = 4,
+	AIR = 8,
+}
+
 enum DamageType {
 	STRENGTH,
 	AGILITY,

@@ -157,4 +157,4 @@ theme_override_constants/separation = 4
 
 [node name="SampleDeckItem" type="Label" parent="RootPanel/Margin/Layout/InfoColumn/DeckList"]
 layout_mode = 2
-text = "战术打击 x4"
+text = "逼近啃咬 x4"

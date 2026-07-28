@@ -14,5 +14,5 @@ func on_turn_end(unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	if unit == null or unit.turn_serial < expires_after_turn_serial:
 		return
 	if projected_curse != null:
-		unit.curse_zone.erase(projected_curse)
+		unit.remove_curse_from_zone(projected_curse, _context)
 	stacks = 0

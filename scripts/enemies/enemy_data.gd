@@ -23,6 +23,9 @@ class_name EnemyData
 
 @export_group("Chapter Profile")
 @export var archetype_id: StringName = &"training_enemy"
+@export_range(1, 99, 1) var chapter: int = 1
+@export var unit_tags: PackedStringArray = []
+@export var permanent_distortion_fields: PackedStringArray = []
 @export_enum("无", "战士", "游侠", "德鲁伊") var class_profile: int = CardEnums.CardClass.NEUTRAL
 @export_multiline var trait_summary: String = ""
 

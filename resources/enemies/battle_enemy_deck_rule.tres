@@ -1,11 +1,11 @@
 [gd_resource type="Resource" script_class="EnemyDeckRule" load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/enemy_deck_rule.gd" id="1_deck_rule"]
-[ext_resource type="Resource" path="res://resources/cards/marauder_rend_stack.tres" id="3_rend"]
-[ext_resource type="Resource" path="res://resources/cards/cultist_arrow_stack.tres" id="4_arrow"]
+[ext_resource type="Resource" path="res://resources/cards/monster_cards/approach_bite_stack.tres" id="3_bite"]
+[ext_resource type="Resource" path="res://resources/cards/monster_cards/sewage_spit_stack.tres" id="4_spit"]
 
 [resource]
 script = ExtResource("1_deck_rule")
-fixed_cards = [ExtResource("3_rend"), ExtResource("4_arrow")]
-random_pool = [ExtResource("3_rend"), ExtResource("4_arrow")]
+fixed_cards = [ExtResource("3_bite"), ExtResource("4_spit")]
+random_pool = [ExtResource("3_bite"), ExtResource("4_spit")]
 random_pick_count = 1

@@ -246,7 +246,7 @@ func _test_kaleidoscope_mirror(druid: BattleUnitState, controller: BattleControl
 	first.is_deployed = true
 	second.is_deployed = true
 	first.set_hex_cell(Vector2i(3, 4), controller.map_data)
-	second.set_hex_cell(Vector2i(3, 3), controller.map_data)
+	second.set_hex_cell(Vector2i(2, 3), controller.map_data)
 	var weapon := load("res://resources/items/druid_kaleidoscope.tres") as EquipmentData
 	_set_weapon(druid, weapon)
 	druid.set_druid_transformed(false)
@@ -279,14 +279,22 @@ func _test_chaos_transmutation(druid: BattleUnitState, controller: BattleControl
 	var weapon := load("res://resources/items/druid_chaos_viper.tres") as EquipmentData
 	_set_weapon(druid, weapon)
 	druid.set_druid_transformed(false)
-	controller.surface_state.set_base_element(druid.cell, BattleSurfaceState.Element.FIRE)
+	controller.surface_state.add_persistent_source(
+		druid.cell,
+		BattleSurfaceState.Element.FIRE,
+		"diagnostic:chaos",
+		"diagnostic"
+	)
 	var action := _find_action(druid, "transmute", controller)
 	if action.is_empty() or not _activate(druid, action, controller):
 		_fail("DRUID_WEAPONS: chaos transmutation was unavailable")
 		return
-	var changed_element := controller.surface_state.get_element(druid.cell)
-	if changed_element == BattleSurfaceState.Element.FIRE:
-		_fail("DRUID_WEAPONS: chaos transmutation did not change the base element")
+	var changed_elements := controller.surface_state.get_readable_elements(druid.cell)
+	changed_elements.erase(BattleSurfaceState.Element.FIRE)
+	if changed_elements.is_empty():
+		_fail("DRUID_WEAPONS: chaos transmutation did not add a new readable element")
+		return
+	var changed_element := changed_elements[0]
 	var strike_context := {}
 	var effect := weapon.passive_effects[0] as EquipmentEffect
 	effect.on_before_strike(druid, weapon, weapon, druid.get_equipment_runtime_state(weapon), strike_context)

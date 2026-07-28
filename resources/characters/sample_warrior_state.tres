@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
-[ext_resource type="Resource" path="res://resources/cards/sample_card_stack.tres" id="3_card_stack"]
+[ext_resource type="Resource" path="res://resources/cards/battle_slam_stack.tres" id="3_card_stack"]
 [ext_resource type="Resource" path="res://resources/items/training_sword.tres" id="4_main_hand"]
 [ext_resource type="Resource" path="res://resources/items/guard_dagger.tres" id="5_off_hand"]
 [ext_resource type="Resource" path="res://resources/items/healing_potion_stack.tres" id="6_potion_stack"]
