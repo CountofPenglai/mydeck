@@ -25,6 +25,17 @@ func _ready() -> void:
 		_fail("INVENTORY_UI_DIAG: inventory modal title missing")
 	if map_scene.modal_body.get_child_count() < 8:
 		_fail("INVENTORY_UI_DIAG: inventory modal content incomplete")
+	var detail_button := _find_button(map_scene.modal_body, "详情")
+	if detail_button == null:
+		_fail("INVENTORY_UI_DIAG: equipment detail button missing")
+	else:
+		detail_button.pressed.emit()
+		await get_tree().process_frame
+		if map_scene.modal_title.text != hero.weapon_equipment.item_name \
+				or not _labels_contain(map_scene.modal_body, "基础伤害"):
+			_fail("INVENTORY_UI_DIAG: equipment detail view omitted combat fields")
+	if not map_scene._camp_activity_description("ranger_dig").contains("第三次"):
+		_fail("INVENTORY_UI_DIAG: camp activity description is incomplete")
 	if map_scene.enemy_health_spin_box == null:
 		_fail("INVENTORY_UI_DIAG: enemy health test control missing")
 	elif int(map_scene.enemy_health_spin_box.value) != map_scene.run_state.enemy_health_percent \
@@ -39,3 +50,22 @@ func _fail(message: String) -> void:
 	exit_code = 1
 	push_error(message)
 	print("ERROR: " + message)
+
+
+func _find_button(root: Node, fragment: String) -> Button:
+	if root is Button and (root as Button).text.contains(fragment):
+		return root as Button
+	for child in root.get_children():
+		var result := _find_button(child, fragment)
+		if result != null:
+			return result
+	return null
+
+
+func _labels_contain(root: Node, fragment: String) -> bool:
+	if root is Label and (root as Label).text.contains(fragment):
+		return true
+	for child in root.get_children():
+		if _labels_contain(child, fragment):
+			return true
+	return false

@@ -346,7 +346,7 @@ func _draw_card_target_preview(preview: Dictionary) -> void:
 			_card_target_preview_valid = true
 		for target in _card_target_preview_units:
 			_draw_target_marker(target)
-		if card.can_target_battle_objects:
+		if card.can_target_objects():
 			for battle_object in controller.battle_objects:
 				if battle_object != null and battle_object.is_targetable() \
 						and controller.can_preview_card_targets(

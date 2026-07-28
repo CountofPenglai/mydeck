@@ -11,6 +11,7 @@ enum Kind {
 
 @export var kind: int = Kind.EXPLOSIVE_BARREL
 @export var display_name: String = ""
+@export_multiline var description: String = ""
 @export_range(1, 999, 1) var max_health: int = 1
 @export var blocks_movement: bool = true
 @export var blocks_line_of_sight: bool = false
@@ -26,27 +27,32 @@ static func create_builtin(object_kind: int) -> BattleObjectDefinition:
 	match object_kind:
 		Kind.EXPLOSIVE_BARREL:
 			definition.display_name = "\u70b8\u836f\u6876"
+			definition.description = "被摧毁或受到火元素时爆炸，对范围 1 内单位和对象造成 4 点环境伤害，并施加火元素。"
 			definition.max_health = 4
 			definition.blocks_line_of_sight = false
 			definition.map_color = Color(0.72, 0.18, 0.08)
 		Kind.WATER_CISTERN:
 			definition.display_name = "\u50a8\u6c34\u7f50"
+			definition.description = "摧毁后向本格及相邻格施加水元素。"
 			definition.max_health = 5
 			definition.blocks_line_of_sight = false
 			definition.map_color = Color(0.08, 0.44, 0.68)
 		Kind.WIND_TOTEM:
 			definition.display_name = "\u98ce\u8680\u56fe\u817e"
+			definition.description = "存活时提供永久气元素源；摧毁后推开相邻单位并施加气元素。"
 			definition.max_health = 5
 			definition.blocks_line_of_sight = false
 			definition.persistent_element = BattleSurfaceState.Element.AIR
 			definition.map_color = Color(0.55, 0.78, 0.82)
 		Kind.UNSTABLE_PILLAR:
 			definition.display_name = "\u4e0d\u7a33\u5899\u67f1"
+			definition.description = "阻挡移动和视线；摧毁时沿受击方向倒塌 2 格，造成 4 点环境伤害并生成残骸。"
 			definition.max_health = 8
 			definition.blocks_line_of_sight = true
 			definition.map_color = Color(0.48, 0.45, 0.41)
 		Kind.RUBBLE:
 			definition.display_name = "\u5efa\u7b51\u6b8b\u9ab8"
+			definition.description = "可破坏，阻挡移动和视线，并提供永久土元素源。"
 			definition.max_health = 5
 			definition.blocks_line_of_sight = true
 			definition.persistent_element = BattleSurfaceState.Element.EARTH

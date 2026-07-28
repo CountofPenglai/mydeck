@@ -341,7 +341,7 @@ func _handle_card_target(
 			_show_ranger_enemy_hand_choice(clicked_unit)
 			return
 		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
-	elif clicked_object != null and pending_card.can_target_battle_objects:
+	elif clicked_object != null and pending_card.can_target_objects():
 		played = controller.play_card(
 			controller.current_unit,
 			pending_card,

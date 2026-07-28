@@ -97,6 +97,37 @@ static func sort_inventory(state: CharacterState) -> bool:
 	return true
 
 
+static func transfer_inventory_stack(
+	source: CharacterState,
+	target: CharacterState,
+	stack_id: String
+) -> Dictionary:
+	if source == null or target == null or source == target:
+		return _result(false, "请选择另一名接收者。")
+	if stack_id.is_empty():
+		return _result(false, "背包物品不存在。")
+	if target.inventory.size() >= CharacterState.INVENTORY_LIMIT:
+		return _result(false, "%s 的背包已满。" % target.get_character_name())
+
+	for index in range(source.inventory.size()):
+		var stack := source.inventory[index]
+		if stack == null or stack.stack_id != stack_id or stack.item_data == null:
+			continue
+		if not (stack.item_data is EquipmentData):
+			return _result(false, "目前只能转交装备。")
+		source.inventory.remove_at(index)
+		target.inventory.append(stack)
+		if source.equipment_adventure_modifiers.has(stack_id):
+			target.equipment_adventure_modifiers[stack_id] = \
+				source.equipment_adventure_modifiers.get(stack_id, {}).duplicate(true)
+			source.equipment_adventure_modifiers.erase(stack_id)
+		return _result(true, "%s 已转交给 %s。" % [
+			stack.item_data.item_name,
+			target.get_character_name(),
+		])
+	return _result(false, "背包物品不存在。")
+
+
 static func preview_equipment_switch(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
 	if state == null:
 		return _result(false, "角色状态不存在。")

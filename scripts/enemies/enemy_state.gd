@@ -18,7 +18,6 @@ var intent_plan := EnemyIntentPlan.new()
 var seen_card_names: PackedStringArray = []
 const MAX_HEALTH_PER_STRENGTH := 3
 const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
-const DAMAGE_PER_ATTRIBUTE := 1
 
 func ensure_initialized(seed: int = -1) -> void:
 	if enemy_data == null:
@@ -81,11 +80,11 @@ func get_damage_bonus(context: Dictionary = {}) -> int:
 	var bonus := flat_damage_bonus
 	match _resolve_damage_type(context):
 		CardEnums.DamageType.AGILITY:
-			bonus += get_agility() * DAMAGE_PER_ATTRIBUTE
+			bonus += CharacterAttributeRules.get_damage_bonus(get_agility())
 		CardEnums.DamageType.INTELLIGENCE:
-			bonus += get_intelligence() * DAMAGE_PER_ATTRIBUTE
+			bonus += CharacterAttributeRules.get_damage_bonus(get_intelligence())
 		_:
-			bonus += get_strength() * DAMAGE_PER_ATTRIBUTE
+			bonus += CharacterAttributeRules.get_damage_bonus(get_strength())
 
 	return bonus
 

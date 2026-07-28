@@ -280,6 +280,14 @@ func _refresh_detail(preview_room_id: String = "") -> void:
 	])
 	if room.room_type == AdventureEnums.RoomType.NORMAL_BATTLE:
 		lines.append("[color=#b9aa83]怪池[/color]  %s" % AdventureEnums.encounter_tier_label(session.get_current_encounter_tier()))
+	elif room.room_type == AdventureEnums.RoomType.SHELTER:
+		lines.append("\n[color=#d7c797]扎营活动[/color]")
+		for activity_id in ["bandage", "tactics", "scout", "watch", "sharpen", "ranger_dig", "druid_infusion"]:
+			lines.append("• %s" % _camp_activity_description(activity_id))
+		var ranger_id := _first_hero_id_for_class(CardEnums.CardClass.RANGER)
+		if not ranger_id.is_empty():
+			var progress := int(run_state.adventure_flags.get("ranger_dig_%s" % ranger_id, 0))
+			lines.append("[color=#b9aa83]挖掘进度[/color]  %d/3" % progress)
 	elif room.room_type == AdventureEnums.RoomType.EVENT:
 		if room.content_revealed:
 			var event := session.get_event_definition(room)
@@ -325,13 +333,20 @@ func _build_current_room_actions(room: AdventureRoomState) -> void:
 			_add_action("免费休息", _rest, room.rest_used)
 			if session.can_deliver_adventurer_remains():
 				_add_action("交付冒险者遗骨 · 本层装备三选一", _begin_remains_delivery, false, "选择装备和接收者后，遗骨任务物品消失。")
-			_add_action("包扎选中角色 (2)", _camp_action.bind("bandage"))
-			_add_action("战术推演 (2)", _camp_action.bind("tactics"))
-			_add_action("侦察 (1)", _camp_action.bind("scout"))
-			_add_action("守夜 (2)", _camp_action.bind("watch"))
-			_add_action("战士：磨砺兵锋 (3)", _camp_action.bind("sharpen"))
-			_add_action("游侠：挖掘宝藏 (2)", _camp_action.bind("ranger_dig"))
-			_add_action("德鲁伊：自然灌注 (3)", _show_infusion_cards)
+			_add_action("包扎选中角色 (2)", _camp_action.bind("bandage"), false, _camp_activity_description("bandage"))
+			_add_action("战术推演 (2)", _camp_action.bind("tactics"), false, _camp_activity_description("tactics"))
+			_add_action("侦察 (1)", _camp_action.bind("scout"), false, _camp_activity_description("scout"))
+			_add_action("守夜 (2)", _camp_action.bind("watch"), false, _camp_activity_description("watch"))
+			_add_action("战士：磨砺兵锋 (3)", _camp_action.bind("sharpen"), false, _camp_activity_description("sharpen"))
+			var ranger_id := _first_hero_id_for_class(CardEnums.CardClass.RANGER)
+			var dig_progress := int(run_state.adventure_flags.get("ranger_dig_%s" % ranger_id, 0)) if not ranger_id.is_empty() else 0
+			_add_action(
+				"游侠：挖掘宝藏 (2) · %d/3" % dig_progress,
+				_camp_action.bind("ranger_dig"),
+				ranger_id.is_empty() or dig_progress >= 3,
+				_camp_activity_description("ranger_dig")
+			)
+			_add_action("德鲁伊：自然灌注 (3)", _show_infusion_cards, false, _camp_activity_description("druid_infusion"))
 			_add_action("兑换扎营物资", _exchange_supply, run_state.camp_supplies <= 0)
 			_build_ritual_actions()
 		AdventureEnums.RoomType.SHOP:
@@ -690,6 +705,11 @@ func _add_equipment_slot_row(hero: CharacterState, label_text: String, slot: Str
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.custom_minimum_size = Vector2(430.0, 34.0)
 	row.add_child(label)
+	var detail_button := Button.new()
+	detail_button.text = "详情"
+	detail_button.disabled = equipment == null
+	detail_button.pressed.connect(_show_equipment_detail.bind(equipment, modifiers, "inventory"))
+	row.add_child(detail_button)
 	var unequip_button := Button.new()
 	unequip_button.text = "卸下"
 	unequip_button.disabled = equipment == null
@@ -711,6 +731,11 @@ func _add_inventory_item_row(hero: CharacterState, item_stack: InventoryStack) -
 
 	var equipment := item_stack.item_data as EquipmentData
 	if equipment != null:
+		var modifiers := hero.equipment_adventure_modifiers.get(item_stack.stack_id, {}) as Dictionary
+		var detail_button := Button.new()
+		detail_button.text = "详情"
+		detail_button.pressed.connect(_show_equipment_detail.bind(equipment, modifiers, "inventory"))
+		row.add_child(detail_button)
 		var class_allowed := hero.character_data == null or equipment.is_available_to_class(hero.character_data.character_class)
 		if equipment.is_accessory():
 			_add_equip_button(row, hero, item_stack, CharacterEquipmentModel.SLOT_ACCESSORY_1, "饰品 1", class_allowed)
@@ -718,6 +743,29 @@ func _add_inventory_item_row(hero: CharacterState, item_stack: InventoryStack) -
 		else:
 			var slot := CharacterEquipmentModel.SLOT_WEAPON if equipment.is_weapon() else CharacterEquipmentModel.SLOT_ARMOR
 			_add_equip_button(row, hero, item_stack, slot, "装备", class_allowed)
+		var transfer_menu := MenuButton.new()
+		transfer_menu.text = "转交"
+		var receivers: Array[String] = []
+		for target in run_state.party:
+			if target == null or target == hero:
+				continue
+			receivers.append(target.adventure_character_id)
+			var receiver_label := "%s（背包 %d/%d）" % [
+				target.get_character_name(),
+				target.get_inventory_item_count(),
+				CharacterState.INVENTORY_LIMIT,
+			]
+			transfer_menu.get_popup().add_item(receiver_label)
+			transfer_menu.get_popup().set_item_disabled(
+				transfer_menu.get_popup().item_count - 1,
+				target.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT
+			)
+		transfer_menu.disabled = receivers.is_empty()
+		transfer_menu.tooltip_text = "将这件背包装备转交给另一名冒险者；已装备物品需要先卸下。"
+		transfer_menu.get_popup().id_pressed.connect(
+			_transfer_inventory_item.bind(hero.adventure_character_id, item_stack.stack_id, receivers)
+		)
+		row.add_child(transfer_menu)
 	modal_body.add_child(row)
 	modal_body.add_child(HSeparator.new())
 
@@ -782,6 +830,81 @@ func _unequip_item(hero_id: String, slot: String) -> void:
 func _sort_inventory(hero_id: String) -> void:
 	session.sort_inventory(hero_id)
 	_refresh_inventory_modal()
+
+
+func _transfer_inventory_item(
+	menu_id: int,
+	source_id: String,
+	stack_id: String,
+	receiver_ids: Array[String]
+) -> void:
+	if menu_id < 0 or menu_id >= receiver_ids.size():
+		return
+	var result := session.transfer_inventory_item(source_id, stack_id, receiver_ids[menu_id])
+	if not bool(result.get("ok", false)):
+		_show_status(str(result.get("message", "转交装备失败。")))
+	_refresh_inventory_modal()
+
+
+func _show_equipment_detail(
+	equipment: EquipmentData,
+	adventure_modifiers: Dictionary = {},
+	return_mode: String = "inventory"
+) -> void:
+	if equipment == null:
+		return
+	modal_layer.visible = true
+	modal_title.text = equipment.item_name
+	_clear_children(modal_body)
+	var details := Label.new()
+	details.text = _equipment_detail_text(equipment, adventure_modifiers)
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.custom_minimum_size = Vector2(0.0, 180.0)
+	modal_body.add_child(details)
+	var back := Button.new()
+	back.text = "返回"
+	match return_mode:
+		"reward":
+			back.pressed.connect(_show_reward_modal)
+		"event_reward":
+			back.pressed.connect(_show_event_battle_reward_modal)
+		_:
+			back.pressed.connect(_refresh_inventory_modal)
+	modal_body.add_child(back)
+
+
+func _equipment_detail_text(
+	equipment: EquipmentData,
+	adventure_modifiers: Dictionary = {}
+) -> String:
+	var lines := PackedStringArray([
+		"%s · %s" % [equipment.get_rarity_label(), equipment.get_equip_slot_label()],
+	])
+	if equipment.is_weapon():
+		lines.append("基础伤害 %d · 范围 %d · %s · %s" % [
+			equipment.base_damage,
+			equipment.attack_range,
+			equipment.get_range_type_label(),
+			equipment.get_damage_type_label(),
+		])
+	if equipment.damage_bonus != 0:
+		lines.append("永久伤害加值 %+d" % equipment.damage_bonus)
+	if equipment.damage_reduction != 0:
+		lines.append("伤害减免 %+d" % equipment.damage_reduction)
+	if equipment.curse_load_limit_bonus != 0:
+		lines.append("负荷上限 %+d" % equipment.curse_load_limit_bonus)
+	var adventure_bonus := int(adventure_modifiers.get("damage_bonus", 0))
+	if adventure_bonus != 0:
+		lines.append("本次冒险伤害加值 %+d" % adventure_bonus)
+	if equipment.paired_component != null:
+		lines.append("\n成对组件：%s" % _equipment_summary(equipment.paired_component))
+	if equipment.back_face != null:
+		lines.append("\n逆面：%s" % _equipment_summary(equipment.back_face))
+	if not equipment.subcategories.is_empty():
+		lines.append("标签：%s" % "、".join(equipment.subcategories))
+	if not equipment.description.is_empty():
+		lines.append("\n%s" % equipment.description)
+	return "\n".join(lines)
 
 
 func _show_pending_state() -> void:
@@ -853,11 +976,44 @@ func _show_reward_modal() -> void:
 		modal_body.add_child(equipment_heading)
 	for equipment_data in equipment_entries:
 		if equipment_data is Dictionary:
-			var button := Button.new()
-			button.text = "装备 · %s" % str(equipment_data.get("name", "装备"))
-			button.disabled = (reward.get("claimed_equipment", []) as Array).has(str(equipment_data.get("id", "")))
-			button.pressed.connect(_claim_reward.bind(str(equipment_data.get("id", ""))))
-			modal_body.add_child(button)
+			var candidate_id := str(equipment_data.get("id", ""))
+			var claimed := (reward.get("claimed_equipment", []) as Array).has(candidate_id)
+			var equipment_path := str(equipment_data.get("path", ""))
+			var equipment := load(equipment_path) as EquipmentData if ResourceLoader.exists(equipment_path) else null
+			var heading := HBoxContainer.new()
+			var name_label := Label.new()
+			name_label.text = "%s%s" % [
+				"已选择 · " if claimed else "",
+				str(equipment_data.get("name", "装备")),
+			]
+			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			heading.add_child(name_label)
+			var detail_button := Button.new()
+			detail_button.text = "详情"
+			detail_button.disabled = equipment == null
+			detail_button.pressed.connect(_show_equipment_detail.bind(equipment, {}, "reward"))
+			heading.add_child(detail_button)
+			modal_body.add_child(heading)
+			if not claimed:
+				var receiver_row := HBoxContainer.new()
+				receiver_row.add_theme_constant_override("separation", 6)
+				for hero in run_state.party:
+					if hero == null:
+						continue
+					var receive_button := Button.new()
+					receive_button.text = "交给 %s\n背包 %d/%d" % [
+						hero.get_character_name(),
+						hero.get_inventory_item_count(),
+						CharacterState.INVENTORY_LIMIT,
+					]
+					receive_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+					receive_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+					receive_button.disabled = hero.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT
+					receive_button.pressed.connect(
+						_claim_reward.bind(candidate_id, hero.adventure_character_id)
+					)
+					receiver_row.add_child(receive_button)
+				modal_body.add_child(receiver_row)
 	if bool(reward.get("gospel_offer", false)):
 		var gospel_heading := Label.new()
 		gospel_heading.text = "首领诅咒 · 福音"
@@ -1006,7 +1162,30 @@ func _camp_action(activity_id: String) -> void:
 		hero_id = _first_hero_id_for_class(CardEnums.CardClass.WARRIOR)
 	elif activity_id == "ranger_dig":
 		hero_id = _first_hero_id_for_class(CardEnums.CardClass.RANGER)
-	session.use_camp_activity(activity_id, hero_id)
+	if not session.use_camp_activity(activity_id, hero_id):
+		_show_status("当前无法执行该扎营活动：请检查扎营点、次数限制与目标条件。")
+	_refresh()
+	if session.has_pending_event_reward():
+		_show_event_battle_reward_modal()
+
+
+func _camp_activity_description(activity_id: String) -> String:
+	match activity_id:
+		"bandage":
+			return "包扎（2）：所选角色恢复 20% 最大生命；每座避难所每名角色一次。"
+		"tactics":
+			return "战术推演（2）：全队下一场战斗起始手牌 +1。"
+		"scout":
+			return "侦察（1）：揭示距离 3 内一个尚未揭示的事件。"
+		"watch":
+			return "守夜（2）：降低绝境伏击率，或免除下一次零补给伏击判定。"
+		"sharpen":
+			return "磨砺兵锋（3）：战士当前武器在本次冒险永久获得 +1 伤害加值；每次冒险一次。"
+		"ranger_dig":
+			return "挖掘宝藏（2）：前两次各获得 2 枚基础元素；第三次获得当前楼层装备三选一。最多三次。"
+		"druid_infusion":
+			return "自然灌注（3）：为一张非诅咒牌附加基础元素；本次冒险首次打出时施加该元素。"
+	return "未知扎营活动。"
 
 
 func _exchange_supply() -> void:
@@ -1347,10 +1526,22 @@ func _show_event_battle_reward_modal() -> void:
 			if not (equipment_data is Dictionary):
 				continue
 			var equipment := equipment_data as Dictionary
+			var item_row := HBoxContainer.new()
 			var item_label := Label.new()
 			item_label.text = "%s%s" % [str(equipment.get("name", "装备")), " · 已选择" if claimed_equipment == str(equipment.get("id", "")) else ""]
 			item_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			modal_body.add_child(item_label)
+			item_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			item_row.add_child(item_label)
+			var equipment_path := str(equipment.get("path", ""))
+			var equipment_resource := load(equipment_path) as EquipmentData if ResourceLoader.exists(equipment_path) else null
+			var detail_button := Button.new()
+			detail_button.text = "详情"
+			detail_button.disabled = equipment_resource == null
+			detail_button.pressed.connect(
+				_show_equipment_detail.bind(equipment_resource, {}, "event_reward")
+			)
+			item_row.add_child(detail_button)
+			modal_body.add_child(item_row)
 			if claimed_equipment.is_empty():
 				_add_event_reward_hero_buttons("接收", "equipment", str(equipment.get("id", "")))
 	if kind in ["chaos", "single_card"]:
@@ -1417,8 +1608,9 @@ func _settle_event_battle_reward() -> void:
 	_refresh()
 
 
-func _claim_reward(candidate_id: String) -> void:
-	session.claim_reward_candidate(candidate_id)
+func _claim_reward(candidate_id: String, receiver_id: String = "") -> void:
+	if not session.claim_reward_candidate(candidate_id, receiver_id):
+		_show_status("无法领取该奖励，请检查接收者背包和奖励状态。")
 	_show_reward_modal()
 
 

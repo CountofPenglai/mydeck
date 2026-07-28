@@ -3120,9 +3120,13 @@ func _queue_ranger_combo_reward(unit: BattleUnitState, threshold: int) -> void:
 		2:
 			enqueue_effect(Callable(unit, "draw_cards"), [1, rng, {"controller": self, "reason": "ranger_combo_2"}], 0, "连击2：抽牌")
 		4:
-			var status := RangerTurnDamageBonusStatus.new()
-			status.stacks = 2
-			unit.add_status(status)
+			var existing := unit.get_status("ranger_turn_damage_bonus")
+			if existing != null:
+				existing.stacks = maxi(existing.stacks, 2)
+			else:
+				var status := RangerTurnDamageBonusStatus.new()
+				status.stacks = 2
+				unit.add_status(status)
 		6:
 			var move_status := NextMoveApDiscountStatus.new()
 			move_status.discount_amount = 1
@@ -3529,6 +3533,7 @@ func get_cell_detail_text(cell: Vector2i) -> String:
 	lines.append("(%d, %d)" % [cell.x, cell.y])
 	var terrain := int(snapshot.get("terrain", BattleSurfaceState.Terrain.NONE))
 	lines.append("\u5730\u5f62\uff1a%s" % BattleSurfaceState.terrain_label(terrain))
+	lines.append("效果：%s" % BattleSurfaceState.terrain_description(terrain))
 	var ground := int(snapshot.get("ground_effect", BattleSurfaceState.Element.NONE))
 	if ground != BattleSurfaceState.Element.NONE:
 		var ground_state := snapshot.get("ground_effect_state", {}) as Dictionary
@@ -3540,6 +3545,7 @@ func get_cell_detail_text(cell: Vector2i) -> String:
 			BattleSurfaceState.label(ground),
 			ground_rounds,
 		])
+		lines.append("  %s" % BattleSurfaceState.element_description(ground))
 	var air := int(snapshot.get("air_effect", BattleSurfaceState.Element.NONE))
 	if air != BattleSurfaceState.Element.NONE:
 		var air_state := snapshot.get("air_effect_state", {}) as Dictionary
@@ -3551,6 +3557,7 @@ func get_cell_detail_text(cell: Vector2i) -> String:
 			BattleSurfaceState.label(air),
 			air_rounds,
 		])
+		lines.append("  %s" % BattleSurfaceState.element_description(air))
 	var persistent_sources := snapshot.get("persistent_sources", []) as Array
 	if not persistent_sources.is_empty():
 		var source_labels: Array[String] = []
@@ -3597,6 +3604,8 @@ func get_cell_detail_text(cell: Vector2i) -> String:
 			blocking.append("\u963b\u6321\u89c6\u7ebf")
 		if not blocking.is_empty():
 			lines.append("\u7279\u6027\uff1a%s" % "\u3001".join(blocking))
+		if battle_object.definition != null and not battle_object.definition.description.is_empty():
+			lines.append("效果：%s" % battle_object.definition.description)
 	return "\n".join(lines)
 
 

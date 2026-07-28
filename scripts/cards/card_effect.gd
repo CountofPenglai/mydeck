@@ -46,7 +46,24 @@ func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = 
 
 
 func is_object_target_allowed(_context: Dictionary = {}, target: BattleObjectState = null) -> bool:
-	return target != null and target.is_targetable()
+	return uses_strike and target != null and target.can_be_damaged()
+
+
+func play_on_object(context: Dictionary = {}, target: BattleObjectState = null) -> void:
+	var controller: BattleController = context.get("controller") as BattleController
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	var card: CardData = context.get("card") as CardData
+	if not uses_strike or controller == null or user == null or card == null \
+			or target == null or not target.can_be_damaged():
+		return
+	controller.perform_object_strike_with_modifier(
+		user,
+		target,
+		card,
+		0,
+		card.card_name,
+		str(context.get("equipment_slot", ""))
+	)
 
 
 func are_targets_valid(_context: Dictionary = {}, _targets: Array = [], _write_log: bool = true) -> bool:

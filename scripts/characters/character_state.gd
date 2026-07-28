@@ -48,7 +48,6 @@ const UNARMED_BASE_DAMAGE := 1
 const INVENTORY_LIMIT := 20
 const MAX_HEALTH_PER_STRENGTH := 3
 const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
-const DAMAGE_PER_ATTRIBUTE := 1
 
 func ensure_initialized() -> void:
 	if character_data == null:
@@ -235,15 +234,15 @@ func get_intelligence() -> int:
 
 
 func get_strength_damage_bonus() -> int:
-	return get_strength() * DAMAGE_PER_ATTRIBUTE
+	return CharacterAttributeRules.get_damage_bonus(get_strength())
 
 
 func get_agility_damage_bonus() -> int:
-	return get_agility() * DAMAGE_PER_ATTRIBUTE
+	return CharacterAttributeRules.get_damage_bonus(get_agility())
 
 
 func get_intelligence_damage_bonus() -> int:
-	return get_intelligence() * DAMAGE_PER_ATTRIBUTE
+	return CharacterAttributeRules.get_damage_bonus(get_intelligence())
 
 
 func get_damage_reduction(context: Dictionary = {}) -> int:
@@ -575,7 +574,7 @@ func _resolve_damage_type(context: Dictionary = {}, equipment: EquipmentData = n
 
 
 func _attribute_to_damage_bonus(attribute_value: int) -> int:
-	return attribute_value * DAMAGE_PER_ATTRIBUTE
+	return CharacterAttributeRules.get_damage_bonus(attribute_value)
 
 
 func _get_equipment_damage_bonus() -> int:

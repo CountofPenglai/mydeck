@@ -117,8 +117,13 @@ func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = 
 
 
 func is_object_target_allowed(context: Dictionary = {}, target: BattleObjectState = null) -> bool:
-	return can_target_battle_objects and target != null and target.is_targetable() \
+	return can_target_objects() and target != null and target.can_be_damaged() \
 		and effect != null and effect.is_object_target_allowed(context, target)
+
+
+func can_target_objects() -> bool:
+	return can_target_battle_objects \
+		or (card_type == CardEnums.CardType.ATTACK and effect != null and effect.uses_strike)
 
 
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log: bool = true) -> bool:
@@ -132,7 +137,14 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	if effect == null:
 		return
 
-	effect.play(context, targets)
+	var unit_targets: Array = []
+	for target in targets:
+		if target is BattleObjectState:
+			effect.play_on_object(context, target as BattleObjectState)
+		else:
+			unit_targets.append(target)
+	if not unit_targets.is_empty() or targets.is_empty():
+		effect.play(context, unit_targets)
 
 
 func requires_weapon_choice(context: Dictionary = {}) -> bool:

@@ -20,6 +20,10 @@ func _test_layered_surface_state() -> void:
 	surfaces.setup(map_data)
 	var cell := Vector2i(5, 4)
 	surfaces.set_terrain(cell, BattleSurfaceState.Terrain.MAGMA_FISSURE)
+	if not BattleSurfaceState.terrain_description(
+		BattleSurfaceState.Terrain.MAGMA_FISSURE
+	).contains("3 点环境伤害"):
+		_fail("BATTLEFIELD_FEATURES_DIAG: terrain detail omitted its gameplay effect")
 	surfaces.add_persistent_source(cell, BattleSurfaceState.Element.FIRE, "terrain:test", "terrain")
 	if surfaces.get_damage_bonus(cell) != 0 or surfaces.get_damage_reduction(cell, false) != 0:
 		_fail("BATTLEFIELD_FEATURES_DIAG: base elements still grant combat modifiers")
@@ -136,6 +140,29 @@ func _test_battle_objects() -> void:
 	scenario.generate_battlefield_features = false
 	var controller := BattleController.new()
 	controller.setup(scenario)
+	var attacker := controller.player_units[0]
+	var attack_card := load("res://resources/cards/battle_slam.tres") as CardData
+	var cistern := controller.spawn_battle_object(
+		BattleObjectDefinition.Kind.WATER_CISTERN,
+		Vector2i(4, 2)
+	)
+	if attacker == null or attack_card == null or cistern == null \
+			or not attack_card.can_target_objects() \
+			or not attack_card.is_object_target_allowed(
+				{"controller": controller, "user": attacker, "card": attack_card},
+				cistern
+			):
+		_fail("BATTLEFIELD_FEATURES_DIAG: strike attack card did not accept a destructible object")
+	elif controller.get_cell_detail_text(cistern.cell).find("摧毁后") < 0:
+		_fail("BATTLEFIELD_FEATURES_DIAG: object detail omitted its destruction effect")
+	else:
+		var cistern_health := cistern.current_health
+		attack_card.play(
+			{"controller": controller, "user": attacker, "card": attack_card},
+			[cistern]
+		)
+		if cistern.current_health >= cistern_health:
+			_fail("BATTLEFIELD_FEATURES_DIAG: strike attack card did not damage an object")
 	var first := controller.spawn_battle_object(
 		BattleObjectDefinition.Kind.EXPLOSIVE_BARREL,
 		Vector2i(5, 4)

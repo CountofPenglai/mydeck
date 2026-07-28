@@ -553,6 +553,38 @@ static func terrain_label(terrain: int) -> String:
 		_: return "\u666e\u901a\u5730\u9762"
 
 
+static func terrain_description(terrain: int) -> String:
+	match terrain:
+		Terrain.SHALLOW_WATER:
+			return "移动距离消耗 2；提供永久水元素源。"
+		Terrain.MAGMA_FISSURE:
+			return "进入和回合开始时受到 3 点环境伤害；提供永久火元素源。"
+		Terrain.ABYSS:
+			return "移动距离消耗 2；每回合第一张非诅咒牌 AP +1；提供永久水元素源。"
+		_:
+			return "没有额外地形效果。"
+
+
+static func element_description(element: int) -> String:
+	match element:
+		Element.FIRE, Element.WATER, Element.EARTH, Element.AIR:
+			return "基础元素仅用于反应、采集与条件读取，不直接提供战斗加成。"
+		Element.STEAM:
+			return "生成时将占用者推开 1 格；提供隐蔽，远程伤害减免 1。"
+		Element.LAVA:
+			return "生成、进入及回合开始时造成 3 点环境伤害。"
+		Element.BLAZE:
+			return "生成时造成 2 点环境伤害；每段伤害 +2，造成正数伤害的行动后自身受到 1 点环境伤害。"
+		Element.POISON_BOG:
+			return "移动距离消耗 2，伤害加值 -1；移动中生成时终止移动。"
+		Element.ICE:
+			return "进入时终止移动；下一次移动 AP +1，伤害减免 -1。"
+		Element.SANDSTORM:
+			return "提供隐蔽；其中单位的远程最大距离变为 2。"
+		_:
+			return ""
+
+
 static func color(element: int) -> Color:
 	match element:
 		Element.FIRE: return Color(0.9, 0.2, 0.08, 0.34)

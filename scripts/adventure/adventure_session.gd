@@ -107,6 +107,22 @@ func sort_inventory(hero_id: String) -> Dictionary:
 	return {"ok": true, "message": "背包整理完成。"}
 
 
+func transfer_inventory_item(source_id: String, stack_id: String, target_id: String) -> Dictionary:
+	if _loadout_change_is_blocked():
+		return _failure("战斗或奖励结算期间不能转交装备。")
+	var source := _get_hero(source_id)
+	var target := _get_hero(target_id)
+	if source == null or target == null:
+		return _failure("没有找到装备的持有者或接收者。")
+	source.ensure_adventure_instance_ids()
+	target.ensure_adventure_instance_ids()
+	var result := CharacterEquipmentModel.transfer_inventory_stack(source, target, stack_id)
+	if not bool(result.get("success", false)):
+		return _failure(str(result.get("message", "转交装备失败。")))
+	_save_and_emit(str(result.get("message", "装备已转交。")))
+	return {"ok": true, "message": result.get("message", ""), "result": result}
+
+
 func set_enemy_health_percent(value: int) -> bool:
 	var run := ensure_run()
 	var resolved_value := clampi(value, 1, 1000)
@@ -409,7 +425,7 @@ func settle_pending_event_reward() -> Dictionary:
 	return {"ok": true, "message": message, "completed": room != null and room.completed}
 
 
-func claim_reward_candidate(candidate_id: String) -> bool:
+func claim_reward_candidate(candidate_id: String, receiver_id: String = "") -> bool:
 	if not has_pending_reward():
 		return false
 	var reward := current_run.adventure_flags["pending_reward"] as Dictionary
@@ -439,7 +455,7 @@ func claim_reward_candidate(candidate_id: String) -> bool:
 		var claimed_equipment := reward["claimed_equipment"] as Array
 		if claimed_equipment.size() >= int(reward.get("max_equipment", 0)) or claimed_equipment.has(candidate_id):
 			return false
-		var receiver := _first_inventory_receiver()
+		var receiver := _get_hero(receiver_id)
 		if receiver == null or receiver.get_inventory_item_count() >= CharacterState.INVENTORY_LIMIT:
 			return false
 		var stack := reward_service.create_item_stack(str(equipment_data.get("path", "")), "%s_reward_%s" % [receiver.adventure_character_id, candidate_id])
@@ -610,18 +626,81 @@ func use_camp_activity(activity_id: String, hero_id: String = "") -> bool:
 				return false
 			var key := "ranger_dig_%s" % hero.adventure_character_id
 			var progress := int(current_run.adventure_flags.get(key, 0))
-			if progress >= 3 or not current_run.spend_camp_points(2):
+			if progress >= 3:
 				return false
 			if progress < 2:
-				var first_element := (current_run.run_seed + progress + current_run.floor_index) % 4
-				var second_element := (first_element + 1 + progress) % 4
-				hero.ranger_element_inventory[first_element] = mini(5, int(hero.ranger_element_inventory.get(first_element, 0)) + 1)
-				hero.ranger_element_inventory[second_element] = mini(5, int(hero.ranger_element_inventory.get(second_element, 0)) + 1)
-			current_run.adventure_flags[key] = progress + 1
+				if not current_run.spend_camp_points(2):
+					return false
+				var elements := _grant_ranger_dig_elements(hero, progress)
+				current_run.adventure_flags[key] = progress + 1
+				_save_and_emit("%s 第 %d 次挖掘：获得 %s。元素库存 %d/%d；还可挖掘 %d 次。" % [
+					hero.get_character_name(),
+					progress + 1,
+					"、".join(elements) if not elements.is_empty() else "元素库存已满，未能收入元素",
+					_get_ranger_element_total(hero),
+					RangerCombatState.ELEMENT_LIMIT,
+					2 - progress,
+				])
+				return true
+			var equipment_candidates := reward_service.get_equipment_candidates(
+				current_run,
+				hero.adventure_character_id.hash() + current_run.floor_index * 7919,
+				3,
+				current_run.floor_index
+			)
+			if equipment_candidates.is_empty() or not current_run.spend_camp_points(2):
+				return false
+			current_run.adventure_flags[key] = 3
+			current_run.adventure_flags["pending_event_reward"] = {
+				"event_id": "ranger_dig",
+				"room_id": camp_room.room_id if camp_room != null else "",
+				"title": "挖掘宝藏",
+				"kind": "equipment",
+				"instructions": "第三次挖掘发现了装备。请选择 1 件当前楼层装备，并指定背包接收者。",
+				"starts_battle": false,
+				"complete_room": false,
+				"completion_message": "%s 完成了三次挖掘。" % hero.get_character_name(),
+				"required_equipment": 1,
+				"equipment": equipment_candidates,
+				"claimed_equipment": "",
+				"equipment_receiver": "",
+				"cards": [],
+				"required_card_hero_ids": [],
+				"claimed_cards": {},
+			}
+			_save_and_emit("%s 第 3 次挖掘：发现 3 件当前楼层装备，请选择其中 1 件并指定接收者。" % hero.get_character_name())
+			return true
 		_:
 			return false
 	_save_and_emit("扎营活动已结算。")
 	return true
+
+
+func _grant_ranger_dig_elements(hero: CharacterState, progress: int) -> PackedStringArray:
+	var labels := PackedStringArray()
+	if hero == null:
+		return labels
+	var first_index := posmod(
+		current_run.run_seed + current_run.floor_index + progress * 2,
+		BattleSurfaceState.BASE_ELEMENTS.size()
+	)
+	for offset in [0, 1]:
+		if _get_ranger_element_total(hero) >= RangerCombatState.ELEMENT_LIMIT:
+			break
+		var index := posmod(first_index + offset + progress, BattleSurfaceState.BASE_ELEMENTS.size())
+		var element := BattleSurfaceState.BASE_ELEMENTS[index]
+		hero.ranger_element_inventory[element] = int(hero.ranger_element_inventory.get(element, 0)) + 1
+		labels.append("%s×1" % BattleSurfaceState.label(element))
+	return labels
+
+
+func _get_ranger_element_total(hero: CharacterState) -> int:
+	if hero == null:
+		return 0
+	var total := 0
+	for element in BattleSurfaceState.BASE_ELEMENTS:
+		total += maxi(0, int(hero.ranger_element_inventory.get(element, 0)))
+	return total
 
 
 func infuse_card(druid_id: String, target_hero_id: String, stack_id: String, element: int) -> bool:

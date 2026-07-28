@@ -50,6 +50,7 @@ func _ready() -> void:
 		get_tree().quit(_exit_code)
 		return
 	_test_weapon_modes(ranger)
+	_test_attribute_damage_formula(ranger)
 	if ranger.character_state == null or ranger.character_state.deck.size() != 3 \
 			or ranger.character_state.get_deck_card_count() != 8:
 		_fail("RANGER_DIAG: default ranger deck is not the 5+2+1 starter set")
@@ -57,6 +58,7 @@ func _ready() -> void:
 			or not controller.surface_state.get_readable_elements(Vector2i(7, 5)).has(BattleSurfaceState.Element.AIR):
 		_fail("RANGER_DIAG: sample map base elements were not loaded")
 	_test_combo_rollover(controller, ranger)
+	_test_combo_bonus_cap(controller, ranger)
 	_test_element_inventory(controller, ranger)
 	_test_concealment(controller, ranger)
 	print("RANGER_DIAG: completed")
@@ -84,6 +86,18 @@ func _test_weapon_modes(ranger: BattleUnitState) -> void:
 		_fail("RANGER_DIAG: ranged range is not 3")
 
 
+func _test_attribute_damage_formula(ranger: BattleUnitState) -> void:
+	if CharacterAttributeRules.get_damage_bonus(0) != 0 \
+			or CharacterAttributeRules.get_damage_bonus(1) != 0 \
+			or CharacterAttributeRules.get_damage_bonus(2) != 1 \
+			or CharacterAttributeRules.get_damage_bonus(3) != 1 \
+			or CharacterAttributeRules.get_damage_bonus(8) != 4:
+		_fail("RANGER_DIAG: attribute damage conversion is not one bonus per two points")
+	if ranger.character_state == null \
+			or ranger.character_state.get_agility_damage_bonus() != 4:
+		_fail("RANGER_DIAG: ranger agility damage bonus did not use the shared formula")
+
+
 func _test_combo_rollover(controller: BattleController, ranger: BattleUnitState) -> void:
 	ranger.ranger_state.combo_points = 9
 	controller.gain_ranger_combo(ranger, 2)
@@ -97,6 +111,17 @@ func _test_combo_rollover(controller: BattleController, ranger: BattleUnitState)
 			break
 	if not found_finisher:
 		_fail("RANGER_DIAG: combo 10 did not grant Hunt Moment")
+
+
+func _test_combo_bonus_cap(controller: BattleController, ranger: BattleUnitState) -> void:
+	ranger.remove_status("ranger_turn_damage_bonus")
+	ranger.ranger_state.combo_points = 3
+	controller.gain_ranger_combo(ranger, 1)
+	ranger.ranger_state.combo_points = 3
+	controller.gain_ranger_combo(ranger, 1)
+	var status := ranger.get_status("ranger_turn_damage_bonus")
+	if status == null or status.stacks != 2:
+		_fail("RANGER_DIAG: combo 4 damage bonus stacked more than once in one turn")
 
 
 func _test_element_inventory(controller: BattleController, ranger: BattleUnitState) -> void:

@@ -25,6 +25,7 @@ func _ready() -> void:
 	_test_battle_reward_selection()
 	_test_adventure_instance_modifiers()
 	_test_inventory_loadout_model()
+	_test_ranger_dig_activity()
 	_test_event_choices_and_feedback()
 	print("ADVENTURE_DIAG: completed")
 	get_tree().quit(exit_code)
@@ -419,6 +420,26 @@ func _test_battle_reward_selection() -> void:
 		service.save_store.delete_save()
 		_fail("ADVENTURE_DIAG: selecting a reward card did not add it to the target deck")
 		return
+	var equipment_reward := service.current_run.adventure_flags["pending_reward"] as Dictionary
+	equipment_reward["equipment"] = [{
+		"id": "equipment_receiver_diag",
+		"path": "res://resources/items/lion_greatsword.tres",
+		"name": "怒狮大剑",
+		"rarity": CardEnums.Rarity.RARE,
+	}]
+	equipment_reward["max_equipment"] = 1
+	var equipment_receiver: CharacterState = run.party[1]
+	var first_inventory_before := run.party[0].get_inventory_item_count()
+	var receiver_inventory_before := equipment_receiver.get_inventory_item_count()
+	if service.claim_reward_candidate("equipment_receiver_diag") \
+			or not service.claim_reward_candidate(
+				"equipment_receiver_diag",
+				equipment_receiver.adventure_character_id
+			):
+		_fail("ADVENTURE_DIAG: equipment reward did not require an explicit receiver")
+	if run.party[0].get_inventory_item_count() != first_inventory_before \
+			or equipment_receiver.get_inventory_item_count() != receiver_inventory_before + 1:
+		_fail("ADVENTURE_DIAG: equipment reward was assigned to the wrong hero")
 	var map_scene := AdventureMapScene.new()
 	map_scene.session = service
 	map_scene.run_state = run
@@ -528,6 +549,25 @@ func _test_inventory_loadout_model() -> void:
 	if returned_incoming_stack == null or returned_incoming_stack.stack_id != "diag_incoming_weapon":
 		_fail("ADVENTURE_DIAG: unequipped weapon lost its instance id")
 		return
+	var target_template := load("res://resources/characters/battle_ranger_state.tres") as CharacterState
+	var target := target_template.duplicate(true) as CharacterState
+	target.ensure_initialized()
+	target.ensure_adventure_instance_ids(1)
+	hero.equipment_adventure_modifiers[returned_incoming_stack.stack_id] = {"damage_bonus": 2}
+	var transferred := CharacterEquipmentModel.transfer_inventory_stack(
+		hero,
+		target,
+		returned_incoming_stack.stack_id
+	)
+	if not bool(transferred.get("success", false)) \
+			or _find_inventory_stack(hero, incoming_weapon) != null \
+			or _find_inventory_stack(target, incoming_weapon) == null \
+			or int((target.equipment_adventure_modifiers.get(
+				returned_incoming_stack.stack_id,
+				{}
+			) as Dictionary).get("damage_bonus", 0)) != 2:
+		_fail("ADVENTURE_DIAG: equipment transfer lost ownership or instance modifiers")
+		return
 
 	var accessory := EquipmentData.new()
 	accessory.item_name = "诊断饰品"
@@ -552,6 +592,59 @@ func _test_inventory_loadout_model() -> void:
 			_fail("ADVENTURE_DIAG: inventory sorting did not place equipment before consumables")
 			return
 	print("ADVENTURE_DIAG: inventory loadout model passed")
+
+
+func _test_ranger_dig_activity() -> void:
+	var heroes: Array[CharacterState] = []
+	for path in [
+		"res://resources/characters/battle_warrior_state.tres",
+		"res://resources/characters/battle_ranger_state.tres",
+		"res://resources/characters/battle_druid_state.tres",
+	]:
+		var template := load(path) as CharacterState
+		var hero := template.duplicate(true) as CharacterState
+		hero.adventure_source_path = path
+		hero.ensure_initialized()
+		heroes.append(hero)
+	var definition := AdventureDefinition.new()
+	var run := PartyRunState.new()
+	run.initialize_adventure(24681357, heroes, definition)
+	run.floor_state = AdventureMapGenerator.new().generate(run.run_seed, 0, definition)
+	var shelter: AdventureRoomState
+	for room in run.floor_state.rooms:
+		if room != null and room.room_type == AdventureEnums.RoomType.SHELTER:
+			shelter = room
+			break
+	if shelter == null:
+		_fail("ADVENTURE_DIAG: shelter missing for ranger dig test")
+		return
+	run.floor_state.current_room_id = shelter.room_id
+	run.camp_points = 10
+	var service := AdventureSessionService.new()
+	service.current_run = run
+	service.save_store = AdventureSaveStore.new("ranger_dig_diagnostic")
+	service.save_store.delete_save()
+	var ranger := heroes[1]
+	if not service.use_camp_activity("ranger_dig", ranger.adventure_character_id) \
+			or not service.use_camp_activity("ranger_dig", ranger.adventure_character_id):
+		_fail("ADVENTURE_DIAG: first two ranger digs failed")
+	for element in ranger.ranger_element_inventory:
+		if not BattleSurfaceState.BASE_ELEMENTS.has(int(element)):
+			_fail("ADVENTURE_DIAG: ranger dig granted NONE or an advanced element")
+	if service._get_ranger_element_total(ranger) != 4:
+		_fail("ADVENTURE_DIAG: first two ranger digs did not grant four elements")
+	if not service.use_camp_activity("ranger_dig", ranger.adventure_character_id):
+		_fail("ADVENTURE_DIAG: third ranger dig failed")
+	var reward := service.get_pending_event_reward()
+	if str(reward.get("kind", "")) != "equipment" \
+			or (reward.get("equipment", []) as Array).size() != 3 \
+			or int(run.adventure_flags.get(
+				"ranger_dig_%s" % ranger.adventure_character_id,
+				0
+			)) != 3:
+		_fail("ADVENTURE_DIAG: third ranger dig did not open an equipment choice")
+	service.save_store.delete_save()
+	print("ADVENTURE_DIAG: ranger dig activity passed")
 
 
 func _test_event_choices_and_feedback() -> void:
