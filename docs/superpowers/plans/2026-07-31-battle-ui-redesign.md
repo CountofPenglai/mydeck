@@ -174,23 +174,23 @@
 - Consumes: current acting unit in battle, selected deployment unit in deployment, existing `_select_card`, `_on_move_pressed`, `_on_attack_pressed`, `_on_end_turn_pressed`, `_on_deck_pressed`, `_on_discard_pressed`, and `_show_curse_popup` handlers.
 - Produces: `BattleBottomHud.bind_unit(unit: BattleUnitState, controller: BattleController, interactive: bool)`, `bind_hand(cards: Array[CardData], costs: Array[int], interactive: bool)`, and signals `card_pressed(card)`, `card_hovered(card)`, `card_unhovered(card)`, `move_pressed`, `attack_pressed`, `end_turn_pressed`, `deck_pressed`, `discard_pressed`, `curse_pressed`, `enchant_pressed`.
 
-- [ ] **Step 1: Add failing binding assertions**
+- [x] **Step 1: Add failing binding assertions**
 
   Assert deployment binds the selected player, battle binds `controller.current_unit`, inspecting another unit does not change the bottom binding, AP orb count equals current AP up to visible slots, and each hand card has stable `112x138` minimum size.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
   Expected: missing `BattleBottomHud.bind_unit`.
 
-- [ ] **Step 3: Implement the bottom composition**
+- [x] **Step 3: Implement the bottom composition**
 
   Compose unframed functional regions in one row: enchant, equipment, portrait/vitals/AP, move/attack/end, resources/status, curse. Place the portrait ring above the row and the wooden hand board below. Put circular discard and deck buttons at opposite ends. Keep cards horizontally scrollable only when their total width exceeds the board.
 
-- [ ] **Step 4: Move refresh rendering behind the module API**
+- [x] **Step 4: Move refresh rendering behind the module API**
 
   Replace direct legacy node writes in `_refresh`, `_refresh_hand_list`, `_refresh_class_resource_list`, `_refresh_discard_button`, and `_refresh_curse_button` with module methods. Keep popup creation and gameplay callbacks in `BattleScene` in this task.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
   Commit:
   ```powershell

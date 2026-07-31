@@ -20,9 +20,9 @@ var _equipment_column_count := 2
 @onready var turn_order_bar: Control = %TurnOrderBar
 @onready var deployment_panel: Control = %DeploymentPanel
 @onready var detail_panel: Control = %DetailPanel
-@onready var bottom_hud: Control = %BottomHud
+@onready var bottom_hud: Control = %BattleBottomHud
 @onready var menu_button: Button = %MenuButton
-@onready var equipment_region: Control = %EquipmentRegion
+@onready var equipment_region: Control = bottom_hud.get_node("%EquipmentRegion")
 @onready var deploy_list: VBoxContainer = %DeployList
 @onready var start_battle_button: Button = %StartBattleButton
 
@@ -42,6 +42,7 @@ func bind_battle(scene: BattleScene, battle_controller: BattleController) -> voi
 		start_battle_pressed.connect(scene._on_start_pressed)
 	if not menu_button.pressed.is_connected(scene._open_battle_menu):
 		menu_button.pressed.connect(scene._open_battle_menu)
+	_connect_bottom_hud(scene)
 	refresh_view()
 
 
@@ -50,6 +51,7 @@ func refresh_view() -> void:
 		return
 	_refresh_deployment()
 	_refresh_turn_order()
+	_refresh_bottom_hud()
 	_apply_responsive_layout()
 
 
@@ -112,12 +114,68 @@ func _refresh_turn_order() -> void:
 	turn_order_bar.call("bind_round", controller.turn_order, controller.current_turn_index, controller.battle_round)
 
 
+func _refresh_bottom_hud() -> void:
+	if controller == null:
+		bottom_hud.call("bind_unit", null, null, false)
+		bottom_hud.call("bind_hand", [], [], false)
+		return
+	var display_unit := _get_display_unit()
+	var interactive := controller.phase == BattleController.Phase.BATTLE \
+		and controller.turn_flow_state == BattleController.TurnFlowState.ACTIVE \
+		and display_unit != null \
+		and display_unit == controller.current_unit \
+		and display_unit.faction == BattleUnitState.Faction.PLAYER \
+		and not controller.is_resolving_actions()
+	bottom_hud.call("bind_unit", display_unit, controller, interactive)
+	var cards: Array[CardData] = []
+	var costs: Array[int] = []
+	if interactive:
+		cards = display_unit.hand
+		for card in cards:
+			costs.append(controller.get_card_ap_cost(display_unit, card, {
+				"controller": controller,
+				"user": display_unit,
+				"card": card,
+			}))
+	bottom_hud.call("bind_hand", cards, costs, interactive)
+
+
+func _get_display_unit() -> BattleUnitState:
+	if controller == null:
+		return null
+	if controller.phase == BattleController.Phase.BATTLE and controller.current_unit != null:
+		return controller.current_unit
+	if battle_scene != null and battle_scene.selected_deploy_unit != null:
+		return battle_scene.selected_deploy_unit
+	if not controller.player_units.is_empty():
+		return controller.player_units[0]
+	return null
+
+
+func _connect_bottom_hud(scene: BattleScene) -> void:
+	var bindings := {
+		"card_pressed": Callable(scene, "_select_card"),
+		"move_pressed": Callable(scene, "_on_move_pressed"),
+		"attack_pressed": Callable(scene, "_on_attack_pressed"),
+		"end_turn_pressed": Callable(scene, "_on_end_turn_pressed"),
+		"deck_pressed": Callable(scene, "_on_deck_pressed"),
+		"discard_pressed": Callable(scene, "_on_discard_pressed"),
+		"curse_pressed": Callable(scene, "_show_curse_popup"),
+		"enchant_pressed": Callable(scene, "_on_discard_pressed"),
+	}
+	for signal_name in bindings:
+		var callable: Callable = bindings[signal_name]
+		if not bottom_hud.is_connected(signal_name, callable):
+			bottom_hud.connect(signal_name, callable)
+
+
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
 		return
 	_compact_mode = size.x < COMPACT_WIDTH
 	_equipment_column_count = 1 if _compact_mode else 2
 	turn_order_bar.call("set_compact", _compact_mode)
+	bottom_hud.call("set_compact", _compact_mode)
 
 	var bottom_height := clampf(size.y * BOTTOM_HEIGHT_RATIO, BOTTOM_MIN_HEIGHT, BOTTOM_MAX_HEIGHT)
 	var bottom_width := size.x - 32.0

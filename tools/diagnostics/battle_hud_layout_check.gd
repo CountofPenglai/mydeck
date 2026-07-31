@@ -44,12 +44,12 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		await get_tree().process_frame
 		return
 
-	for node_name in ["TurnOrderBar", "DeploymentPanel", "DetailPanel", "BottomHud", "MenuButton"]:
+	for node_name in ["TurnOrderBar", "DeploymentPanel", "DetailPanel", "BattleBottomHud", "MenuButton"]:
 		if hud_root.get_node_or_null("%%%s" % node_name) == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: %s missing at %s" % [node_name, target_size])
 			break
 
-	var bottom_hud := hud_root.get_node_or_null("%BottomHud") as Control
+	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") as Control
 	if bottom_hud != null:
 		var height := bottom_hud.size.y
 		var expected_height := clampf(float(target_size.y) * 0.26, 176.0, 224.0)
@@ -57,7 +57,7 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		if bottom_hud.get_global_rect().end.y > float(target_size.y) + 1.0:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: bottom HUD leaves viewport at %s" % target_size)
 
-	var equipment_region := hud_root.get_node_or_null("%EquipmentRegion")
+	var equipment_region := bottom_hud.get_node_or_null("%EquipmentRegion") if bottom_hud != null else null
 	if equipment_region == null:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: EquipmentRegion missing at %s" % target_size)
 	elif _contains_scroll_container(equipment_region):
@@ -94,6 +94,23 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 			var first_entry := order_list.get_child(0)
 			if not first_entry.has_meta("faction") or not first_entry.has_meta("acted") or not first_entry.has_meta("current"):
 				_fail("BATTLE_HUD_LAYOUT_CHECK: turn order metadata missing at %s" % target_size)
+		var bottom_module := hud_root.get_node_or_null("%BattleBottomHud")
+		if bottom_module == null or not bottom_module.has_method("get_bound_unit"):
+			_fail("BATTLE_HUD_LAYOUT_CHECK: bottom HUD binding API missing at %s" % target_size)
+		else:
+			var selected_unit = battle_scene.get("selected_deploy_unit")
+			if bottom_module.call("get_bound_unit") != selected_unit:
+				_fail("BATTLE_HUD_LAYOUT_CHECK: deployment HUD is not bound to selected unit at %s" % target_size)
+			if state_controller.current_turn_index >= 0:
+				state_controller.phase = BattleController.Phase.BATTLE
+				hud_root.call("refresh_view")
+				if bottom_module.call("get_bound_unit") != state_controller.current_unit:
+					_fail("BATTLE_HUD_LAYOUT_CHECK: battle HUD is not bound to acting unit at %s" % target_size)
+				var hand_list := bottom_module.get_node_or_null("%HandList") as Container
+				if state_controller.current_unit.faction == BattleUnitState.Faction.PLAYER \
+						and not state_controller.current_unit.hand.is_empty() \
+						and (hand_list == null or hand_list.get_child_count() != state_controller.current_unit.hand.size()):
+					_fail("BATTLE_HUD_LAYOUT_CHECK: hand cards do not match acting unit at %s" % target_size)
 
 	var map_view := battle_scene.get_node_or_null("%MapView") as Control
 	if map_view == null or not map_view.has_method("set_fit_safe_rect"):
