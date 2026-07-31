@@ -70,25 +70,88 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		battle_scene.call("_append_log", "HUD diagnostic message")
 		if "HUD diagnostic message" not in message_label.text:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: battle log is not routed to the new HUD at %s" % target_size)
-	for artwork_name in ["BottomArtwork", "TurnRailArtwork", "DetailArtwork", "CommandArtwork", "CurrentUnitRing"]:
+	for artwork_name in [
+		"BottomArtwork",
+		"TurnRailArtwork",
+		"DetailArtwork",
+		"CurrentUnitRing",
+		"EnchantFrameArtwork",
+		"EquipmentFrameArtwork",
+		"VitalsFrameArtwork",
+		"CommandFrameArtwork",
+		"ResourceFrameArtwork",
+		"CurseFrameArtwork",
+	]:
 		var artwork_node := hud_root.find_child(artwork_name, true, false) as Control
 		if artwork_node == null or artwork_node.get("texture") == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: %s texture is not bound at %s" % [artwork_name, target_size])
+			break
+	var detail_artwork := hud_root.find_child("DetailArtwork", true, false) as NinePatchRect
+	if detail_artwork == null or detail_artwork.patch_margin_left > 32 \
+			or detail_artwork.patch_margin_top > 32 \
+			or detail_artwork.patch_margin_right > 32 \
+			or detail_artwork.patch_margin_bottom > 32:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: detail artwork still uses a heavy frame at %s" % target_size)
+	if hud_root.find_child("HudAttackButton", true, false) != null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: basic attack button remains in HUD at %s" % target_size)
+	for command_name in ["HudMoveButton", "HudEndTurnButton"]:
+		var command_button := hud_root.find_child(command_name, true, false) as Button
+		if command_button == null or command_button.icon == null:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: %s icon is not bound at %s" % [command_name, target_size])
 			break
 
 	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") as Control
 	if bottom_hud != null:
 		var height := bottom_hud.size.y
-		var expected_height := clampf(float(target_size.y) * 0.26, 176.0, 224.0)
-		_assert_close(height, expected_height, 1.1, "bottom HUD height", target_size)
+		if height < 175.0 or height > 196.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: compact bottom HUD height %.1f at %s" % [height, target_size])
 		if bottom_hud.get_global_rect().end.y > float(target_size.y) + 1.0:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: bottom HUD leaves viewport at %s" % target_size)
+		var status_row := bottom_hud.get_node_or_null("%StatusRow") as Control
+		var hand_frame := bottom_hud.get_node_or_null("%HandFrame") as Control
+		if status_row == null or hand_frame == null:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: bottom HUD geometry nodes missing at %s" % target_size)
+		elif status_row.get_global_rect().intersects(hand_frame.get_global_rect()):
+			for region in status_row.get_children():
+				if region is Control:
+					print("BATTLE_HUD_REGION_MIN: %s=%s" % [region.name, (region as Control).get_combined_minimum_size()])
+			_fail("BATTLE_HUD_LAYOUT_CHECK: status row %s occludes hand area %s at %s" % [
+				status_row.get_global_rect(),
+				hand_frame.get_global_rect(),
+				target_size,
+			])
 
 	var equipment_region := bottom_hud.get_node_or_null("%EquipmentRegion") if bottom_hud != null else null
 	if equipment_region == null:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: EquipmentRegion missing at %s" % target_size)
 	elif _contains_scroll_container(equipment_region):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment region contains scrolling at %s" % target_size)
+	for region_limit in [
+		{"name": "EquipmentRegion", "max_width": 140.0},
+		{"name": "VitalsRegion", "max_width": 224.0},
+		{"name": "ResourceRegion", "max_width": 160.0},
+	]:
+		var region := bottom_hud.find_child(str(region_limit.name), true, false) as Control
+		if region == null or region.size.x > float(region_limit.max_width) + 1.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: %s is oversized at %s" % [region_limit.name, target_size])
+			break
+	for readable_zone_name in ["EnchantRegion", "CurseRegion"]:
+		var readable_zone := bottom_hud.find_child(readable_zone_name, true, false) as Control
+		if readable_zone == null or readable_zone.size.x < 104.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: %s cannot display card names at %s" % [readable_zone_name, target_size])
+			break
+	var vitals_region := bottom_hud.get_node_or_null("%VitalsRegion") as Control if bottom_hud != null else null
+	var health_bar := bottom_hud.get_node_or_null("%HealthBar") as ProgressBar if bottom_hud != null else null
+	if vitals_region == null or health_bar == null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: centered vitals or health bar missing at %s" % target_size)
+	else:
+		_assert_close(
+			vitals_region.get_global_rect().get_center().x,
+			bottom_hud.get_global_rect().get_center().x,
+			1.0,
+			"vitals center",
+			target_size
+		)
 	var resource_actions := bottom_hud.get_node_or_null("%ResourceActionList") if bottom_hud != null else null
 	if resource_actions == null or not bottom_hud.has_method("get_class_action_count"):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: class resource action API missing at %s" % target_size)
@@ -153,19 +216,68 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 				_fail("BATTLE_HUD_LAYOUT_CHECK: deployment HUD is not bound to selected unit at %s" % target_size)
 			if state_controller.current_turn_index >= 0:
 				state_controller.phase = BattleController.Phase.BATTLE
+				state_controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+				state_controller.current_unit = state_controller.player_units[0]
 				hud_root.call("refresh_view")
 				if bottom_module.call("get_bound_unit") != state_controller.current_unit:
 					_fail("BATTLE_HUD_LAYOUT_CHECK: battle HUD is not bound to acting unit at %s" % target_size)
+				var ap_slots := bottom_module.get_node_or_null("%APOrbLayer") as Control
+				var state_slot_count := 0
+				var bank_count := 0
+				if ap_slots != null:
+					for child in ap_slots.get_children():
+						if child.has_meta("ap_state"):
+							state_slot_count += 1
+						if child.has_meta("ap_bank"):
+							bank_count += 1
+				if ap_slots == null or state_slot_count != 8 or bank_count != 2:
+					_fail("BATTLE_HUD_LAYOUT_CHECK: AP display must contain two four-slot banks and 8 states at %s" % target_size)
+				if health_bar != null:
+					_assert_close(
+						health_bar.max_value,
+						float(state_controller.current_unit.get_max_health()),
+						0.1,
+						"health bar maximum",
+						target_size
+					)
+					_assert_close(
+						health_bar.value,
+						float(state_controller.current_unit.get_current_health()),
+						0.1,
+						"health bar value",
+						target_size
+					)
 				var hand_list := bottom_module.get_node_or_null("%HandList") as Container
 				if state_controller.current_unit.faction == BattleUnitState.Faction.PLAYER \
 						and not state_controller.current_unit.hand.is_empty() \
-						and (hand_list == null or hand_list.get_child_count() != state_controller.current_unit.hand.size()):
+					and (hand_list == null or hand_list.get_child_count() != state_controller.current_unit.hand.size()):
 					_fail("BATTLE_HUD_LAYOUT_CHECK: hand cards do not match acting unit at %s" % target_size)
+				var hand_frame := bottom_module.get_node_or_null("%HandFrame") as Control
+				if hand_list != null and hand_frame != null:
+					for child in hand_list.get_children():
+						if child is TextureButton and not hand_frame.get_global_rect().encloses((child as Control).get_global_rect()):
+							_fail("BATTLE_HUD_LAYOUT_CHECK: hand card is clipped at %s" % target_size)
+							break
 
 	var map_view := battle_scene.get_node_or_null("%MapView") as Control
 	if map_view == null or not map_view.has_method("set_fit_safe_rect"):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: map safe-area API missing at %s" % target_size)
 	elif hud_root.has_method("get_battle_safe_rect"):
+		var deployment_panel := hud_root.get_node_or_null("%DeploymentPanel") as Control
+		var detail_overlay := hud_root.get_node_or_null("%BattleDetailPanel") as Control
+		deployment_panel.visible = false
+		detail_overlay.visible = false
+		hud_root.call("_apply_responsive_layout")
+		var unobstructed_safe: Rect2 = hud_root.call("get_battle_safe_rect")
+		deployment_panel.visible = true
+		detail_overlay.visible = true
+		hud_root.call("_apply_responsive_layout")
+		var overlay_safe: Rect2 = hud_root.call("get_battle_safe_rect")
+		if absf(unobstructed_safe.position.x - overlay_safe.position.x) > 0.1 \
+				or absf(unobstructed_safe.end.x - overlay_safe.end.x) > 0.1:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: overlay panels shrink horizontal map fit at %s" % target_size)
+		if overlay_safe.size.y < float(target_size.y) * 0.55:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: battlefield safe height is below 55%% at %s" % target_size)
 		var safe_rect: Rect2 = hud_root.call("get_battle_safe_rect")
 		map_view.call("set_fit_safe_rect", safe_rect)
 		map_view.call("_reset_view_to_fit")

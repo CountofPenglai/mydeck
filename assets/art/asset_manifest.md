@@ -41,7 +41,7 @@ See `non_project_docs/art_style_guide.md` for the durable style rules.
 - `ui/battle_hud/panel_frame.png`
   - General dark leather and iron frame used for compact battle tools such as deployment.
 - `ui/battle_hud/detail_frame.png`
-  - Portrait parchment and black-iron frame used by the unified battle detail inspector.
+  - Redrawn portrait parchment with an evenly lit low-contrast center, thin gunmetal edge and restrained brass hairline; used by the unified battle detail inspector with 24px NinePatch margins.
 - `ui/battle_hud/turn_order_rail.png`
   - Wide iron, leather, and brass rail behind the locked-round action order.
 - `ui/battle_hud/command_icons.png`

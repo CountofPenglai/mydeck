@@ -4,16 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/art/ui/battle_hud/detail_frame.png" id="2"]
 
 [sub_resource type="StyleBoxFlat" id="Panel"]
-bg_color = Color(0.052, 0.047, 0.042, 0.98)
-border_width_left = 3
-border_width_top = 3
-border_width_right = 3
-border_width_bottom = 3
-border_color = Color(0.71, 0.45, 0.18, 1)
-corner_radius_top_left = 6
-corner_radius_top_right = 6
-corner_radius_bottom_right = 6
-corner_radius_bottom_left = 6
+bg_color = Color(0.12, 0.085, 0.045, 0.98)
 
 [node name="BattleDetailPanel" type="PanelContainer"]
 unique_name_in_owner = true
@@ -28,17 +19,17 @@ unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
 texture = ExtResource("2")
-patch_margin_left = 64
-patch_margin_top = 64
-patch_margin_right = 64
-patch_margin_bottom = 64
+patch_margin_left = 24
+patch_margin_top = 24
+patch_margin_right = 24
+patch_margin_bottom = 24
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
 
 [node name="Stack" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
