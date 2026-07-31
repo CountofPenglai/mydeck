@@ -81,6 +81,7 @@ var _refresh_scheduled := false
 var inspected_enemy: BattleUnitState
 
 @onready var map_view: BattleMapView = %MapView
+@onready var battle_hud_root: Control = %BattleHudRoot
 @onready var phase_label: Label = %PhaseLabel
 @onready var current_label: Label = %CurrentLabel
 @onready var class_resource_list: VBoxContainer = %ClassResourceList
@@ -110,6 +111,9 @@ func _ready() -> void:
 	controller.state_changed.connect(_schedule_refresh)
 	controller.battle_finished.connect(_on_battle_finished)
 	map_view.setup(self, controller)
+	battle_hud_root.layout_changed.connect(map_view.set_fit_safe_rect)
+	battle_hud_root.bind_battle(self, controller)
+	map_view.set_fit_safe_rect(battle_hud_root.get_battle_safe_rect())
 	start_button.pressed.connect(_on_start_pressed)
 	end_turn_button.pressed.connect(_on_end_turn_pressed)
 	move_button.pressed.connect(_on_move_pressed)
@@ -256,10 +260,16 @@ func handle_map_click(position: Vector2) -> void:
 		return
 	var clicked_unit := controller.get_unit_at_cell(cell)
 	var clicked_object := controller.get_battle_object_at_cell(cell)
-	if input_mode == InputMode.NONE and clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
-		_inspect_enemy(clicked_unit)
-		_refresh()
-		return
+	if input_mode == InputMode.NONE:
+		if clicked_unit != null and clicked_unit.faction == BattleUnitState.Faction.ENEMY:
+			_inspect_enemy(clicked_unit)
+			_refresh()
+			return
+		if clicked_unit == null and clicked_object == null:
+			battle_hud_root.call("clear_detail_inspection")
+			_clear_enemy_inspection()
+			_refresh()
+			return
 	if controller.current_unit == null or controller.current_unit.faction != BattleUnitState.Faction.PLAYER:
 		return
 	match input_mode:
@@ -721,6 +731,8 @@ func _refresh() -> void:
 	_refresh_scheduled = false
 	if not is_inside_tree():
 		return
+	if battle_hud_root != null:
+		battle_hud_root.refresh_view()
 
 	if _actions_locked():
 		_hide_action_popups()

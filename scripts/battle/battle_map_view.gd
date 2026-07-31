@@ -15,6 +15,7 @@ var battle_scene: BattleScene
 var controller: BattleController
 var view_offset := Vector2.ZERO
 var view_zoom := 1.0
+var fit_safe_rect := Rect2()
 
 var _pointer_down := false
 var _is_panning := false
@@ -40,6 +41,18 @@ func setup(scene: BattleScene, battle_controller: BattleController) -> void:
 	call_deferred("_reset_view_to_fit")
 	invalidate_preview_cache()
 	queue_redraw()
+
+
+func set_fit_safe_rect(value: Rect2) -> void:
+	var control_rect := Rect2(Vector2.ZERO, size)
+	var next_rect := value.intersection(control_rect)
+	if next_rect.size.x <= 1.0 or next_rect.size.y <= 1.0:
+		next_rect = control_rect
+	if fit_safe_rect.is_equal_approx(next_rect):
+		return
+	fit_safe_rect = next_rect
+	if not _user_adjusted_view:
+		_reset_view_to_fit()
 
 
 func invalidate_preview_cache() -> void:
@@ -564,14 +577,18 @@ func _reset_view_to_fit() -> void:
 	if controller == null or controller.map_data == null or size.x <= 0.0 or size.y <= 0.0:
 		return
 
-	var available := Vector2(maxf(1.0, size.x - FIT_PADDING * 2.0), maxf(1.0, size.y - FIT_PADDING * 2.0))
+	var safe_rect := _get_fit_safe_rect()
+	var available := Vector2(
+		maxf(1.0, safe_rect.size.x - FIT_PADDING * 2.0),
+		maxf(1.0, safe_rect.size.y - FIT_PADDING * 2.0)
+	)
 	var map_size := controller.map_data.map_size
 	if map_size.x <= 0.0 or map_size.y <= 0.0:
 		return
 
 	view_zoom = minf(available.x / map_size.x, available.y / map_size.y)
 	view_zoom = clampf(view_zoom, 0.35, 1.5)
-	view_offset = (size - map_size * view_zoom) * 0.5
+	view_offset = safe_rect.position + (safe_rect.size - map_size * view_zoom) * 0.5
 	_clamp_view_offset()
 	queue_redraw()
 
@@ -580,19 +597,34 @@ func _clamp_view_offset() -> void:
 	if controller == null or controller.map_data == null:
 		return
 
+	var safe_rect := _get_fit_safe_rect()
 	var map_screen_size := controller.map_data.map_size * view_zoom
-	var keep_visible_margin := minf(120.0, minf(size.x, size.y) * 0.25)
-	if map_screen_size.x <= size.x:
-		var center_x := (size.x - map_screen_size.x) * 0.5
+	var keep_visible_margin := minf(120.0, minf(safe_rect.size.x, safe_rect.size.y) * 0.25)
+	if map_screen_size.x <= safe_rect.size.x:
+		var center_x := safe_rect.position.x + (safe_rect.size.x - map_screen_size.x) * 0.5
 		view_offset.x = clampf(view_offset.x, center_x - keep_visible_margin, center_x + keep_visible_margin)
 	else:
-		view_offset.x = clampf(view_offset.x, size.x - map_screen_size.x - keep_visible_margin, keep_visible_margin)
+		view_offset.x = clampf(
+			view_offset.x,
+			safe_rect.end.x - map_screen_size.x - keep_visible_margin,
+			safe_rect.position.x + keep_visible_margin
+		)
 
-	if map_screen_size.y <= size.y:
-		var center_y := (size.y - map_screen_size.y) * 0.5
+	if map_screen_size.y <= safe_rect.size.y:
+		var center_y := safe_rect.position.y + (safe_rect.size.y - map_screen_size.y) * 0.5
 		view_offset.y = clampf(view_offset.y, center_y - keep_visible_margin, center_y + keep_visible_margin)
 	else:
-		view_offset.y = clampf(view_offset.y, size.y - map_screen_size.y - keep_visible_margin, keep_visible_margin)
+		view_offset.y = clampf(
+			view_offset.y,
+			safe_rect.end.y - map_screen_size.y - keep_visible_margin,
+			safe_rect.position.y + keep_visible_margin
+		)
+
+
+func _get_fit_safe_rect() -> Rect2:
+	if fit_safe_rect.size.x > 1.0 and fit_safe_rect.size.y > 1.0:
+		return fit_safe_rect
+	return Rect2(Vector2.ZERO, size)
 
 
 func _get_tooltip(at_position: Vector2) -> String:

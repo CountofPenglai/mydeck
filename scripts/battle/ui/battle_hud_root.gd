@@ -63,6 +63,11 @@ func get_battle_safe_rect() -> Rect2:
 	)
 
 
+func clear_detail_inspection() -> void:
+	detail_panel.visible = false
+	_apply_responsive_layout()
+
+
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
 		return

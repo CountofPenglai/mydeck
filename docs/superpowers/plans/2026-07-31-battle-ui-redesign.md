@@ -53,7 +53,7 @@
 - Consumes: `BattleScene.controller`, `BattleScene.selected_deploy_unit`, and existing button handlers.
 - Produces: `BattleHudRoot.bind_battle(scene: BattleScene, controller: BattleController)`, `refresh_view()`, `get_battle_safe_rect() -> Rect2`, and named children `%TurnOrderBar`, `%DeploymentPanel`, `%DetailPanel`, `%BottomHud`, `%MenuButton`.
 
-- [ ] **Step 1: Write the failing real-scene diagnostic**
+- [x] **Step 1: Write the failing real-scene diagnostic**
 
   Instantiate `res://scenes/battle_scene.tscn`, resize its root to each of `Vector2(960, 540)`, `Vector2(1280, 720)`, `Vector2(1920, 1080)`, and `Vector2(2560, 1080)`, await one process frame, then assert:
   - `%BattleHudRoot` and all five named children exist.
@@ -64,7 +64,7 @@
   - no descendant of `%EquipmentRegion` is a `ScrollContainer`.
   Print `BATTLE_HUD_LAYOUT_CHECK: PASS` and quit `0`; on the first failed assertion print the reason and quit `1`.
 
-- [ ] **Step 2: Run the diagnostic to verify RED**
+- [x] **Step 2: Run the diagnostic to verify RED**
 
   Run:
   ```powershell
@@ -72,15 +72,15 @@
   ```
   Expected: exit `1` because `%BattleHudRoot` is absent.
 
-- [ ] **Step 3: Add the responsive skeleton**
+- [x] **Step 3: Add the responsive skeleton**
 
   Implement `BattleHudRoot` with width breakpoints `1100` and `1600`, clamped bottom height `clampf(size.y * 0.26, 176.0, 224.0)`, a compact detail overlay, and a centered wide-mode bottom maximum width of `1560`. Connect `resized` to `_apply_responsive_layout()` and return the battlefield fit rectangle above the bottom HUD and inside visible left/right overlays.
 
-- [ ] **Step 4: Replace legacy overlay nodes in the scene**
+- [x] **Step 4: Replace legacy overlay nodes in the scene**
 
   Instance the new HUD above `%MapView`; retain `%BattleMenu`, `%RestartConfirmation`, and the return-to-map button lifecycle. Remove `TopOverlay`, `CurrentUnitPanel`, old `BottomHud`, separate pile buttons, and `EnemyInspectPanel` from the scene only after equivalent named nodes exist inside `BattleHudRoot`.
 
-- [ ] **Step 5: Run the diagnostic to verify GREEN and commit**
+- [x] **Step 5: Run the diagnostic to verify GREEN and commit**
 
   Run the command from Step 2 and require the PASS marker. Commit:
   ```powershell
@@ -99,23 +99,23 @@
 - Consumes: `BattleHudRoot.get_battle_safe_rect()`.
 - Produces: `BattleMapView.set_fit_safe_rect(value: Rect2)`, `BattleMapView.fit_safe_rect: Rect2`, and `BattleScene._clear_detail_inspection()`.
 
-- [ ] **Step 1: Extend the diagnostic with safe-area assertions**
+- [x] **Step 1: Extend the diagnostic with safe-area assertions**
 
   Assert that `_reset_view_to_fit()` places all four corners of `controller.map_data.map_size` inside `fit_safe_rect` at every test resolution, and that an unoccupied blank click while input mode is `NONE` clears a locked detail.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
   Expected: parse/runtime failure because `set_fit_safe_rect` does not exist.
 
-- [ ] **Step 3: Implement safe-area fit without changing map coordinates**
+- [x] **Step 3: Implement safe-area fit without changing map coordinates**
 
   Add `fit_safe_rect`, defaulting to the full control rect. Calculate available size from that rect minus `FIT_PADDING * 2`, and calculate `view_offset` from `fit_safe_rect.position + (fit_safe_rect.size - map_size * view_zoom) * 0.5`. Clamp against the same rect. `BattleScene` updates it after HUD layout and before map redraw.
 
-- [ ] **Step 4: Implement blank-click close**
+- [x] **Step 4: Implement blank-click close**
 
   When `InputMode.NONE` receives a map click with no unit and no battle object, call the HUD detail panel's clear-lock method. Preserve all existing deployment and target-mode click branches.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
   Commit:
   ```powershell
