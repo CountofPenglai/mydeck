@@ -16,6 +16,8 @@ var battle_scene: BattleScene
 var controller: BattleController
 var _compact_mode := false
 var _equipment_column_count := 2
+var _equipment_actions: Array[Dictionary] = []
+var _equipment_action_unit: BattleUnitState
 
 @onready var turn_order_bar: Control = %TurnOrderBar
 @onready var deployment_panel: Control = %DeploymentPanel
@@ -25,6 +27,7 @@ var _equipment_column_count := 2
 @onready var equipment_region: Control = bottom_hud.get_node("%EquipmentRegion")
 @onready var deploy_list: VBoxContainer = %DeployList
 @onready var start_battle_button: Button = %StartBattleButton
+@onready var equipment_popup: PopupPanel = %EquipmentActionsPopup
 
 
 func _ready() -> void:
@@ -44,6 +47,10 @@ func bind_battle(scene: BattleScene, battle_controller: BattleController) -> voi
 		menu_button.pressed.connect(scene._open_battle_menu)
 	_connect_bottom_hud(scene)
 	_connect_turn_order()
+	if not equipment_popup.is_connected("action_selected", _on_equipment_action_selected):
+		equipment_popup.connect("action_selected", _on_equipment_action_selected)
+	if not detail_panel.is_connected("lock_changed", _on_detail_lock_changed):
+		detail_panel.connect("lock_changed", _on_detail_lock_changed)
 	refresh_view()
 
 
@@ -80,6 +87,7 @@ func get_battle_safe_rect() -> Rect2:
 
 
 func clear_detail_inspection() -> void:
+	equipment_popup.call("close")
 	detail_panel.call("clear_preview")
 	detail_panel.call("clear_lock")
 	_apply_responsive_layout()
@@ -153,6 +161,7 @@ func _refresh_bottom_hud() -> void:
 		and display_unit.faction == BattleUnitState.Faction.PLAYER \
 		and not controller.is_resolving_actions()
 	bottom_hud.call("bind_unit", display_unit, controller, interactive)
+	_refresh_equipment_actions(display_unit)
 	var cards: Array[CardData] = []
 	var costs: Array[int] = []
 	if interactive:
@@ -198,6 +207,8 @@ func _connect_bottom_hud(scene: BattleScene) -> void:
 		bottom_hud.connect("card_hovered", _on_card_hovered)
 	if not bottom_hud.is_connected("card_unhovered", _on_card_unhovered):
 		bottom_hud.connect("card_unhovered", _on_card_unhovered)
+	if not bottom_hud.is_connected("equipment_pressed", _on_equipment_pressed):
+		bottom_hud.connect("equipment_pressed", _on_equipment_pressed)
 
 
 func _connect_turn_order() -> void:
@@ -233,8 +244,79 @@ func _on_unit_unhovered(_unit: BattleUnitState) -> void:
 
 
 func _on_unit_pressed(unit: BattleUnitState) -> void:
+	equipment_popup.call("close")
 	detail_panel.call("preview_unit", unit)
 	detail_panel.call("lock_current")
+
+
+func _refresh_equipment_actions(unit: BattleUnitState) -> void:
+	if unit != _equipment_action_unit:
+		equipment_popup.call("close")
+	_equipment_action_unit = unit
+	_equipment_actions.clear()
+	if unit == null:
+		bottom_hud.call("set_equipment_actions", 0)
+		return
+	var phase_name := "deployment" if controller.phase == BattleController.Phase.DEPLOYMENT else "battle"
+	_equipment_actions = unit.get_equipment_actions({"controller": controller, "unit": unit, "phase": phase_name})
+	if _equipment_actions.size() == 1:
+		var action := _equipment_actions[0]
+		var effect := action.get("effect") as EquipmentEffect
+		var action_id := str(action.get("action_id", "default"))
+		bottom_hud.call(
+			"set_equipment_actions",
+			1,
+			str(action.get("label", "装备动作")),
+			controller.can_activate_equipment_action(unit, effect, action_id)
+		)
+	else:
+		bottom_hud.call("set_equipment_actions", _equipment_actions.size())
+
+
+func _on_equipment_pressed() -> void:
+	if _equipment_action_unit == null:
+		return
+	if _equipment_actions.size() == 1:
+		var action := _equipment_actions[0]
+		_on_equipment_action_selected(
+			_equipment_action_unit,
+			action.get("effect") as EquipmentEffect,
+			str(action.get("action_id", "default"))
+		)
+		return
+	if _equipment_actions.size() > 1:
+		if bool(equipment_popup.call("is_open")):
+			equipment_popup.call("close")
+			return
+		equipment_popup.call("set_actions", _equipment_action_unit, _equipment_actions, _can_activate_equipment_action, _compact_mode)
+		equipment_popup.call("open_above", equipment_region)
+		return
+	var equipment := _get_primary_equipment(_equipment_action_unit)
+	if equipment != null:
+		detail_panel.call("preview_equipment", equipment, _equipment_action_unit)
+		detail_panel.call("lock_current")
+
+
+func _can_activate_equipment_action(unit: BattleUnitState, effect: EquipmentEffect, action_id: String) -> bool:
+	return controller != null and controller.can_activate_equipment_action(unit, effect, action_id)
+
+
+func _on_equipment_action_selected(unit: BattleUnitState, effect: EquipmentEffect, action_id: String) -> void:
+	equipment_popup.call("close")
+	if battle_scene != null:
+		battle_scene._on_equipment_action_pressed(unit, effect, action_id)
+
+
+func _on_detail_lock_changed(_locked: bool) -> void:
+	equipment_popup.call("close")
+
+
+func _get_primary_equipment(unit: BattleUnitState) -> EquipmentData:
+	if unit.character_state != null:
+		return unit.character_state.weapon_equipment
+	if unit.enemy_state != null:
+		return unit.enemy_state.get_active_weapon()
+	return null
 
 
 func _apply_responsive_layout() -> void:

@@ -1,9 +1,10 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_hud_root.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_turn_order_bar.gd" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_bottom_hud.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_detail_panel.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_equipment_actions_popup.tscn" id="5"]
 
 [sub_resource type="StyleBoxFlat" id="PanelDark"]
 bg_color = Color(0.075, 0.065, 0.055, 0.94)
@@ -270,3 +271,5 @@ vertical_alignment = 1
 
 [node name="BattleBottomHud" parent="." instance=ExtResource("3")]
 layout_mode = 0
+
+[node name="EquipmentActionsPopup" parent="." instance=ExtResource("5")]

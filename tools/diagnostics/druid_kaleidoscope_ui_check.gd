@@ -47,29 +47,37 @@ func _ready() -> void:
 	battle_scene._refresh()
 	await get_tree().process_frame
 
-	var end_button := battle_scene.end_turn_button as Button
+	var hud_root := battle_scene.get_node_or_null("%BattleHudRoot") as Control
+	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") as Control if hud_root != null else null
+	var end_button := bottom_hud.get_node_or_null("%HudEndTurnButton") as Button if bottom_hud != null else null
+	var equipment_button := bottom_hud.get_node_or_null("%EquipmentButton") as Button if bottom_hud != null else null
+	var equipment_popup := hud_root.get_node_or_null("%EquipmentActionsPopup") if hud_root != null else null
 	var viewport_rect: Rect2 = battle_scene.get_viewport_rect()
-	var button_rect: Rect2 = end_button.get_global_rect()
-	var top_overlay := battle_scene.get_node("TopOverlay") as Control
-	var equipment_panel := battle_scene.get_node("CurrentUnitPanel") as Control
-	var bottom_hud := battle_scene.get_node("BottomHud") as Control
-	print("DRUID_KALEIDOSCOPE_UI: viewport=%s overlay=%s end=%s disabled=%s" % [
+	var button_rect := end_button.get_global_rect() if end_button != null else Rect2()
+	print("DRUID_KALEIDOSCOPE_UI: viewport=%s hud=%s end=%s disabled=%s" % [
 		viewport_rect,
-		top_overlay.get_global_rect(),
+		bottom_hud.get_global_rect() if bottom_hud != null else Rect2(),
 		button_rect,
-		end_button.disabled,
+		end_button.disabled if end_button != null else true,
 	])
-	if not viewport_rect.encloses(button_rect):
+	if hud_root == null or bottom_hud == null or end_button == null or equipment_button == null or equipment_popup == null:
+		_fail("DRUID_KALEIDOSCOPE_UI: new battle HUD modules are missing")
+	elif not viewport_rect.encloses(button_rect):
 		_fail("DRUID_KALEIDOSCOPE_UI: end-turn button is outside the viewport")
 	elif end_button.disabled:
 		_fail("DRUID_KALEIDOSCOPE_UI: end-turn button is unexpectedly disabled")
-	elif button_rect.intersects(bottom_hud.get_global_rect()):
-		_fail("DRUID_KALEIDOSCOPE_UI: bottom HUD occludes the end-turn button")
-	elif not viewport_rect.encloses(equipment_panel.get_global_rect()):
-		_fail("DRUID_KALEIDOSCOPE_UI: equipment panel is outside the viewport")
-	elif battle_scene.equipment_list.get_child_count() < 7:
-		_fail("DRUID_KALEIDOSCOPE_UI: kaleidoscope actions were not rendered in equipment panel")
+	elif not equipment_button.text.contains("展开"):
+		_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment has no expand affordance")
 	else:
+		equipment_button.pressed.emit()
+		await get_tree().process_frame
+		if not bool(equipment_popup.call("is_open")):
+			_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment popup did not open")
+		elif int(equipment_popup.call("get_action_count")) < 6:
+			_fail("DRUID_KALEIDOSCOPE_UI: kaleidoscope actions were not rendered")
+		elif _contains_scroll_container(equipment_popup):
+			_fail("DRUID_KALEIDOSCOPE_UI: equipment popup must not contain scrolling")
+		equipment_popup.call("close")
 		battle_scene._on_end_turn_pressed()
 		if controller.current_unit != next_player \
 				or controller.turn_flow_state != BattleController.TurnFlowState.ACTIVE \
@@ -79,6 +87,13 @@ func _ready() -> void:
 	battle_scene.queue_free()
 	await get_tree().process_frame
 	get_tree().quit(_exit_code)
+
+
+func _contains_scroll_container(root: Node) -> bool:
+	for child in root.get_children():
+		if child is ScrollContainer or _contains_scroll_container(child):
+			return true
+	return false
 
 
 func _fail(message: String) -> void:

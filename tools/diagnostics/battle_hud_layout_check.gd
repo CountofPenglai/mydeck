@@ -62,6 +62,22 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: EquipmentRegion missing at %s" % target_size)
 	elif _contains_scroll_container(equipment_region):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment region contains scrolling at %s" % target_size)
+	var equipment_popup := hud_root.get_node_or_null("%EquipmentActionsPopup")
+	if equipment_popup == null or not equipment_popup.has_method("set_actions"):
+		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment action popup API missing at %s" % target_size)
+	else:
+		equipment_popup.call("set_actions", null, [
+			{"label": "动作一", "action_id": "one"},
+			{"label": "动作二", "action_id": "two"},
+			{"label": "动作三", "action_id": "three"},
+		], Callable(), target_size.x < 1100)
+		if int(equipment_popup.call("get_action_count")) != 3:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment popup lost actions at %s" % target_size)
+		var expected_popup_columns := 1 if target_size.x < 1100 else 2
+		if int(equipment_popup.call("get_column_count")) != expected_popup_columns:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment popup columns mismatch at %s" % target_size)
+		if _contains_scroll_container(equipment_popup):
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment popup contains scrolling at %s" % target_size)
 
 	if hud_root.has_method("get_equipment_column_count"):
 		var expected_columns := 1 if target_size.x < 1100 else 2

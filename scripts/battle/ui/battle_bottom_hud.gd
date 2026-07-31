@@ -110,6 +110,22 @@ func set_compact(compact: bool) -> void:
 	equipment_label.add_theme_font_size_override("font_size", 11 if compact else 13)
 
 
+func set_equipment_actions(action_count: int, direct_label: String = "", direct_enabled: bool = true) -> void:
+	if action_count <= 0:
+		equipment_button.text = ""
+		equipment_button.tooltip_text = "查看当前装备详情"
+		equipment_button.disabled = bound_unit == null
+		return
+	if action_count == 1:
+		equipment_button.text = direct_label
+		equipment_button.tooltip_text = "直接执行：%s" % direct_label
+		equipment_button.disabled = not direct_enabled
+		return
+	equipment_button.text = "展开  +%d" % action_count
+	equipment_button.tooltip_text = "展开 %d 个装备动作" % action_count
+	equipment_button.disabled = false
+
+
 func get_bound_unit() -> BattleUnitState:
 	return bound_unit
 

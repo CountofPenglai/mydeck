@@ -253,23 +253,23 @@
 - Consumes: `unit.get_equipment_actions(context)` dictionaries and `controller.can_activate_equipment_action(unit, effect, action_id)`.
 - Produces: `set_actions(unit, actions, can_activate: Callable, compact: bool)`, `close()`, `is_open()`, and `action_selected(unit, effect, action_id)`.
 
-- [ ] **Step 1: Write failing direct/expanded action assertions**
+- [x] **Step 1: Write failing direct/expanded action assertions**
 
   With one action, assert the equipment button directly invokes it and no popup opens. With three actions, assert an expand indicator is visible, popup opens upward, grid columns are two at `1280` and one at `960`, no `ScrollContainer` exists, and selecting one action closes the popup.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
   Expected: missing popup class and old kaleidoscope diagnostic node references.
 
-- [ ] **Step 3: Implement action grouping and popup lifecycle**
+- [x] **Step 3: Implement action grouping and popup lifecycle**
 
   Build buttons from each action dictionary, with disabled state from the supplied callable. Close on action execution, current unit change, detail lock, blank click, and equipment button re-click. Use measured popup height and place it immediately above `%EquipmentRegion` inside viewport bounds.
 
-- [ ] **Step 4: Update the kaleidoscope diagnostic**
+- [x] **Step 4: Update the kaleidoscope diagnostic**
 
   Replace assertions for `CurrentUnitPanel` and `equipment_list` with `%EquipmentRegion`, direct/expanded state, end-turn enabled state, and absence of equipment scrolling.
 
-- [ ] **Step 5: Run both diagnostics GREEN and commit**
+- [x] **Step 5: Run both diagnostics GREEN and commit**
 
   Commit:
   ```powershell
