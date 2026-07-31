@@ -136,23 +136,23 @@
 - Consumes: `controller.turn_order`, `controller.current_turn_index`, `controller.battle_round`, `controller.player_units`, and `selected_deploy_unit`.
 - Produces: `BattleTurnOrderBar.bind_round(order: Array[BattleUnitState], current_index: int, round_number: int)` and signals `unit_hovered(unit)`, `unit_unhovered(unit)`, `unit_pressed(unit)`; HUD signal `deployment_unit_selected(unit)`.
 
-- [ ] **Step 1: Add failing state-render assertions**
+- [x] **Step 1: Add failing state-render assertions**
 
   Start the sample battle after deploying players, bind an order of at least one ally and one enemy, and assert each entry exposes metadata `current`, `acted`, and `faction`. Assert deployment panel is visible only during deployment and selected unit is visually marked.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
   Expected: missing `bind_round`.
 
-- [ ] **Step 3: Implement the full-round rail**
+- [x] **Step 3: Implement the full-round rail**
 
   Build stable fixed-size portrait buttons from the locked array without sorting it. Set current index amber, indices below current dim, ally frames emerald, enemy frames crimson. Put entries in a horizontal `ScrollContainer` only in compact mode; do not wrap or resize entries.
 
-- [ ] **Step 4: Implement deployment presentation and signals**
+- [x] **Step 4: Implement deployment presentation and signals**
 
   Render player rows with deployed/pending status and connect selection to `BattleScene._select_deploy_unit`. Keep Start Battle in this panel and hide the whole panel when phase changes to battle.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
   Commit:
   ```powershell

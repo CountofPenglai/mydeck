@@ -76,6 +76,25 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 	else:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: compact mode API missing")
 
+	var state_controller = battle_scene.get("controller")
+	var deploy_list := hud_root.get_node_or_null("%DeployList") as Container
+	if state_controller is BattleController and deploy_list != null:
+		hud_root.call("refresh_view")
+		if deploy_list.get_child_count() != state_controller.player_units.size():
+			_fail("BATTLE_HUD_LAYOUT_CHECK: deployment rows do not match player units at %s" % target_size)
+		state_controller.call("_rebuild_turn_order")
+		state_controller.current_turn_index = mini(1, state_controller.turn_order.size() - 1)
+		if state_controller.current_turn_index >= 0:
+			state_controller.current_unit = state_controller.turn_order[state_controller.current_turn_index]
+		hud_root.call("refresh_view")
+		var order_list := hud_root.get_node_or_null("%OrderList") as Container
+		if order_list == null or order_list.get_child_count() != state_controller.turn_order.size():
+			_fail("BATTLE_HUD_LAYOUT_CHECK: turn order does not match locked round at %s" % target_size)
+		elif not state_controller.turn_order.is_empty():
+			var first_entry := order_list.get_child(0)
+			if not first_entry.has_meta("faction") or not first_entry.has_meta("acted") or not first_entry.has_meta("current"):
+				_fail("BATTLE_HUD_LAYOUT_CHECK: turn order metadata missing at %s" % target_size)
+
 	var map_view := battle_scene.get_node_or_null("%MapView") as Control
 	if map_view == null or not map_view.has_method("set_fit_safe_rect"):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: map safe-area API missing at %s" % target_size)

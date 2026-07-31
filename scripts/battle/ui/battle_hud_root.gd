@@ -2,6 +2,8 @@ extends Control
 class_name BattleHudRoot
 
 signal layout_changed(safe_rect: Rect2)
+signal deployment_unit_selected(unit: BattleUnitState)
+signal start_battle_pressed
 
 const COMPACT_WIDTH := 1100.0
 const WIDE_WIDTH := 1600.0
@@ -21,22 +23,33 @@ var _equipment_column_count := 2
 @onready var bottom_hud: Control = %BottomHud
 @onready var menu_button: Button = %MenuButton
 @onready var equipment_region: Control = %EquipmentRegion
+@onready var deploy_list: VBoxContainer = %DeployList
+@onready var start_battle_button: Button = %StartBattleButton
 
 
 func _ready() -> void:
 	resized.connect(_apply_responsive_layout)
+	start_battle_button.pressed.connect(func() -> void: start_battle_pressed.emit())
 	call_deferred("_apply_responsive_layout")
 
 
 func bind_battle(scene: BattleScene, battle_controller: BattleController) -> void:
 	battle_scene = scene
 	controller = battle_controller
+	if not deployment_unit_selected.is_connected(scene._select_deploy_unit):
+		deployment_unit_selected.connect(scene._select_deploy_unit)
+	if not start_battle_pressed.is_connected(scene._on_start_pressed):
+		start_battle_pressed.connect(scene._on_start_pressed)
+	if not menu_button.pressed.is_connected(scene._open_battle_menu):
+		menu_button.pressed.connect(scene._open_battle_menu)
 	refresh_view()
 
 
 func refresh_view() -> void:
 	if not is_node_ready():
 		return
+	_refresh_deployment()
+	_refresh_turn_order()
 	_apply_responsive_layout()
 
 
@@ -68,11 +81,43 @@ func clear_detail_inspection() -> void:
 	_apply_responsive_layout()
 
 
+func _refresh_deployment() -> void:
+	_clear_children(deploy_list)
+	if controller == null:
+		deployment_panel.visible = false
+		return
+	deployment_panel.visible = controller.phase == BattleController.Phase.DEPLOYMENT
+	if not deployment_panel.visible:
+		return
+	var selected_unit: BattleUnitState = null
+	if battle_scene != null:
+		selected_unit = battle_scene.selected_deploy_unit
+	for unit in controller.player_units:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(0.0, 34.0)
+		button.text = "%s  %s" % [unit.get_display_name(), "已部署" if unit.is_deployed else "待部署"]
+		button.disabled = controller.is_resolving_actions()
+		button.button_pressed = unit == selected_unit
+		button.toggle_mode = true
+		button.pressed.connect(func() -> void: deployment_unit_selected.emit(unit))
+		deploy_list.add_child(button)
+	start_battle_button.disabled = controller.is_resolving_actions() or not controller.can_start_battle()
+
+
+func _refresh_turn_order() -> void:
+	if controller == null:
+		turn_order_bar.call("bind_round", [], -1, 0)
+		return
+	turn_order_bar.call("set_compact", _compact_mode)
+	turn_order_bar.call("bind_round", controller.turn_order, controller.current_turn_index, controller.battle_round)
+
+
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
 		return
 	_compact_mode = size.x < COMPACT_WIDTH
 	_equipment_column_count = 1 if _compact_mode else 2
+	turn_order_bar.call("set_compact", _compact_mode)
 
 	var bottom_height := clampf(size.y * BOTTOM_HEIGHT_RATIO, BOTTOM_MIN_HEIGHT, BOTTOM_MAX_HEIGHT)
 	var bottom_width := size.x - 32.0
@@ -96,3 +141,9 @@ func _apply_responsive_layout() -> void:
 	detail_panel.z_index = 30 if _compact_mode else 10
 
 	layout_changed.emit(get_battle_safe_rect())
+
+
+func _clear_children(parent: Node) -> void:
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.queue_free()
