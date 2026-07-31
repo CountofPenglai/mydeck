@@ -43,10 +43,17 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		host.queue_free()
 		await get_tree().process_frame
 		return
+	if hud_root.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: full-screen HUD root blocks map input at %s" % target_size)
 
 	for node_name in ["TurnOrderBar", "DeploymentPanel", "BattleDetailPanel", "BattleBottomHud", "MenuButton"]:
 		if hud_root.get_node_or_null("%%%s" % node_name) == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: %s missing at %s" % [node_name, target_size])
+			break
+	for artwork_name in ["BottomArtwork", "TurnRailArtwork", "DetailArtwork", "CommandArtwork", "CurrentUnitRing"]:
+		var artwork_node := hud_root.find_child(artwork_name, true, false) as Control
+		if artwork_node == null or artwork_node.get("texture") == null:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: %s texture is not bound at %s" % [artwork_name, target_size])
 			break
 
 	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") as Control
@@ -110,6 +117,8 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 			var first_entry := order_list.get_child(0)
 			if not first_entry.has_meta("faction") or not first_entry.has_meta("acted") or not first_entry.has_meta("current"):
 				_fail("BATTLE_HUD_LAYOUT_CHECK: turn order metadata missing at %s" % target_size)
+			elif not first_entry.has_meta("frame_texture_bound") or not bool(first_entry.get_meta("frame_texture_bound")):
+				_fail("BATTLE_HUD_LAYOUT_CHECK: turn order art frame missing at %s" % target_size)
 		var bottom_module := hud_root.get_node_or_null("%BattleBottomHud")
 		if bottom_module == null or not bottom_module.has_method("get_bound_unit"):
 			_fail("BATTLE_HUD_LAYOUT_CHECK: bottom HUD binding API missing at %s" % target_size)

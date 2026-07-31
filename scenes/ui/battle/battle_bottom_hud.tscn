@@ -1,9 +1,12 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_bottom_hud.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_pile_button.gd" id="2"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/deck_button.png" id="3"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/discard_button.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/art/ui/battle_hud/bottom_wood_panel.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/art/ui/battle_hud/current_unit_ring.png" id="6"]
+[ext_resource type="Texture2D" path="res://assets/art/ui/battle_hud/command_icons.png" id="7"]
 
 [sub_resource type="StyleBoxFlat" id="BottomPanel"]
 bg_color = Color(0.105, 0.066, 0.036, 0.98)
@@ -80,6 +83,16 @@ offset_right = 1264.0
 offset_bottom = 720.0
 theme_override_styles/panel = SubResource("BottomPanel")
 script = ExtResource("1")
+
+[node name="BottomArtwork" type="NinePatchRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("5")
+patch_margin_left = 64
+patch_margin_top = 48
+patch_margin_right = 64
+patch_margin_bottom = 48
 
 [node name="HandFrame" type="ScrollContainer" parent="."]
 layout_mode = 1
@@ -181,10 +194,35 @@ theme_override_styles/panel = SubResource("RegionDark")
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="PortraitRect" type="TextureRect" parent="StatusRow/VitalsRegion/Row"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(54, 54)
+[node name="PortraitHolder" type="Control" parent="StatusRow/VitalsRegion/Row"]
+custom_minimum_size = Vector2(58, 58)
 layout_mode = 2
+
+[node name="PortraitRect" type="TextureRect" parent="StatusRow/VitalsRegion/Row/PortraitHolder"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CurrentUnitRing" type="TextureRect" parent="StatusRow/VitalsRegion/Row/PortraitHolder"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("6")
 expand_mode = 1
 stretch_mode = 5
 
@@ -227,6 +265,14 @@ custom_minimum_size = Vector2(174, 58)
 layout_mode = 2
 theme_override_styles/panel = SubResource("RegionDark")
 
+[node name="CommandArtwork" type="TextureRect" parent="StatusRow/CommandRegion"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("7")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="Commands" type="HBoxContainer" parent="StatusRow/CommandRegion"]
 layout_mode = 2
 theme_override_constants/separation = 3
@@ -236,21 +282,21 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(54, 54)
 layout_mode = 2
 tooltip_text = "移动"
-text = "移动"
+flat = true
 
 [node name="HudAttackButton" type="Button" parent="StatusRow/CommandRegion/Commands"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(54, 54)
 layout_mode = 2
 tooltip_text = "普通攻击"
-text = "攻击"
+flat = true
 
 [node name="HudEndTurnButton" type="Button" parent="StatusRow/CommandRegion/Commands"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(58, 54)
 layout_mode = 2
 tooltip_text = "结束当前行动"
-text = "结束"
+flat = true
 
 [node name="ResourceRegion" type="PanelContainer" parent="StatusRow"]
 custom_minimum_size = Vector2(128, 58)

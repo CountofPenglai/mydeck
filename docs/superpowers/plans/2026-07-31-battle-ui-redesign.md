@@ -295,19 +295,19 @@
 - Textures are presentation-only and must not contain rendered words.
 - Frames must tolerate nine-patch or keep-aspect scaling without clipping their ornamental borders.
 
-- [ ] **Step 1: Generate coherent raster assets**
+- [x] **Step 1: Generate coherent raster assets**
 
   Use the image-generation tool with the existing art guide: gritty western fantasy game HUD, hand-painted worn dark wood, blackened iron, brass rivets, parchment, stronger but controlled saturation, transparent or clean dark background, no text, no symbols that resemble letters, orthographic UI asset, readable at game scale.
 
-- [ ] **Step 2: Import and bind textures**
+- [x] **Step 2: Import and bind textures**
 
   Use `NinePatchRect` for panel/frame textures, `TextureRect` for rails/rings, and atlas regions for move/attack/end/menu/expand icons. Preserve familiar symbols and add tooltips to icon-only buttons.
 
-- [ ] **Step 3: Run the real-scene diagnostic and import scan**
+- [x] **Step 3: Run the real-scene diagnostic and import scan**
 
   Require all texture paths to load as `Texture2D`, all four resolutions to pass, and Godot output to contain no missing-resource or parser errors.
 
-- [ ] **Step 4: Update manifest and commit**
+- [x] **Step 4: Update manifest and commit**
 
   Record path, purpose, generation date, style, and primary scene for every asset. Commit:
   ```powershell

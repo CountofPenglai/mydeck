@@ -37,6 +37,7 @@ script = ExtResource("2_map_view")
 layout_mode = 1
 
 [node name="TopOverlay" type="PanelContainer" parent="."]
+visible = false
 layout_mode = 0
 offset_left = 16.0
 offset_top = 16.0
@@ -103,6 +104,7 @@ bbcode_enabled = false
 scroll_following = true
 
 [node name="CurrentUnitPanel" type="PanelContainer" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
@@ -149,6 +151,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
 [node name="BottomHud" type="Control" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.08
@@ -160,6 +163,7 @@ offset_bottom = -8.0
 mouse_filter = 1
 
 [node name="DiscardButton" type="TextureButton" parent="."]
+visible = false
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 2
@@ -190,6 +194,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="CurseButton" type="Button" parent="."]
+visible = false
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 1
@@ -203,6 +208,7 @@ tooltip_text = "查看诅咒区"
 text = "诅咒区"
 
 [node name="MenuButton" type="Button" parent="."]
+visible = false
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 1
