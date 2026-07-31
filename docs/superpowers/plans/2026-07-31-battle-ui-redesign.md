@@ -213,23 +213,23 @@
 - Produces: `preview_card(card, context)`, `preview_equipment(equipment, unit)`, `preview_unit(unit)`, `preview_object(object_state)`, `preview_terrain(cell, detail_text)`, `lock_current()`, `clear_preview()`, `clear_lock()`, `is_locked() -> bool`.
 - Hover never replaces locked content permanently; mouse exit restores locked content. Click locks the currently previewed subject.
 
-- [ ] **Step 1: Add failing hover/lock assertions**
+- [x] **Step 1: Add failing hover/lock assertions**
 
   Preview card A, lock it, preview enemy B, clear preview, and assert A returns. Clear lock and assert panel hides. Bind an enemy and assert intent headline, summary, steps, recipe, zone counts, and seen cards remain available.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
   Expected: missing common detail API.
 
-- [ ] **Step 3: Implement typed detail builders**
+- [x] **Step 3: Implement typed detail builders**
 
   Use a single internal dictionary with `kind`, `identity`, `title`, `subtitle`, `art`, `body`, and `sections`. Card body includes rarity/type/AP/range/effect; equipment includes slot/components/base damage/range/runtime; friendly unit includes health/AP/armor/stats/resources; enemy adds intent; object and terrain use controller detail strings.
 
-- [ ] **Step 4: Connect all inspection sources**
+- [x] **Step 4: Connect all inspection sources**
 
   Connect hand cards, turn portraits, equipment entries, pile/zone list entries, map units, battle objects, and terrain hover. Keep click-to-target branches higher priority than inspection during active target modes.
 
-- [ ] **Step 5: Remove old enemy-only panel, run GREEN, and commit**
+- [x] **Step 5: Remove old enemy-only panel, run GREEN, and commit**
 
   Commit:
   ```powershell

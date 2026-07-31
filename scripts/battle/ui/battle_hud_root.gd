@@ -19,7 +19,7 @@ var _equipment_column_count := 2
 
 @onready var turn_order_bar: Control = %TurnOrderBar
 @onready var deployment_panel: Control = %DeploymentPanel
-@onready var detail_panel: Control = %DetailPanel
+@onready var detail_panel: Control = %BattleDetailPanel
 @onready var bottom_hud: Control = %BattleBottomHud
 @onready var menu_button: Button = %MenuButton
 @onready var equipment_region: Control = bottom_hud.get_node("%EquipmentRegion")
@@ -43,6 +43,7 @@ func bind_battle(scene: BattleScene, battle_controller: BattleController) -> voi
 	if not menu_button.pressed.is_connected(scene._open_battle_menu):
 		menu_button.pressed.connect(scene._open_battle_menu)
 	_connect_bottom_hud(scene)
+	_connect_turn_order()
 	refresh_view()
 
 
@@ -79,7 +80,32 @@ func get_battle_safe_rect() -> Rect2:
 
 
 func clear_detail_inspection() -> void:
-	detail_panel.visible = false
+	detail_panel.call("clear_preview")
+	detail_panel.call("clear_lock")
+	_apply_responsive_layout()
+
+
+func preview_unit(unit: BattleUnitState, lock: bool = false) -> void:
+	detail_panel.call("preview_unit", unit)
+	if lock:
+		detail_panel.call("lock_current")
+	_apply_responsive_layout()
+
+
+func preview_object(object_state: BattleObjectState, lock: bool = false) -> void:
+	detail_panel.call("preview_object", object_state)
+	if lock:
+		detail_panel.call("lock_current")
+	_apply_responsive_layout()
+
+
+func preview_terrain(cell: Vector2i, detail_text: String) -> void:
+	detail_panel.call("preview_terrain", cell, detail_text)
+	_apply_responsive_layout()
+
+
+func clear_detail_preview() -> void:
+	detail_panel.call("clear_preview")
 	_apply_responsive_layout()
 
 
@@ -154,7 +180,6 @@ func _get_display_unit() -> BattleUnitState:
 
 func _connect_bottom_hud(scene: BattleScene) -> void:
 	var bindings := {
-		"card_pressed": Callable(scene, "_select_card"),
 		"move_pressed": Callable(scene, "_on_move_pressed"),
 		"attack_pressed": Callable(scene, "_on_attack_pressed"),
 		"end_turn_pressed": Callable(scene, "_on_end_turn_pressed"),
@@ -167,6 +192,49 @@ func _connect_bottom_hud(scene: BattleScene) -> void:
 		var callable: Callable = bindings[signal_name]
 		if not bottom_hud.is_connected(signal_name, callable):
 			bottom_hud.connect(signal_name, callable)
+	if not bottom_hud.is_connected("card_pressed", _on_card_pressed):
+		bottom_hud.connect("card_pressed", _on_card_pressed)
+	if not bottom_hud.is_connected("card_hovered", _on_card_hovered):
+		bottom_hud.connect("card_hovered", _on_card_hovered)
+	if not bottom_hud.is_connected("card_unhovered", _on_card_unhovered):
+		bottom_hud.connect("card_unhovered", _on_card_unhovered)
+
+
+func _connect_turn_order() -> void:
+	if not turn_order_bar.is_connected("unit_hovered", _on_unit_hovered):
+		turn_order_bar.connect("unit_hovered", _on_unit_hovered)
+	if not turn_order_bar.is_connected("unit_unhovered", _on_unit_unhovered):
+		turn_order_bar.connect("unit_unhovered", _on_unit_unhovered)
+	if not turn_order_bar.is_connected("unit_pressed", _on_unit_pressed):
+		turn_order_bar.connect("unit_pressed", _on_unit_pressed)
+
+
+func _on_card_hovered(card: CardData) -> void:
+	detail_panel.call("preview_card", card, {"user": _get_display_unit()})
+
+
+func _on_card_unhovered(_card: CardData) -> void:
+	detail_panel.call("clear_preview")
+
+
+func _on_card_pressed(card: CardData) -> void:
+	detail_panel.call("preview_card", card, {"user": _get_display_unit()})
+	detail_panel.call("lock_current")
+	if battle_scene != null:
+		battle_scene._select_card(card)
+
+
+func _on_unit_hovered(unit: BattleUnitState) -> void:
+	detail_panel.call("preview_unit", unit)
+
+
+func _on_unit_unhovered(_unit: BattleUnitState) -> void:
+	detail_panel.call("clear_preview")
+
+
+func _on_unit_pressed(unit: BattleUnitState) -> void:
+	detail_panel.call("preview_unit", unit)
+	detail_panel.call("lock_current")
 
 
 func _apply_responsive_layout() -> void:

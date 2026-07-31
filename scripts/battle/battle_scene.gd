@@ -79,6 +79,7 @@ var _adventure_result: BattleResult
 var _return_to_map_button: Button
 var _refresh_scheduled := false
 var inspected_enemy: BattleUnitState
+var _hovered_map_cell := Vector2i(-9999, -9999)
 
 @onready var map_view: BattleMapView = %MapView
 @onready var battle_hud_root: Control = %BattleHudRoot
@@ -99,7 +100,6 @@ var inspected_enemy: BattleUnitState
 @onready var menu_button: Button = %MenuButton
 @onready var ap_label: Label = %APLabel
 @onready var log_label: RichTextLabel = %LogLabel
-@onready var enemy_inspect_panel: EnemyInspectPanel = %EnemyInspectPanel
 @onready var battle_menu: Control = %BattleMenu
 @onready var resume_battle_button: Button = %ResumeBattleButton
 @onready var restart_battle_button: Button = %RestartBattleButton
@@ -125,7 +125,6 @@ func _ready() -> void:
 	resume_battle_button.pressed.connect(_close_battle_menu)
 	restart_battle_button.pressed.connect(_request_battle_restart)
 	restart_confirmation.confirmed.connect(_restart_current_battle)
-	enemy_inspect_panel.close_requested.connect(_clear_enemy_inspection)
 	_create_ap_orb_layer()
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
@@ -289,6 +288,33 @@ func handle_map_click(position: Vector2) -> void:
 		_:
 			_append_log("请选择移动、攻击或一张手牌。")
 	_refresh()
+
+
+func handle_map_hover(position: Vector2) -> void:
+	if input_mode != InputMode.NONE or controller == null or controller.map_data == null:
+		return
+	var cell := controller.map_data.map_to_cell(position)
+	if cell == _hovered_map_cell:
+		return
+	_hovered_map_cell = cell
+	if not controller.map_data.is_valid_cell(cell):
+		battle_hud_root.call("clear_detail_preview")
+		return
+	var unit := controller.get_unit_at_cell(cell)
+	if unit != null:
+		battle_hud_root.call("preview_unit", unit, false)
+		return
+	var battle_object := controller.get_battle_object_at_cell(cell)
+	if battle_object != null:
+		battle_hud_root.call("preview_object", battle_object, false)
+		return
+	battle_hud_root.call("preview_terrain", cell, controller.get_cell_detail_text(cell))
+
+
+func handle_map_hover_exit() -> void:
+	_hovered_map_cell = Vector2i(-9999, -9999)
+	if battle_hud_root != null:
+		battle_hud_root.call("clear_detail_preview")
 
 
 func get_map_preview_context() -> Dictionary:
@@ -783,9 +809,7 @@ func _refresh() -> void:
 	_refresh_curse_button()
 	_refresh_curse_popup()
 	_refresh_manifest_popup()
-	if inspected_enemy != null and inspected_enemy.is_alive():
-		enemy_inspect_panel.bind_unit(inspected_enemy)
-	else:
+	if inspected_enemy != null and not inspected_enemy.is_alive():
 		_clear_enemy_inspection()
 	map_view.invalidate_preview_cache()
 	map_view.queue_redraw()
@@ -798,15 +822,13 @@ func _refresh() -> void:
 
 func _inspect_enemy(unit: BattleUnitState) -> void:
 	inspected_enemy = unit
-	enemy_inspect_panel.bind_unit(unit)
+	battle_hud_root.call("preview_unit", unit, true)
 	map_view.inspected_enemy = unit
 	map_view.queue_redraw()
 
 
 func _clear_enemy_inspection() -> void:
 	inspected_enemy = null
-	if enemy_inspect_panel != null:
-		enemy_inspect_panel.clear()
 	if map_view != null:
 		map_view.inspected_enemy = null
 		map_view.queue_redraw()

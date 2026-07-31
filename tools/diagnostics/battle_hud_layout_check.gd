@@ -44,7 +44,7 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		await get_tree().process_frame
 		return
 
-	for node_name in ["TurnOrderBar", "DeploymentPanel", "DetailPanel", "BattleBottomHud", "MenuButton"]:
+	for node_name in ["TurnOrderBar", "DeploymentPanel", "BattleDetailPanel", "BattleBottomHud", "MenuButton"]:
 		if hud_root.get_node_or_null("%%%s" % node_name) == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: %s missing at %s" % [node_name, target_size])
 			break
@@ -127,7 +127,33 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 					or bottom_right.x > safe_rect.end.x + 1.0 or bottom_right.y > safe_rect.end.y + 1.0:
 				_fail("BATTLE_HUD_LAYOUT_CHECK: map does not fit HUD safe area at %s" % target_size)
 
-	var detail_panel := hud_root.get_node_or_null("%DetailPanel") as Control
+	var detail_panel := hud_root.get_node_or_null("%BattleDetailPanel") as Control
+	if detail_panel == null or not detail_panel.has_method("preview_card"):
+		_fail("BATTLE_HUD_LAYOUT_CHECK: unified detail API missing at %s" % target_size)
+	elif state_controller is BattleController and not state_controller.player_units.is_empty():
+		var detail_card: CardData = null
+		var detail_unit: BattleUnitState = state_controller.player_units[0]
+		if not detail_unit.hand.is_empty():
+			detail_card = detail_unit.hand[0]
+		elif not detail_unit.draw_pile.is_empty():
+			detail_card = detail_unit.draw_pile[0]
+		if detail_card != null:
+			detail_panel.call("preview_card", detail_card, {"user": detail_unit})
+			detail_panel.call("lock_current")
+			detail_panel.call("preview_unit", state_controller.enemy_units[0] if not state_controller.enemy_units.is_empty() else detail_unit)
+			detail_panel.call("clear_preview")
+			if str(detail_panel.call("get_display_title")) != detail_card.card_name:
+				_fail("BATTLE_HUD_LAYOUT_CHECK: detail hover did not restore locked card at %s" % target_size)
+			detail_panel.call("clear_lock")
+			if detail_panel.visible:
+				_fail("BATTLE_HUD_LAYOUT_CHECK: clearing detail lock did not hide panel at %s" % target_size)
+		if not battle_scene.has_method("handle_map_hover"):
+			_fail("BATTLE_HUD_LAYOUT_CHECK: map hover detail bridge missing at %s" % target_size)
+		elif not state_controller.enemy_units.is_empty():
+			var hover_enemy: BattleUnitState = state_controller.enemy_units[0]
+			battle_scene.call("handle_map_hover", hover_enemy.position)
+			if str(detail_panel.call("get_display_title")) != hover_enemy.get_display_name():
+				_fail("BATTLE_HUD_LAYOUT_CHECK: map hover did not preview enemy at %s" % target_size)
 	var battle_controller = battle_scene.get("controller")
 	if detail_panel != null and battle_controller is BattleController and not battle_controller.player_units.is_empty():
 		detail_panel.visible = true

@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_scene.gd" id="1_scene"]
 [ext_resource type="Script" path="res://scripts/battle/battle_map_view.gd" id="2_map_view"]
@@ -8,7 +8,6 @@
 [ext_resource type="Texture2D" path="res://assets/art/ui/small_action_button.png" id="6_action"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/deck_button.png" id="7_deck"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/discard_button.png" id="8_discard"]
-[ext_resource type="PackedScene" path="res://scenes/ui/enemy_inspect_panel.tscn" id="9_enemy_inspect"]
 [ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_hud_root.tscn" id="10_battle_hud"]
 
 [node name="BattleScene" type="Control"]
@@ -215,19 +214,6 @@ offset_right = -182.0
 offset_bottom = 54.0
 tooltip_text = "打开战斗菜单"
 text = "菜单"
-
-[node name="EnemyInspectPanel" parent="." instance=ExtResource("9_enemy_inspect")]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -366.0
-offset_top = 64.0
-offset_right = -16.0
-offset_bottom = -224.0
-grow_horizontal = 0
-grow_vertical = 2
 
 [node name="HudTexture" type="TextureRect" parent="BottomHud"]
 layout_mode = 1

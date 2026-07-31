@@ -1,8 +1,9 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_hud_root.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_turn_order_bar.gd" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_bottom_hud.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_detail_panel.tscn" id="4"]
 
 [sub_resource type="StyleBoxFlat" id="PanelDark"]
 bg_color = Color(0.075, 0.065, 0.055, 0.94)
@@ -157,6 +158,10 @@ layout_mode = 2
 [node name="Placeholder" type="Label" parent="DetailPanel/Margin/DetailContent"]
 layout_mode = 2
 text = "详情"
+
+[node name="BattleDetailPanel" parent="." instance=ExtResource("4")]
+visible = false
+layout_mode = 0
 
 [node name="BottomHud" type="PanelContainer" parent="."]
 unique_name_in_owner = true

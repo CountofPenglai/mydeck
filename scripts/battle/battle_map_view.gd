@@ -38,6 +38,8 @@ func setup(scene: BattleScene, battle_controller: BattleController) -> void:
 	controller = battle_controller
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
+	if not mouse_exited.is_connected(scene.handle_map_hover_exit):
+		mouse_exited.connect(scene.handle_map_hover_exit)
 	call_deferred("_reset_view_to_fit")
 	invalidate_preview_cache()
 	queue_redraw()
@@ -105,6 +107,8 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 	if not _pointer_down:
+		if battle_scene != null:
+			battle_scene.handle_map_hover(screen_to_map(event.position))
 		return
 
 	_update_pointer_drag(event.position, event.relative)
