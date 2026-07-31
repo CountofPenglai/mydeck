@@ -57,12 +57,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 17
 text = "阶段：部署"
 
-[node name="CurrentLabel" type="Label" parent="TopOverlay/Margin/TopStack"]
-unique_name_in_owner = true
-layout_mode = 2
-autowrap_mode = 3
-text = "当前单位：无"
-
 [node name="ClassResourceTitle" type="Label" parent="TopOverlay/Margin/TopStack"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 15
@@ -104,6 +98,52 @@ layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = false
 scroll_following = true
+
+[node name="CurrentUnitPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+offset_left = 376.0
+offset_top = 16.0
+offset_right = -382.0
+offset_bottom = 216.0
+grow_horizontal = 2
+
+[node name="Margin" type="MarginContainer" parent="CurrentUnitPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Stack" type="VBoxContainer" parent="CurrentUnitPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="CurrentLabel" type="Label" parent="CurrentUnitPanel/Margin/Stack"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+autowrap_mode = 3
+text = "当前角色：无"
+horizontal_alignment = 1
+
+[node name="EquipmentTitle" type="Label" parent="CurrentUnitPanel/Margin/Stack"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "装备"
+
+[node name="EquipmentScroll" type="ScrollContainer" parent="CurrentUnitPanel/Margin/Stack"]
+custom_minimum_size = Vector2(0, 128)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="EquipmentList" type="VBoxContainer" parent="CurrentUnitPanel/Margin/Stack/EquipmentScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
 
 [node name="BottomHud" type="Control" parent="."]
 layout_mode = 1

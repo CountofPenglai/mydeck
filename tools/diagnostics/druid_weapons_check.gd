@@ -43,6 +43,8 @@ func _ready() -> void:
 	_test_kaleidoscope_borrowed_origin(druid, controller)
 	_test_kaleidoscope_wager_charge(druid)
 	_test_kaleidoscope_mirror(druid, controller)
+	_test_kaleidoscope_action_query_is_read_only(druid, controller)
+	_test_kaleidoscope_turn_end()
 	_test_chaos_transmutation(druid, controller)
 	_test_corrosion_lifecycle(druid, enemy, controller)
 	print("DRUID_WEAPONS: completed")
@@ -273,6 +275,70 @@ func _test_kaleidoscope_mirror(druid: BattleUnitState, controller: BattleControl
 		_fail("DRUID_WEAPONS: mirror damage was not converted")
 	if second.get_status("druid_anomaly") == null or second.curse_wave <= 0:
 		_fail("DRUID_WEAPONS: mirror damage did not create both anomaly and curse wave")
+
+
+func _test_kaleidoscope_action_query_is_read_only(druid: BattleUnitState, controller: BattleController) -> void:
+	var weapon := load("res://resources/items/druid_kaleidoscope.tres") as EquipmentData
+	_set_weapon(druid, weapon)
+	druid.set_druid_transformed(false)
+	druid.turn_serial = 11
+	var runtime := druid.get_equipment_runtime_state(weapon)
+	runtime.set_data("phenomena", [])
+	runtime.set_counter("phenomena_options_turn", -1)
+	druid.get_equipment_actions({"controller": controller, "unit": druid, "phase": "battle"})
+	if not (runtime.get_data("phenomena", []) as Array).is_empty() \
+			or runtime.get_counter("phenomena_options_turn", -1) != -1:
+		_fail("DRUID_WEAPONS: querying kaleidoscope actions mutated runtime state")
+		return
+	druid.notify_equipment_turn_start({"controller": controller, "phase": "turn_start"})
+	if (runtime.get_data("phenomena", []) as Array).size() != 2 \
+			or runtime.get_counter("phenomena_options_turn", -1) != druid.turn_serial:
+		_fail("DRUID_WEAPONS: turn start did not prepare kaleidoscope phenomena")
+
+
+func _test_kaleidoscope_turn_end() -> void:
+	for selected_phenomenon in [-1, 2, 3]:
+		var controller := BattleController.new()
+		controller.setup(load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario)
+		var druid := _find_druid(controller)
+		var next_player: BattleUnitState = null
+		for candidate in controller.player_units:
+			if candidate != druid:
+				next_player = candidate
+				break
+		if druid == null or next_player == null:
+			_fail("DRUID_WEAPONS: turn-end diagnostic needs two player units")
+			return
+		_set_weapon(druid, load("res://resources/items/druid_kaleidoscope.tres") as EquipmentData)
+		druid.set_druid_transformed(false)
+		druid.turn_serial = 7
+		druid.is_deployed = true
+		next_player.is_deployed = true
+		druid.set_hex_cell(Vector2i(2, 4), controller.map_data)
+		next_player.set_hex_cell(Vector2i(1, 4), controller.map_data)
+		controller.phase = BattleController.Phase.BATTLE
+		controller.turn_order = [druid, next_player]
+		controller.current_turn_index = 0
+		controller.current_unit = druid
+		controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+		if selected_phenomenon >= 0:
+			var weapon := druid.character_state.weapon_equipment
+			var runtime := druid.get_equipment_runtime_state(weapon)
+			runtime.set_data("phenomena", [selected_phenomenon, 0])
+			runtime.set_counter("phenomena_options_turn", druid.turn_serial)
+			var action := _find_action(druid, "phenomenon_0", controller)
+			if action.is_empty() or not controller.activate_equipment_action(
+				druid,
+				action.get("effect") as EquipmentEffect,
+				"phenomenon_0"
+			):
+				_fail("DRUID_WEAPONS: failed to prepare kaleidoscope turn-end case %d" % selected_phenomenon)
+				continue
+		controller.end_current_turn()
+		if controller.current_unit != next_player \
+				or controller.turn_flow_state != BattleController.TurnFlowState.ACTIVE \
+				or controller.is_resolving_actions():
+			_fail("DRUID_WEAPONS: kaleidoscope blocked turn end after phenomenon %d" % selected_phenomenon)
 
 
 func _test_chaos_transmutation(druid: BattleUnitState, controller: BattleController) -> void:

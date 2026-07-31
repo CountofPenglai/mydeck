@@ -84,6 +84,7 @@ var inspected_enemy: BattleUnitState
 @onready var phase_label: Label = %PhaseLabel
 @onready var current_label: Label = %CurrentLabel
 @onready var class_resource_list: VBoxContainer = %ClassResourceList
+@onready var equipment_list: VBoxContainer = %EquipmentList
 @onready var deploy_list: VBoxContainer = %DeployList
 @onready var hand_list: HBoxContainer = %HandList
 @onready var start_button: Button = %StartButton
@@ -728,18 +729,21 @@ func _refresh() -> void:
 	if controller.scene_prototype != null:
 		phase_label.text += " | " + controller.scene_prototype.get_display_title()
 
-	if controller.current_unit == null:
+	var display_unit := _get_equipment_panel_unit()
+	if display_unit == null:
 		current_label.text = "当前单位：无"
+	else:
+		current_label.text = "当前角色：%s\n生命 %d/%d | 敏捷 %d" % [
+			display_unit.get_display_name(),
+			display_unit.get_current_health(),
+			display_unit.get_max_health(),
+			display_unit.get_agility(),
+		]
+
+	if controller.current_unit == null:
 		ap_label.text = "AP -"
 		_refresh_ap_orbs(0, controller.config.base_ap)
 	else:
-		current_label.text = "当前单位：%s | 生命 %d/%d | 敏捷 %d%s" % [
-			controller.current_unit.get_display_name(),
-			controller.current_unit.get_current_health(),
-			controller.current_unit.get_max_health(),
-			controller.current_unit.get_agility(),
-			_current_unit_weapon_summary(controller.current_unit),
-		]
 		ap_label.text = "AP %d / %d" % [
 			controller.current_unit.current_ap,
 			controller.current_unit.get_max_ap(controller.config),
@@ -760,6 +764,7 @@ func _refresh() -> void:
 	end_turn_button.disabled = not is_player_turn
 	_refresh_deploy_list()
 	_refresh_class_resource_list()
+	_refresh_equipment_list()
 	_refresh_hand_list(is_player_turn)
 	_refresh_discard_button()
 	_refresh_discard_popup()
@@ -877,29 +882,57 @@ func _refresh_class_resource_list() -> void:
 			button.disabled = true
 			class_resource_list.add_child(button)
 
-		var equipment_summary := unit.get_equipment_runtime_summary({"controller": controller, "unit": unit})
-		if not equipment_summary.is_empty():
-			has_resources = true
-			var equipment_label := Label.new()
-			equipment_label.text = "%s：%s" % [unit.get_display_name(), equipment_summary]
-			class_resource_list.add_child(equipment_label)
-
-		if unit == controller.current_unit or controller.phase == BattleController.Phase.DEPLOYMENT:
-			var action_context := {"controller": controller, "unit": unit, "phase": "deployment" if controller.phase == BattleController.Phase.DEPLOYMENT else "battle"}
-			for action in unit.get_equipment_actions(action_context):
-				has_resources = true
-				var action_button := Button.new()
-				action_button.text = str(action.get("label", "武器行动"))
-				var effect := action.get("effect") as EquipmentEffect
-				var action_id := str(action.get("action_id", "default"))
-				action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect, action_id)
-				action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect, action_id))
-				class_resource_list.add_child(action_button)
-
 	if not has_resources:
 		var label := Label.new()
 		label.text = "无职业资源"
 		class_resource_list.add_child(label)
+
+
+func _refresh_equipment_list() -> void:
+	_clear_children(equipment_list)
+	var unit := _get_equipment_panel_unit()
+	if unit == null or unit.character_state == null:
+		_add_equipment_label("未选择角色")
+		return
+
+	_add_equipment_label(unit.character_state.get_main_hand_label())
+	_add_equipment_label(unit.character_state.get_off_hand_label())
+	var runtime_summary := unit.get_equipment_runtime_summary({"controller": controller, "unit": unit})
+	if not runtime_summary.is_empty():
+		_add_equipment_label("战斗状态：%s" % runtime_summary)
+
+	var phase_name := "deployment" if controller.phase == BattleController.Phase.DEPLOYMENT else "battle"
+	var action_context := {"controller": controller, "unit": unit, "phase": phase_name}
+	var actions := unit.get_equipment_actions(action_context)
+	if actions.is_empty():
+		_add_equipment_label("当前无可用装备行动")
+		return
+	for action in actions:
+		var action_button := Button.new()
+		action_button.text = str(action.get("label", "装备行动"))
+		action_button.tooltip_text = "执行当前角色的装备主动效果"
+		var effect := action.get("effect") as EquipmentEffect
+		var action_id := str(action.get("action_id", "default"))
+		action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect, action_id)
+		action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect, action_id))
+		equipment_list.add_child(action_button)
+
+
+func _get_equipment_panel_unit() -> BattleUnitState:
+	if controller.current_unit != null:
+		return controller.current_unit
+	if selected_deploy_unit != null:
+		return selected_deploy_unit
+	if not controller.player_units.is_empty():
+		return controller.player_units[0]
+	return null
+
+
+func _add_equipment_label(text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	equipment_list.add_child(label)
 
 
 func _refresh_hand_list(is_player_turn: bool) -> void:

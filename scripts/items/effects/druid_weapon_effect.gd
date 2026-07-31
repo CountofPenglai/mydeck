@@ -198,6 +198,8 @@ func can_use_attack_mode(owner: BattleUnitState, _root: EquipmentData, _componen
 
 
 func on_turn_start(owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, runtime: EquipmentRuntimeState, context: Dictionary = {}) -> void:
+	if weapon_kind == WeaponKind.KALEIDOSCOPE and not owner.druid_transformed:
+		_ensure_phenomena(runtime, owner, context)
 	if weapon_kind == WeaponKind.STAR_FIREFLY:
 		runtime.set_counter(STAR_DRAW_COUNT, 0)
 		if owner.druid_transformed:
@@ -208,6 +210,11 @@ func on_turn_start(owner: BattleUnitState, _root: EquipmentData, _component: Equ
 		var target := controller.get_nearest_opponent(owner) if controller != null else null
 		if armor > 0 and target != null and owner.cell_distance_to(target) <= 2:
 			controller.enqueue_effect(Callable(controller, "apply_damage"), [owner, target, armor, "蜕甲", {"fixed_damage": true}], effect_priority, "巨龙蜕甲", context)
+
+
+func on_switched_in(owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, runtime: EquipmentRuntimeState, context: Dictionary = {}) -> void:
+	if weapon_kind == WeaponKind.KALEIDOSCOPE and not owner.druid_transformed:
+		_ensure_phenomena(runtime, owner, context)
 
 
 func on_battle_started(owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, runtime: EquipmentRuntimeState, context: Dictionary = {}) -> void:
@@ -444,7 +451,6 @@ func get_activated_actions(owner: BattleUnitState, _root: EquipmentData, _compon
 				result.append(_action("mana_play", "取出法力区牌", not owner.mana_zone.is_empty() and runtime.get_counter("mana_play_turn", -1) != owner.turn_serial))
 		WeaponKind.KALEIDOSCOPE:
 			if not owner.druid_transformed:
-				_ensure_phenomena(runtime, owner, context)
 				var options := runtime.get_data("phenomena", []) as Array
 				for index in range(options.size()):
 					var phenomenon := int(options[index])
@@ -543,6 +549,14 @@ func _action(id: String, label: String, enabled: bool) -> Dictionary:
 
 func _ensure_phenomena(runtime: EquipmentRuntimeState, owner: BattleUnitState, context: Dictionary) -> void:
 	if runtime.get_counter("phenomena_options_turn", -1) == owner.turn_serial:
+		return
+	if PHENOMENA.is_empty():
+		runtime.set_data("phenomena", [])
+		runtime.set_counter("phenomena_options_turn", owner.turn_serial)
+		return
+	if PHENOMENA.size() == 1:
+		runtime.set_data("phenomena", [0])
+		runtime.set_counter("phenomena_options_turn", owner.turn_serial)
 		return
 	var controller := context.get("controller") as BattleController
 	var first := controller.rng.randi_range(0, PHENOMENA.size() - 1) if controller != null else 0
