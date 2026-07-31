@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/battle_scene.gd" id="1_scene"]
 [ext_resource type="Script" path="res://scripts/battle/battle_map_view.gd" id="2_map_view"]
@@ -9,6 +9,7 @@
 [ext_resource type="Texture2D" path="res://assets/art/ui/deck_button.png" id="7_deck"]
 [ext_resource type="Texture2D" path="res://assets/art/ui/discard_button.png" id="8_discard"]
 [ext_resource type="PackedScene" path="res://scenes/ui/enemy_inspect_panel.tscn" id="9_enemy_inspect"]
+[ext_resource type="PackedScene" path="res://scenes/ui/battle/battle_hud_root.tscn" id="10_battle_hud"]
 
 [node name="BattleScene" type="Control"]
 custom_minimum_size = Vector2(960, 540)
@@ -32,6 +33,9 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
 script = ExtResource("2_map_view")
+
+[node name="BattleHudRoot" parent="." instance=ExtResource("10_battle_hud")]
+layout_mode = 1
 
 [node name="TopOverlay" type="PanelContainer" parent="."]
 layout_mode = 0
