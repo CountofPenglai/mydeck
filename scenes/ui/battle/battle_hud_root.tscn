@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_hud_root.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/battle/ui/battle_turn_order_bar.gd" id="2"]
@@ -31,16 +31,6 @@ corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
-
-[sub_resource type="StyleBoxFlat" id="BottomPanel"]
-bg_color = Color(0.11, 0.075, 0.045, 0.98)
-border_width_left = 3
-border_width_top = 3
-border_width_right = 3
-border_width_bottom = 3
-border_color = Color(0.58, 0.36, 0.16, 1)
-corner_radius_top_left = 6
-corner_radius_top_right = 6
 
 [node name="BattleHudRoot" type="Control"]
 unique_name_in_owner = true
@@ -157,138 +147,26 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 alignment = 1
 
-[node name="DetailPanel" type="PanelContainer" parent="."]
-unique_name_in_owner = true
-visible = false
-offset_left = 964.0
-offset_top = 16.0
-offset_right = 1264.0
-offset_bottom = 500.0
-theme_override_styles/panel = SubResource("PanelDark")
-
-[node name="Margin" type="MarginContainer" parent="DetailPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 10
-
-[node name="DetailContent" type="VBoxContainer" parent="DetailPanel/Margin"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="Placeholder" type="Label" parent="DetailPanel/Margin/DetailContent"]
-layout_mode = 2
-text = "详情"
-
 [node name="BattleDetailPanel" parent="." instance=ExtResource("4")]
 visible = false
 layout_mode = 0
 
-[node name="BottomHud" type="PanelContainer" parent="."]
+[node name="BattleMessagePanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 visible = false
-offset_left = 16.0
-offset_top = 533.0
-offset_right = 1264.0
-offset_bottom = 720.0
-theme_override_styles/panel = SubResource("BottomPanel")
+z_index = 20
+mouse_filter = 2
+theme_override_styles/panel = SubResource("PanelDark")
 
-[node name="Margin" type="MarginContainer" parent="BottomHud"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 10
-
-[node name="Stack" type="VBoxContainer" parent="BottomHud/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="StatusRow" type="HBoxContainer" parent="BottomHud/Margin/Stack"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 8
-
-[node name="EnchantRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
+[node name="BattleMessageLabel" type="Label" parent="BattleMessagePanel"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(116, 54)
 layout_mode = 2
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/EnchantRegion"]
-layout_mode = 2
-text = "附魔区"
+theme_override_colors/font_color = Color(1, 0.88, 0.55, 1)
+theme_override_font_sizes/font_size = 15
+text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[node name="EquipmentRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(170, 54)
-layout_mode = 2
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/EquipmentRegion"]
-layout_mode = 2
-text = "装备 / 动作"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="VitalsRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(190, 54)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/VitalsRegion"]
-layout_mode = 2
-text = "角色  生命 / AP"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="CommandRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 54)
-layout_mode = 2
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/CommandRegion"]
-layout_mode = 2
-text = "移动  攻击  结束"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="ResourceRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 54)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/ResourceRegion"]
-layout_mode = 2
-text = "角色资源 / 状态"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="CurseRegion" type="PanelContainer" parent="BottomHud/Margin/Stack/StatusRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(116, 54)
-layout_mode = 2
-
-[node name="Label" type="Label" parent="BottomHud/Margin/Stack/StatusRow/CurseRegion"]
-layout_mode = 2
-text = "诅咒区"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="HandBoard" type="PanelContainer" parent="BottomHud/Margin/Stack"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 88)
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="HandLabel" type="Label" parent="BottomHud/Margin/Stack/HandBoard"]
-layout_mode = 2
-text = "未制纹理面板（手牌区）"
-horizontal_alignment = 1
-vertical_alignment = 1
+text_overrun_behavior = 3
 
 [node name="BattleBottomHud" parent="." instance=ExtResource("3")]
 layout_mode = 0

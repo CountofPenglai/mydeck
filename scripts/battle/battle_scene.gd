@@ -1,12 +1,7 @@
 extends Control
 class_name BattleScene
 
-const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
-const AP_ORB_FULL_TEXTURE := preload("res://assets/art/ui/ap_orb_full.png")
 const DEFAULT_SCENARIO := preload("res://resources/battle/sample_battle_scenario.tres")
-const AP_ORB_SLOT_X := [0.158, 0.384, 0.614, 0.842]
-const AP_ORB_SLOT_Y := 0.49
-const AP_ORB_SIZE_RATIO := 0.66
 
 enum InputMode {
 	NONE,
@@ -61,7 +56,6 @@ var _ranger_blend_list: VBoxContainer
 var _ranger_recipe_card: CardData
 var _ranger_recipe_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _ranger_enemy_hand_target: BattleUnitState
-var _ap_orb_layer: Control
 var _druid_prepare_hand_choice_active: bool = false
 var _curse_popup: PopupPanel
 var _curse_list: VBoxContainer
@@ -80,26 +74,10 @@ var _return_to_map_button: Button
 var _refresh_scheduled := false
 var inspected_enemy: BattleUnitState
 var _hovered_map_cell := Vector2i(-9999, -9999)
+var _battle_log_lines := PackedStringArray()
 
 @onready var map_view: BattleMapView = %MapView
 @onready var battle_hud_root: Control = %BattleHudRoot
-@onready var phase_label: Label = %PhaseLabel
-@onready var current_label: Label = %CurrentLabel
-@onready var class_resource_list: VBoxContainer = %ClassResourceList
-@onready var equipment_list: VBoxContainer = %EquipmentList
-@onready var deploy_list: VBoxContainer = %DeployList
-@onready var hand_list: HBoxContainer = %HandList
-@onready var start_button: Button = %StartButton
-@onready var end_turn_button: Button = %EndTurnButton
-@onready var move_button: TextureButton = %MoveButton
-@onready var attack_button: TextureButton = %AttackButton
-@onready var deck_button: TextureButton = %DeckButton
-@onready var discard_button: TextureButton = %DiscardButton
-@onready var discard_label: Label = %DiscardLabel
-@onready var curse_button: Button = %CurseButton
-@onready var menu_button: Button = %MenuButton
-@onready var ap_label: Label = %APLabel
-@onready var log_label: RichTextLabel = %LogLabel
 @onready var battle_menu: Control = %BattleMenu
 @onready var resume_battle_button: Button = %ResumeBattleButton
 @onready var restart_battle_button: Button = %RestartBattleButton
@@ -114,18 +92,9 @@ func _ready() -> void:
 	battle_hud_root.layout_changed.connect(map_view.set_fit_safe_rect)
 	battle_hud_root.bind_battle(self, controller)
 	map_view.set_fit_safe_rect(battle_hud_root.get_battle_safe_rect())
-	start_button.pressed.connect(_on_start_pressed)
-	end_turn_button.pressed.connect(_on_end_turn_pressed)
-	move_button.pressed.connect(_on_move_pressed)
-	attack_button.pressed.connect(_on_attack_pressed)
-	deck_button.pressed.connect(_on_deck_pressed)
-	discard_button.pressed.connect(_on_discard_pressed)
-	curse_button.pressed.connect(_show_curse_popup)
-	menu_button.pressed.connect(_open_battle_menu)
 	resume_battle_button.pressed.connect(_close_battle_menu)
 	restart_battle_button.pressed.connect(_request_battle_restart)
 	restart_confirmation.confirmed.connect(_restart_current_battle)
-	_create_ap_orb_layer()
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
 	_create_discard_popup()
@@ -177,7 +146,7 @@ func _set_battle_menu_visible(value: bool) -> void:
 	if value:
 		resume_battle_button.grab_focus()
 	else:
-		menu_button.grab_focus()
+		battle_hud_root.call("focus_menu_button")
 
 
 func _request_battle_restart() -> void:
@@ -707,106 +676,14 @@ func _hide_action_popups() -> void:
 		_curse_choice_popup.hide()
 
 
-func _create_ap_orb_layer() -> void:
-	var ap_slot := ap_label.get_parent() as Control
-	if ap_slot == null:
-		return
-
-	ap_label.visible = false
-	_ap_orb_layer = Control.new()
-	_ap_orb_layer.name = "APOrbLayer"
-	_ap_orb_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ap_slot.add_child(_ap_orb_layer)
-	_ap_orb_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-
-func _refresh_ap_orbs(current_ap: int, max_ap: int) -> void:
-	if _ap_orb_layer == null:
-		return
-
-	_clear_children(_ap_orb_layer)
-	var slot_count := mini(maxi(max_ap, 0), AP_ORB_SLOT_X.size())
-	if slot_count <= 0:
-		return
-
-	var layer_size := _ap_orb_layer.size
-	if layer_size.x <= 0.0 or layer_size.y <= 0.0:
-		var ap_slot := _ap_orb_layer.get_parent() as Control
-		if ap_slot != null:
-			layer_size = ap_slot.size
-	if layer_size.x <= 0.0 or layer_size.y <= 0.0:
-		return
-
-	var filled_count := mini(maxi(current_ap, 0), slot_count)
-	var orb_size := minf(layer_size.y * AP_ORB_SIZE_RATIO, layer_size.x * 0.18)
-	for index in range(filled_count):
-		var orb := TextureRect.new()
-		orb.texture = AP_ORB_FULL_TEXTURE
-		orb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		orb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		orb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		orb.custom_minimum_size = Vector2(orb_size, orb_size)
-		orb.size = Vector2(orb_size, orb_size)
-		orb.tooltip_text = "AP %d/%d" % [current_ap, max_ap]
-		var center := Vector2(layer_size.x * float(AP_ORB_SLOT_X[index]), layer_size.y * AP_ORB_SLOT_Y)
-		orb.position = center - Vector2(orb_size, orb_size) * 0.5
-		_ap_orb_layer.add_child(orb)
-
-
 func _refresh() -> void:
 	_refresh_scheduled = false
 	if not is_inside_tree():
 		return
-	if battle_hud_root != null:
-		battle_hud_root.refresh_view()
-
 	if _actions_locked():
 		_hide_action_popups()
-
-	phase_label.text = _phase_text()
-	if controller.scene_prototype != null:
-		phase_label.text += " | " + controller.scene_prototype.get_display_title()
-
-	var display_unit := _get_equipment_panel_unit()
-	if display_unit == null:
-		current_label.text = "当前单位：无"
-	else:
-		current_label.text = "当前角色：%s\n生命 %d/%d | 敏捷 %d" % [
-			display_unit.get_display_name(),
-			display_unit.get_current_health(),
-			display_unit.get_max_health(),
-			display_unit.get_agility(),
-		]
-
-	if controller.current_unit == null:
-		ap_label.text = "AP -"
-		_refresh_ap_orbs(0, controller.config.base_ap)
-	else:
-		ap_label.text = "AP %d / %d" % [
-			controller.current_unit.current_ap,
-			controller.current_unit.get_max_ap(controller.config),
-		]
-		_refresh_ap_orbs(controller.current_unit.current_ap, controller.current_unit.get_max_ap(controller.config))
-
-	var actions_locked := _actions_locked()
-	start_button.disabled = actions_locked or controller.phase != BattleController.Phase.DEPLOYMENT or not controller.can_start_battle()
-	var is_player_turn := not actions_locked and controller.phase == BattleController.Phase.BATTLE \
-			and controller.turn_flow_state == BattleController.TurnFlowState.ACTIVE \
-			and controller.current_unit != null \
-			and controller.current_unit.faction == BattleUnitState.Faction.PLAYER
-	move_button.disabled = not is_player_turn
-	attack_button.disabled = not is_player_turn
-	deck_button.disabled = not is_player_turn
-	discard_button.disabled = not is_player_turn
-	curse_button.disabled = controller.current_unit == null
-	end_turn_button.disabled = not is_player_turn
-	_refresh_deploy_list()
-	_refresh_class_resource_list()
-	_refresh_equipment_list()
-	_refresh_hand_list(is_player_turn)
-	_refresh_discard_button()
+	battle_hud_root.refresh_view()
 	_refresh_discard_popup()
-	_refresh_curse_button()
 	_refresh_curse_popup()
 	_refresh_manifest_popup()
 	if inspected_enemy != null and not inspected_enemy.is_alive():
@@ -832,224 +709,6 @@ func _clear_enemy_inspection() -> void:
 	if map_view != null:
 		map_view.inspected_enemy = null
 		map_view.queue_redraw()
-
-
-func _refresh_deploy_list() -> void:
-	_clear_children(deploy_list)
-	for unit in controller.player_units:
-		var button := Button.new()
-		button.text = "%s %s" % [unit.get_display_name(), "(已部署)" if unit.is_deployed else "(待部署)"]
-		button.disabled = _actions_locked() or controller.phase != BattleController.Phase.DEPLOYMENT
-		button.pressed.connect(_select_deploy_unit.bind(unit))
-		deploy_list.add_child(button)
-
-
-func _refresh_class_resource_list() -> void:
-	_clear_children(class_resource_list)
-
-	var has_resources := false
-	for unit in controller.player_units:
-		if unit == null or unit.character_state == null:
-			continue
-
-		if unit.is_druid():
-			has_resources = true
-			var druid_label := Label.new()
-			druid_label.text = "%s：法力 %d/%d | 附魔 %d | 诅咒 %d | %s" % [
-				unit.get_display_name(),
-				unit.get_available_mana(),
-				unit.get_mana_capacity(),
-				unit.enchant_zone.size(),
-				unit.curse_zone.size(),
-				"变身" if unit.druid_transformed else "正位",
-			]
-			class_resource_list.add_child(druid_label)
-
-			if controller.can_use_druid_prepare_transform(unit) or controller.can_use_druid_prepare_untransform(unit):
-				var druid_button := Button.new()
-				if controller.can_use_druid_prepare_transform(unit):
-					druid_button.text = "准备：逆置首张手牌并变身"
-					druid_button.tooltip_text = "每回合限一次。将最左侧手牌逆置置入法力区，然后进入变身状态。"
-					druid_button.pressed.connect(_on_druid_prepare_transform_pressed.bind(unit))
-				else:
-					druid_button.text = "准备：支付1法力解除变身"
-					druid_button.tooltip_text = "每回合限一次。支付 1 点法力，解除变身状态。"
-					druid_button.pressed.connect(_on_druid_prepare_untransform_pressed.bind(unit))
-				druid_button.disabled = _actions_locked()
-				class_resource_list.add_child(druid_button)
-
-		if unit.is_ranger():
-			has_resources = true
-			var ranger_label := Label.new()
-			var stealth_text := "潜行" if unit.is_stealthed() else "显形"
-			var combo_text := "可连击" if unit.ranger_state.combo_window_open else "连击关闭"
-			ranger_label.text = "%s：%s | 连击 %d（%s）| 元素 %s" % [
-				unit.get_display_name(),
-				stealth_text,
-				unit.ranger_state.combo_points,
-				combo_text,
-				unit.ranger_state.get_summary(),
-			]
-			class_resource_list.add_child(ranger_label)
-			if unit == controller.current_unit and unit.is_stealthed() and unit.ranger_state.prepared_blend == BattleSurfaceState.Element.NONE:
-				var blend_button := Button.new()
-				blend_button.text = "调配特调"
-				blend_button.tooltip_text = "消耗两枚不同基础元素，为近战或远程模式装填一份特调。"
-				blend_button.disabled = _actions_locked() or unit.ranger_state.get_element_type_count() < 2
-				blend_button.pressed.connect(_show_ranger_blend_popup.bind(unit))
-				class_resource_list.add_child(blend_button)
-			elif unit.ranger_state.prepared_blend != BattleSurfaceState.Element.NONE:
-				var prepared_label := Label.new()
-				prepared_label.text = "已装填：%s（%s）" % [
-					BattleSurfaceState.label(unit.ranger_state.prepared_blend),
-					"近战" if unit.ranger_state.prepared_weapon_slot == "weapon" else "远程",
-				]
-				class_resource_list.add_child(prepared_label)
-
-		for pool_state in unit.character_state.class_resources:
-			if pool_state == null:
-				continue
-
-			has_resources = true
-			var button := Button.new()
-			button.text = "%s：%s" % [unit.get_display_name(), pool_state.get_display_text()]
-			button.disabled = true
-			class_resource_list.add_child(button)
-
-	if not has_resources:
-		var label := Label.new()
-		label.text = "无职业资源"
-		class_resource_list.add_child(label)
-
-
-func _refresh_equipment_list() -> void:
-	_clear_children(equipment_list)
-	var unit := _get_equipment_panel_unit()
-	if unit == null or unit.character_state == null:
-		_add_equipment_label("未选择角色")
-		return
-
-	_add_equipment_label(unit.character_state.get_main_hand_label())
-	_add_equipment_label(unit.character_state.get_off_hand_label())
-	var runtime_summary := unit.get_equipment_runtime_summary({"controller": controller, "unit": unit})
-	if not runtime_summary.is_empty():
-		_add_equipment_label("战斗状态：%s" % runtime_summary)
-
-	var phase_name := "deployment" if controller.phase == BattleController.Phase.DEPLOYMENT else "battle"
-	var action_context := {"controller": controller, "unit": unit, "phase": phase_name}
-	var actions := unit.get_equipment_actions(action_context)
-	if actions.is_empty():
-		_add_equipment_label("当前无可用装备行动")
-		return
-	for action in actions:
-		var action_button := Button.new()
-		action_button.text = str(action.get("label", "装备行动"))
-		action_button.tooltip_text = "执行当前角色的装备主动效果"
-		var effect := action.get("effect") as EquipmentEffect
-		var action_id := str(action.get("action_id", "default"))
-		action_button.disabled = _actions_locked() or not controller.can_activate_equipment_action(unit, effect, action_id)
-		action_button.pressed.connect(_on_equipment_action_pressed.bind(unit, effect, action_id))
-		equipment_list.add_child(action_button)
-
-
-func _get_equipment_panel_unit() -> BattleUnitState:
-	if controller.current_unit != null:
-		return controller.current_unit
-	if selected_deploy_unit != null:
-		return selected_deploy_unit
-	if not controller.player_units.is_empty():
-		return controller.player_units[0]
-	return null
-
-
-func _add_equipment_label(text: String) -> void:
-	var label := Label.new()
-	label.text = text
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	equipment_list.add_child(label)
-
-
-func _refresh_hand_list(is_player_turn: bool) -> void:
-	_clear_children(hand_list)
-	if not is_player_turn:
-		var label := Label.new()
-		label.text = "等待玩家单位行动"
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.custom_minimum_size = Vector2(220, 120)
-		hand_list.add_child(label)
-		return
-
-	for card in controller.current_unit.hand:
-		var context := {
-			"controller": controller,
-			"user": controller.current_unit,
-			"card": card,
-		}
-		var display_ap_cost := controller.get_card_ap_cost(controller.current_unit, card, context)
-		var button := TextureButton.new()
-		button.texture_normal = HAND_CARD_SLOT_TEXTURE
-		button.ignore_texture_size = true
-		button.stretch_mode = 0
-		button.custom_minimum_size = Vector2(112, 138)
-		button.tooltip_text = _build_card_tooltip(card)
-		button.disabled = _actions_locked()
-		button.pressed.connect(_select_card.bind(card))
-
-		var label := Label.new()
-		if _druid_prepare_hand_choice_active:
-			label.text = "%s\n置入法力区" % card.get_display_name_for_context(context)
-		else:
-			label.text = "%s\n%dAP\n射程 %.0f" % [
-				card.get_display_name_for_context(context),
-				display_ap_cost,
-				card.get_effective_range(controller.current_unit, pending_equipment_slot),
-			]
-		label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		label.add_theme_font_size_override("font_size", 12)
-		label.add_theme_color_override("font_color", Color(0.09, 0.055, 0.025))
-		button.add_child(label)
-		hand_list.add_child(button)
-
-	if controller.current_unit.hand.is_empty():
-		var label := Label.new()
-		label.text = "手牌为空"
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.custom_minimum_size = Vector2(220, 120)
-		hand_list.add_child(label)
-
-
-func _refresh_discard_button() -> void:
-	var unit := controller.current_unit
-	var discard_count := 0
-	var exile_count := 0
-	var enchant_count := 0
-	if unit != null:
-		discard_count = unit.discard_pile.size()
-		exile_count = unit.exiled_pile.size()
-		enchant_count = unit.enchant_zone.size()
-	discard_label.text = "弃牌 %d\n放逐 %d · 附魔 %d" % [discard_count, exile_count, enchant_count]
-
-
-func _refresh_curse_button() -> void:
-	var unit := controller.current_unit
-	if unit == null:
-		curse_button.text = "诅咒区"
-		return
-	var load_text := "-"
-	if unit.character_state != null:
-		load_text = "%d/%d" % [unit.character_state.get_curse_load(), unit.character_state.get_curse_load_limit()]
-	curse_button.text = "诅咒 %d · 畸变 %d · 负荷 %s · 咒波 %d" % [
-		_get_display_curses(unit).size(),
-		unit.get_active_distortion_fields().size(),
-		load_text,
-		unit.curse_wave,
-	]
 
 
 func _refresh_discard_popup() -> void:
@@ -1269,27 +928,11 @@ func _play_direct_card(card: CardData, play_mode: int, extra_context: Dictionary
 
 
 func _append_log(message: String) -> void:
-	log_label.append_text(message + "\n")
-
-
-func _phase_text() -> String:
-	match controller.phase:
-		BattleController.Phase.DEPLOYMENT:
-			return "阶段：部署"
-		BattleController.Phase.BATTLE:
-			return "阶段：战斗"
-		BattleController.Phase.ENDED:
-			return "阶段：结束"
-		_:
-			return "阶段：未知"
-
-
-func _current_unit_weapon_summary(unit: BattleUnitState) -> String:
-	if unit == null:
-		return ""
-	if unit.faction == BattleUnitState.Faction.PLAYER:
-		return " | %s" % _strike_preview_text(unit)
-	return " | 攻击伤害 %d" % unit.get_attack()
+	_battle_log_lines.append(message)
+	while _battle_log_lines.size() > 100:
+		_battle_log_lines.remove_at(0)
+	if battle_hud_root != null:
+		battle_hud_root.call("append_log_message", message)
 
 
 func _build_card_tooltip(card: CardData) -> String:

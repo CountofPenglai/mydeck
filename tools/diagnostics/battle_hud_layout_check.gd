@@ -37,6 +37,17 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 
+	for legacy_path in [
+		"TopOverlay",
+		"CurrentUnitPanel",
+		"BottomHud",
+		"DiscardButton",
+		"CurseButton",
+		"MenuButton",
+	]:
+		if battle_scene.get_node_or_null(legacy_path) != null:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: legacy HUD node remains: %s at %s" % [legacy_path, target_size])
+
 	var hud_root := battle_scene.get_node_or_null("%BattleHudRoot") as Control
 	if hud_root == null:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: BattleHudRoot missing at %s" % target_size)
@@ -50,6 +61,15 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		if hud_root.get_node_or_null("%%%s" % node_name) == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: %s missing at %s" % [node_name, target_size])
 			break
+	if hud_root.get_node_or_null("BottomHud") != null or hud_root.get_node_or_null("DetailPanel") != null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: hidden HUD placeholder remains at %s" % target_size)
+	var message_label := hud_root.get_node_or_null("%BattleMessageLabel") as Label
+	if message_label == null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: battle message label missing at %s" % target_size)
+	else:
+		battle_scene.call("_append_log", "HUD diagnostic message")
+		if "HUD diagnostic message" not in message_label.text:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: battle log is not routed to the new HUD at %s" % target_size)
 	for artwork_name in ["BottomArtwork", "TurnRailArtwork", "DetailArtwork", "CommandArtwork", "CurrentUnitRing"]:
 		var artwork_node := hud_root.find_child(artwork_name, true, false) as Control
 		if artwork_node == null or artwork_node.get("texture") == null:
@@ -69,6 +89,11 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: EquipmentRegion missing at %s" % target_size)
 	elif _contains_scroll_container(equipment_region):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment region contains scrolling at %s" % target_size)
+	var resource_actions := bottom_hud.get_node_or_null("%ResourceActionList") if bottom_hud != null else null
+	if resource_actions == null or not bottom_hud.has_method("get_class_action_count"):
+		_fail("BATTLE_HUD_LAYOUT_CHECK: class resource action API missing at %s" % target_size)
+	elif _contains_scroll_container(resource_actions):
+		_fail("BATTLE_HUD_LAYOUT_CHECK: class resource actions contain scrolling at %s" % target_size)
 	var equipment_popup := hud_root.get_node_or_null("%EquipmentActionsPopup")
 	if equipment_popup == null or not equipment_popup.has_method("set_actions"):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment action popup API missing at %s" % target_size)

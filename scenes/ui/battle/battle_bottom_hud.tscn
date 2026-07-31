@@ -304,14 +304,25 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("RegionDark")
 
-[node name="ResourceLabel" type="Label" parent="StatusRow/ResourceRegion"]
+[node name="ResourceStack" type="VBoxContainer" parent="StatusRow/ResourceRegion"]
+layout_mode = 2
+theme_override_constants/separation = 1
+
+[node name="ResourceLabel" type="Label" parent="StatusRow/ResourceRegion/ResourceStack"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_font_sizes/font_size = 12
 text = "角色资源 / 状态"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
+
+[node name="ResourceActionList" type="HBoxContainer" parent="StatusRow/ResourceRegion/ResourceStack"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+alignment = 1
 
 [node name="CurseRegion" type="PanelContainer" parent="StatusRow"]
 custom_minimum_size = Vector2(76, 58)

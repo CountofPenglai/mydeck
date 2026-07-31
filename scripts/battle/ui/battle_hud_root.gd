@@ -18,6 +18,7 @@ var _compact_mode := false
 var _equipment_column_count := 2
 var _equipment_actions: Array[Dictionary] = []
 var _equipment_action_unit: BattleUnitState
+var _message_serial := 0
 
 @onready var turn_order_bar: Control = %TurnOrderBar
 @onready var deployment_panel: Control = %DeploymentPanel
@@ -28,6 +29,8 @@ var _equipment_action_unit: BattleUnitState
 @onready var deploy_list: VBoxContainer = %DeployList
 @onready var start_battle_button: Button = %StartBattleButton
 @onready var equipment_popup: PopupPanel = %EquipmentActionsPopup
+@onready var battle_message_panel: PanelContainer = %BattleMessagePanel
+@onready var battle_message_label: Label = %BattleMessageLabel
 
 
 func _ready() -> void:
@@ -69,6 +72,22 @@ func is_compact_mode() -> bool:
 
 func get_equipment_column_count() -> int:
 	return _equipment_column_count
+
+
+func focus_menu_button() -> void:
+	menu_button.grab_focus()
+
+
+func append_log_message(message: String) -> void:
+	if message.is_empty():
+		return
+	_message_serial += 1
+	var serial := _message_serial
+	battle_message_label.text = message
+	battle_message_panel.visible = true
+	await get_tree().create_timer(3.0).timeout
+	if is_inside_tree() and serial == _message_serial:
+		battle_message_panel.visible = false
 
 
 func get_battle_safe_rect() -> Rect2:
@@ -209,6 +228,8 @@ func _connect_bottom_hud(scene: BattleScene) -> void:
 		bottom_hud.connect("card_unhovered", _on_card_unhovered)
 	if not bottom_hud.is_connected("equipment_pressed", _on_equipment_pressed):
 		bottom_hud.connect("equipment_pressed", _on_equipment_pressed)
+	if not bottom_hud.is_connected("class_action_pressed", _on_class_action_pressed):
+		bottom_hud.connect("class_action_pressed", _on_class_action_pressed)
 
 
 func _connect_turn_order() -> void:
@@ -307,6 +328,18 @@ func _on_equipment_action_selected(unit: BattleUnitState, effect: EquipmentEffec
 		battle_scene._on_equipment_action_pressed(unit, effect, action_id)
 
 
+func _on_class_action_pressed(action_id: StringName, unit: BattleUnitState) -> void:
+	if battle_scene == null:
+		return
+	match action_id:
+		&"druid_transform":
+			battle_scene._on_druid_prepare_transform_pressed(unit)
+		&"druid_untransform":
+			battle_scene._on_druid_prepare_untransform_pressed(unit)
+		&"ranger_blend":
+			battle_scene._show_ranger_blend_popup(unit)
+
+
 func _on_detail_lock_changed(_locked: bool) -> void:
 	equipment_popup.call("close")
 
@@ -342,6 +375,10 @@ func _apply_responsive_layout() -> void:
 	var turn_width := minf(620.0, maxf(320.0, size.x * 0.44))
 	turn_order_bar.position = Vector2((size.x - turn_width) * 0.5, 12.0)
 	turn_order_bar.size = Vector2(turn_width, 76.0)
+
+	var message_width := minf(560.0, size.x - 48.0)
+	battle_message_panel.position = Vector2((size.x - message_width) * 0.5, bottom_hud.position.y - 48.0)
+	battle_message_panel.size = Vector2(message_width, 38.0)
 
 	var detail_width := 300.0 if _compact_mode else clampf(size.x * 0.22, 280.0, 340.0)
 	detail_panel.size = Vector2(detail_width, minf(500.0, bottom_hud.position.y - 28.0))

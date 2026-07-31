@@ -12,6 +12,7 @@ signal discard_pressed
 signal curse_pressed
 signal enchant_pressed
 signal equipment_pressed
+signal class_action_pressed(action_id: StringName, unit: BattleUnitState)
 
 const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
 const AP_ORB_FULL_TEXTURE := preload("res://assets/art/ui/ap_orb_full.png")
@@ -31,6 +32,7 @@ var _compact_mode := false
 @onready var ap_label: Label = %APLabel
 @onready var ap_orb_layer: HBoxContainer = %APOrbLayer
 @onready var resource_label: Label = %ResourceLabel
+@onready var resource_action_list: HBoxContainer = %ResourceActionList
 @onready var equipment_label: Label = %EquipmentLabel
 @onready var enchant_label: Label = %EnchantLabel
 @onready var curse_label: Label = %CurseLabel
@@ -69,6 +71,7 @@ func bind_unit(unit: BattleUnitState, controller: BattleController, interactive:
 		enchant_label.text = "附魔 0"
 		curse_label.text = "诅咒 0"
 		_refresh_ap_orbs(0, 0)
+		_refresh_class_actions(null, controller, false)
 		_set_interactive(false)
 		return
 
@@ -79,6 +82,7 @@ func bind_unit(unit: BattleUnitState, controller: BattleController, interactive:
 	_refresh_ap_orbs(unit.current_ap, max_ap)
 	portrait_rect.texture = _get_portrait(unit)
 	resource_label.text = _build_resource_summary(unit)
+	_refresh_class_actions(unit, controller, interactive)
 	equipment_label.text = _build_equipment_summary(unit, controller)
 	enchant_label.text = "附魔 %d" % unit.enchant_zone.size()
 	curse_label.text = "诅咒 %d\n咒波 %d" % [unit.curse_zone.size(), unit.curse_wave]
@@ -128,6 +132,10 @@ func set_equipment_actions(action_count: int, direct_label: String = "", direct_
 
 func get_bound_unit() -> BattleUnitState:
 	return bound_unit
+
+
+func get_class_action_count() -> int:
+	return resource_action_list.get_child_count()
 
 
 func _create_card_button(card: CardData, cost: int, interactive: bool) -> TextureButton:
@@ -180,6 +188,55 @@ func _set_interactive(interactive: bool) -> void:
 	curse_button.disabled = bound_unit == null
 	enchant_button.disabled = bound_unit == null
 	equipment_button.disabled = bound_unit == null
+
+
+func _refresh_class_actions(unit: BattleUnitState, controller: BattleController, interactive: bool) -> void:
+	_clear_children(resource_action_list)
+	if unit == null or controller == null or not interactive:
+		return
+	if controller.can_use_druid_prepare_transform(unit):
+		_add_class_action(
+			&"druid_transform",
+			"变形" if _compact_mode else "准备变形",
+			"选择一张手牌逆置置入法力区，然后进入变身状态。",
+			unit,
+			true
+		)
+	elif controller.can_use_druid_prepare_untransform(unit):
+		_add_class_action(
+			&"druid_untransform",
+			"复原" if _compact_mode else "准备复原",
+			"支付 1 点法力解除变身状态。",
+			unit,
+			true
+		)
+	if unit.is_ranger() and unit.is_stealthed() \
+			and unit.ranger_state.prepared_blend == BattleSurfaceState.Element.NONE:
+		_add_class_action(
+			&"ranger_blend",
+			"特调",
+			"消耗两枚不同基础元素，为近战或远程模式装填一份特调。",
+			unit,
+			unit.ranger_state.get_element_type_count() >= 2
+		)
+
+
+func _add_class_action(
+		action_id: StringName,
+		label: String,
+		tooltip: String,
+		unit: BattleUnitState,
+		enabled: bool
+) -> void:
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0.0, 20.0)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.text = label
+	button.tooltip_text = tooltip
+	button.disabled = not enabled
+	button.add_theme_font_size_override("font_size", 10)
+	button.pressed.connect(func() -> void: class_action_pressed.emit(action_id, unit))
+	resource_action_list.add_child(button)
 
 
 func _build_resource_summary(unit: BattleUnitState) -> String:
