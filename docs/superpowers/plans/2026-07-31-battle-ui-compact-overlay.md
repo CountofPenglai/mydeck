@@ -82,3 +82,11 @@
 - Spec coverage: all three reported problems map to explicit geometry or artwork assertions.
 - Placeholder scan: no deferred implementation or undefined interface remains.
 - Type consistency: only the obsolete player basic-attack HUD signal was removed; controller/domain attack interfaces are unchanged.
+
+## Follow-up: Vertical Acting-Unit Vitals
+
+- [x] Restore `battle_scene.tscn`, `battle_hud_root.tscn` and `battle_bottom_hud.tscn` after accidental editor-coordinate overrides, without touching card, equipment or map resources.
+- [x] Keep the five surrounding status regions compact while enlarging the centered acting-unit frame.
+- [x] Move the portrait above the health bar, center it independently, and reserve the lower rows for a larger health bar and two four-slot AP banks.
+- [x] Move the battle message overlay upward by the vitals overflow height.
+- [x] Add four-resolution assertions for portrait order, centering, dimensions and overlap prevention, then run visual and adjacent battle diagnostics.

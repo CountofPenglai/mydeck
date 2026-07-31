@@ -13,6 +13,7 @@ const BOTTOM_MAX_HEIGHT := 196.0
 const WIDE_BOTTOM_MAX_WIDTH := 1560.0
 const MAP_HORIZONTAL_INSET := 24.0
 const MAP_VERTICAL_SHIFT_RATIO := 0.42
+const VITALS_OVERFLOW_HEIGHT := 36.0
 
 var battle_scene: BattleScene
 var controller: BattleController
@@ -376,7 +377,10 @@ func _apply_responsive_layout() -> void:
 	turn_order_bar.size = Vector2(turn_width, 68.0)
 
 	var message_width := minf(560.0, size.x - 48.0)
-	battle_message_panel.position = Vector2((size.x - message_width) * 0.5, bottom_hud.position.y - 48.0)
+	battle_message_panel.position = Vector2(
+		(size.x - message_width) * 0.5,
+		bottom_hud.position.y - VITALS_OVERFLOW_HEIGHT - 48.0
+	)
 	battle_message_panel.size = Vector2(message_width, 38.0)
 
 	var detail_width := 260.0 if _compact_mode else clampf(size.x * 0.19, 260.0, 300.0)

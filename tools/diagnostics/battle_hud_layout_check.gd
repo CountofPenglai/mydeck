@@ -128,7 +128,7 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment region contains scrolling at %s" % target_size)
 	for region_limit in [
 		{"name": "EquipmentRegion", "max_width": 140.0},
-		{"name": "VitalsRegion", "max_width": 224.0},
+		{"name": "VitalsRegion", "max_width": 280.0},
 		{"name": "ResourceRegion", "max_width": 160.0},
 	]:
 		var region := bottom_hud.find_child(str(region_limit.name), true, false) as Control
@@ -142,7 +142,9 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 			break
 	var vitals_region := bottom_hud.get_node_or_null("%VitalsRegion") as Control if bottom_hud != null else null
 	var health_bar := bottom_hud.get_node_or_null("%HealthBar") as ProgressBar if bottom_hud != null else null
-	if vitals_region == null or health_bar == null:
+	var portrait_holder := bottom_hud.find_child("PortraitHolder", true, false) as Control if bottom_hud != null else null
+	var ap_orb_layer := bottom_hud.get_node_or_null("%APOrbLayer") as Control if bottom_hud != null else null
+	if vitals_region == null or health_bar == null or portrait_holder == null or ap_orb_layer == null:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: centered vitals or health bar missing at %s" % target_size)
 	else:
 		_assert_close(
@@ -152,6 +154,32 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 			"vitals center",
 			target_size
 		)
+		if vitals_region.size.x < 250.0 or vitals_region.size.y < 78.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: acting-unit frame is not enlarged at %s" % target_size)
+		if health_bar.size.x < 228.0 or health_bar.size.y < 18.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: health bar is not prominent at %s" % target_size)
+		if ap_orb_layer.size.x < 154.0 or ap_orb_layer.size.y < 22.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: AP banks are not enlarged at %s" % target_size)
+		_assert_close(
+			portrait_holder.get_global_rect().get_center().x,
+			vitals_region.get_global_rect().get_center().x,
+			1.0,
+			"portrait center",
+			target_size
+		)
+		if portrait_holder.get_global_rect().end.y > health_bar.get_global_rect().position.y + 1.0:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: portrait is not above the health bar at %s" % target_size)
+		var hand_frame := bottom_hud.get_node_or_null("%HandFrame") as Control
+		if hand_frame != null and vitals_region.get_global_rect().intersects(hand_frame.get_global_rect()):
+			_fail("BATTLE_HUD_LAYOUT_CHECK: enlarged vitals overlaps hand at %s" % target_size)
+		for compact_region_name in ["EnchantRegion", "EquipmentRegion", "CommandRegion", "ResourceRegion", "CurseRegion"]:
+			var compact_region := bottom_hud.find_child(compact_region_name, true, false) as Control
+			if compact_region == null or compact_region.size.y > 50.0:
+				_fail("BATTLE_HUD_LAYOUT_CHECK: %s lost compact height at %s" % [compact_region_name, target_size])
+				break
+		var message_panel := hud_root.get_node_or_null("%BattleMessagePanel") as Control
+		if message_panel != null and message_panel.get_global_rect().intersects(vitals_region.get_global_rect()):
+			_fail("BATTLE_HUD_LAYOUT_CHECK: battle message overlaps enlarged vitals at %s" % target_size)
 	var resource_actions := bottom_hud.get_node_or_null("%ResourceActionList") if bottom_hud != null else null
 	if resource_actions == null or not bottom_hud.has_method("get_class_action_count"):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: class resource action API missing at %s" % target_size)

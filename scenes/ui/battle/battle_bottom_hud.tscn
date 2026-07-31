@@ -242,14 +242,15 @@ text_overrun_behavior = 3
 
 [node name="VitalsRegion" type="PanelContainer" parent="StatusRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(220, 44)
+custom_minimum_size = Vector2(260, 82)
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.5
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -110.0
-offset_right = 110.0
+offset_left = -130.0
+offset_top = -36.0
+offset_right = 130.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("RegionDark")
@@ -265,30 +266,65 @@ patch_margin_top = 12
 patch_margin_right = 12
 patch_margin_bottom = 12
 
-[node name="Row" type="HBoxContainer" parent="StatusRow/VitalsRegion"]
+[node name="VitalsMargin" type="MarginContainer" parent="StatusRow/VitalsRegion"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 2
 
-[node name="PortraitHolder" type="Control" parent="StatusRow/VitalsRegion/Row"]
-custom_minimum_size = Vector2(40, 40)
+[node name="VitalsStack" type="VBoxContainer" parent="StatusRow/VitalsRegion/VitalsMargin"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Header" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack"]
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 
-[node name="PortraitRect" type="TextureRect" parent="StatusRow/VitalsRegion/Row/PortraitHolder"]
+[node name="BoundUnitLabel" type="Label" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_right = -22.0
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.96, 0.72, 0.3, 1)
+theme_override_font_sizes/font_size = 12
+text = "行动角色"
+horizontal_alignment = 2
+vertical_alignment = 1
+text_overrun_behavior = 3
+
+[node name="PortraitHolder" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -16.0
+offset_right = 16.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PortraitRect" type="TextureRect" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header/PortraitHolder"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 5.0
-offset_top = 5.0
-offset_right = -5.0
-offset_bottom = -5.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = -3.0
 grow_horizontal = 2
 grow_vertical = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="CurrentUnitRing" type="TextureRect" parent="StatusRow/VitalsRegion/Row/PortraitHolder"]
+[node name="CurrentUnitRing" type="TextureRect" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header/PortraitHolder"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -301,22 +337,9 @@ texture = ExtResource("6")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="VBoxContainer" parent="StatusRow/VitalsRegion/Row"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 0
-
-[node name="BoundUnitLabel" type="Label" parent="StatusRow/VitalsRegion/Row/Text"]
+[node name="HealthBar" type="ProgressBar" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.96, 0.72, 0.3, 1)
-theme_override_font_sizes/font_size = 12
-text = "行动角色"
-text_overrun_behavior = 3
-
-[node name="HealthBar" type="ProgressBar" parent="StatusRow/VitalsRegion/Row/Text"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 12)
+custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
 mouse_filter = 2
 show_percentage = false
@@ -324,7 +347,7 @@ value = 1.0
 theme_override_styles/background = SubResource("HealthBarBackground")
 theme_override_styles/fill = SubResource("HealthBarFill")
 
-[node name="HealthLabel" type="Label" parent="StatusRow/VitalsRegion/Row/Text/HealthBar"]
+[node name="HealthLabel" type="Label" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/HealthBar"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -337,24 +360,26 @@ theme_override_colors/font_color = Color(0.97, 0.94, 0.82, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.85)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 8
+theme_override_font_sizes/font_size = 10
 text = "生命 -"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="APRow" type="HBoxContainer" parent="StatusRow/VitalsRegion/Row/Text"]
+[node name="APRow" type="HBoxContainer" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack"]
 layout_mode = 2
 theme_override_constants/separation = 4
+alignment = 1
 
-[node name="APLabel" type="Label" parent="StatusRow/VitalsRegion/Row/Text/APRow"]
+[node name="APLabel" type="Label" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/APRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 11
 text = "AP"
+vertical_alignment = 1
 
-[node name="APOrbLayer" type="Control" parent="StatusRow/VitalsRegion/Row/Text/APRow"]
+[node name="APOrbLayer" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/APRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(122, 18)
+custom_minimum_size = Vector2(159, 24)
 layout_mode = 2
 
 [node name="RightStatusGroup" type="HBoxContainer" parent="StatusRow"]
