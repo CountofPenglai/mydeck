@@ -86,6 +86,8 @@ func _ready() -> void:
 
 	battle_scene.queue_free()
 	await get_tree().process_frame
+	if _exit_code == 0:
+		print("DRUID_KALEIDOSCOPE_UI: PASS")
 	get_tree().quit(_exit_code)
 
 

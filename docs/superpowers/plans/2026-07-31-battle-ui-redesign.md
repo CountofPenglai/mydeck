@@ -325,11 +325,11 @@
 **Interfaces:**
 - Documentation must identify UI ownership, responsive breakpoints, detail lock behavior, equipment popup invariants, safe-area fitting, and exact headless test command.
 
-- [ ] **Step 1: Run targeted diagnostics**
+- [x] **Step 1: Run targeted diagnostics**
 
   Run `battle_hud_layout_check.tscn`, `druid_kaleidoscope_ui_check.tscn`, `curse_system_check.tscn`, `battlefield_features_check.tscn`, `card_movement_check.tscn`, and `diagnose_battle_load.tscn`. Require exit `0` and each script's completion marker.
 
-- [ ] **Step 2: Run project-wide headless load**
+- [x] **Step 2: Run project-wide headless load**
 
   Run:
   ```powershell
@@ -337,15 +337,15 @@
   ```
   Require exit `0`; treat known ObjectDB/RID shutdown warnings as non-blocking only when no parser/resource errors exist.
 
-- [ ] **Step 3: Check responsive node bounds**
+- [x] **Step 3: Check responsive node bounds**
 
   Re-run the layout diagnostic at all four target sizes and inspect emitted bounds for overlap, negative size, clipped labels, and blank textures. Confirm map remains interactive around every HUD safe region.
 
-- [ ] **Step 4: Update documentation**
+- [x] **Step 4: Update documentation**
 
   Document the module tree, signal flow, detail data model, no-scroll equipment action rule, common regression traps, and the sandbox-safe Godot command.
 
-- [ ] **Step 5: Mark this plan complete and commit**
+- [x] **Step 5: Mark this plan complete and commit**
 
   Check every completed box in this file and commit:
   ```powershell

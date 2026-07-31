@@ -205,16 +205,12 @@ func _test_curse_ui() -> void:
 	if scene == null:
 		_fail("CURSE_SYSTEM: battle scene could not instantiate")
 		return
-	var state := scene.get_state()
-	var found := false
-	for index in range(state.get_node_count()):
-		if str(state.get_node_name(index)) == "CurseButton":
-			found = true
-			break
-	if not found:
-		_fail("CURSE_SYSTEM: curse zone UI entry missing")
 	var battle_scene := scene.instantiate() as BattleScene
 	add_child(battle_scene)
+	var hud_root := battle_scene.get_node_or_null("%BattleHudRoot")
+	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") if hud_root != null else null
+	if bottom_hud == null or bottom_hud.get_node_or_null("%HudCurseButton") == null:
+		_fail("CURSE_SYSTEM: modular curse zone UI entry missing")
 	if battle_scene.controller.player_units.is_empty():
 		_fail("CURSE_SYSTEM: battle UI has no player for manifestation check")
 	else:
