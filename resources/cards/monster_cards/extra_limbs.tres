@@ -1,21 +1,23 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
-[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
-[ext_resource type="Script" path="res://scripts/cards/monster_card_effect.gd" id="2"]
-[ext_resource type="Texture2D" path="res://assets/art/cards/monster_card_mutation.svg" id="3"]
+[gd_resource type="Resource" script_class="CardData" format=3 uid="uid://cpvll44y42qim"]
+
+[ext_resource type="Script" uid="uid://q0mn1r2vt85r" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Script" uid="uid://bf8k8nd22sdvq" path="res://scripts/cards/monster_card_effect.gd" id="2"]
+[ext_resource type="Texture2D" uid="uid://nd16i5xfo3g4" path="res://assets/art/cards/monster_card_mutation.svg" id="3"]
+
 [sub_resource type="Resource" id="Effect"]
 script = ExtResource("2")
 kind = 10
+
 [resource]
 script = ExtResource("1")
 card_name = "增生附肢"
-reward_eligible = false
-description = "对合法敌方均匀分配三段基础伤害1的攻击。\n畸变~附肢"
+description = "对合法敌方均匀分配三段基础伤害1的攻击。
+畸变~附肢"
 artwork = ExtResource("3")
 rarity = 1
+reward_eligible = false
 card_type = 0
 card_tags = 1
 damage_type = 3
 target_type = 5
-ap_cost = 2
-mutation_fields = PackedStringArray("appendage")
 effect = SubResource("Effect")

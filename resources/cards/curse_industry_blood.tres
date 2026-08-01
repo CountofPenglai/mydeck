@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="CardData" format=3 uid="uid://bcu8i4ga1rkkw"]
 
-[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
-[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
-[ext_resource type="Script" path="res://scripts/cards/curse_industry_card_effect.gd" id="3_effect"]
+[ext_resource type="Script" uid="uid://q0mn1r2vt85r" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" uid="uid://e0g61ii5ck0q" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Script" uid="uid://ce24c36qg8dnn" path="res://scripts/cards/curse_industry_card_effect.gd" id="3_effect"]
 
 [sub_resource type="Resource" id="Effect"]
 script = ExtResource("3_effect")
@@ -14,9 +14,7 @@ card_name = "鲜血之业"
 description = "失去3+2D生命；对范围3内敌人造成8+4D固定伤害，并按实际生命伤害吸血。"
 artwork = ExtResource("2_art")
 rarity = 2
-card_class = 0
 card_type = 3
-target_type = 0
 ap_cost = 0
 override_range = true
 card_range = 0

@@ -1,24 +1,18 @@
-[gd_resource type="Resource" script_class="EquipmentData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="EquipmentData" format=3 uid="uid://cn4445w24uwj6"]
 
-[ext_resource type="Script" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
-[ext_resource type="Script" path="res://scripts/items/effects/mountain_cleaver_effect.gd" id="2_effect"]
-[ext_resource type="Texture2D" path="res://icon.svg" id="3_icon"]
+[ext_resource type="Script" uid="uid://bxgxj2vwoapii" path="res://scripts/items/equipment_data.gd" id="1_equipment"]
+[ext_resource type="Script" uid="uid://b2t7iiwm4bcm1" path="res://scripts/items/effects/mountain_cleaver_effect.gd" id="2_effect"]
+[ext_resource type="Texture2D" uid="uid://u4g25gm5ac32" path="res://icon.svg" id="3_icon"]
 
 [sub_resource type="Resource" id="Effect_mountain"]
 script = ExtResource("2_effect")
 
 [resource]
 script = ExtResource("1_equipment")
+base_damage = 5
+attack_range = 3
+equip_category = 1
+trigger_effects = Array[Resource]([SubResource("Effect_mountain")])
 item_name = "砍山刀"
 description = "回合开始时支付1点势，否则尝试切换武器。"
 icon = ExtResource("3_icon")
-max_stack = 1
-base_damage = 5
-attack_range = 3
-damage_type = 0
-equip_slot = 0
-equip_category = 1
-allowed_classes = PackedInt32Array(1)
-rarity = 0
-subcategories = PackedStringArray("刀", "武器", "T0")
-trigger_effects = [SubResource("Effect_mountain")]

@@ -16,11 +16,15 @@ signal class_action_pressed(action_id: StringName, unit: BattleUnitState)
 const HAND_CARD_SLOT_TEXTURE := preload("res://assets/art/ui/hand_card_slot.png")
 const AP_SLOT_FRAME_TEXTURE := preload("res://assets/art/ui/ap_slot_frame.png")
 const AP_ORB_FULL_TEXTURE := preload("res://assets/art/ui/ap_orb_full.png")
+const BattleSurfaceState = preload("res://scripts/battle/battle_surface_state.gd")
 const AP_SLOT_LIMIT := 8
-const AP_BANK_SIZE := Vector2(78.0, 24.0)
+const AP_BANK_SIZE := Vector2(94.0, 30.0)
 const AP_BANK_GAP := 3.0
-const AP_ORB_SIZE := Vector2(17.0, 17.0)
+const AP_ORB_SIZE := Vector2(22.0, 22.0)
 const AP_SLOT_CENTER_RATIOS: Array[float] = [0.207, 0.408, 0.609, 0.811]
+const STATUS_GROUP_GAP := 4.0
+const STANDARD_VITALS_SIZE := Vector2(286.0, 92.0)
+const COMPACT_VITALS_SIZE := Vector2(270.0, 92.0)
 const ALLY_ACCENT := Color(0.22, 0.84, 0.49, 1.0)
 const ENCHANT_ACCENT := Color(0.22, 0.82, 0.88, 1.0)
 const EQUIPMENT_ACCENT := Color(0.94, 0.65, 0.22, 1.0)
@@ -37,7 +41,18 @@ var _compact_mode := false
 @onready var health_label: Label = %HealthLabel
 @onready var ap_label: Label = %APLabel
 @onready var ap_orb_layer: Control = %APOrbLayer
-@onready var resource_label: Label = %ResourceLabel
+@onready var status_row: Control = %StatusRow
+@onready var left_status_group: HBoxContainer = %LeftStatusGroup
+@onready var right_status_group: HBoxContainer = %RightStatusGroup
+@onready var vitals_region: PanelContainer = %VitalsRegion
+@onready var equipment_region: PanelContainer = %EquipmentRegion
+@onready var enchant_region: PanelContainer = %EnchantRegion
+@onready var curse_region: PanelContainer = %CurseRegion
+@onready var command_region: PanelContainer = %CommandRegion
+@onready var character_resource_region: PanelContainer = %CharacterResourceRegion
+@onready var status_region: PanelContainer = %StatusRegion
+@onready var character_resource_label: Label = %CharacterResourceLabel
+@onready var status_label: Label = %StatusLabel
 @onready var resource_action_list: HBoxContainer = %ResourceActionList
 @onready var equipment_label: Label = %EquipmentLabel
 @onready var enchant_label: Label = %EnchantLabel
@@ -53,6 +68,7 @@ var _compact_mode := false
 
 
 func _ready() -> void:
+	left_status_group.move_child(curse_region, 0)
 	move_button.pressed.connect(func() -> void: move_pressed.emit())
 	end_turn_button.pressed.connect(func() -> void: end_turn_pressed.emit())
 	deck_button.pressed.connect(func() -> void: deck_pressed.emit())
@@ -60,6 +76,8 @@ func _ready() -> void:
 	curse_button.pressed.connect(func() -> void: curse_pressed.emit())
 	enchant_button.pressed.connect(func() -> void: enchant_pressed.emit())
 	equipment_button.pressed.connect(func() -> void: equipment_pressed.emit())
+	status_row.resized.connect(_queue_status_layout)
+	_queue_status_layout()
 
 
 func bind_unit(unit: BattleUnitState, controller: BattleController, interactive: bool) -> void:
@@ -72,7 +90,8 @@ func bind_unit(unit: BattleUnitState, controller: BattleController, interactive:
 		health_bar.value = 0.0
 		ap_label.text = "AP"
 		portrait_rect.texture = null
-		resource_label.text = "无角色资源"
+		character_resource_label.text = "无角色资源"
+		status_label.text = "力 -  敏 -  智 -"
 		equipment_label.text = "未选择装备"
 		enchant_label.text = "附魔 0"
 		curse_label.text = "诅咒 0"
@@ -90,7 +109,8 @@ func bind_unit(unit: BattleUnitState, controller: BattleController, interactive:
 	ap_label.text = "AP"
 	_refresh_ap_orbs(unit.current_ap, max_ap)
 	portrait_rect.texture = _get_portrait(unit)
-	resource_label.text = _build_resource_summary(unit)
+	character_resource_label.text = _build_resource_summary(unit)
+	status_label.text = _build_status_summary(unit)
 	_refresh_class_actions(unit, controller, interactive)
 	equipment_label.text = _build_equipment_summary(unit, controller)
 	enchant_label.text = _build_zone_summary("附魔", unit.enchant_zone)
@@ -119,8 +139,47 @@ func bind_hand(cards: Array[CardData], costs: Array[int], interactive: bool) -> 
 
 func set_compact(compact: bool) -> void:
 	_compact_mode = compact
-	resource_label.add_theme_font_size_override("font_size", 11 if compact else 13)
+	character_resource_label.add_theme_font_size_override("font_size", 10 if compact else 11)
+	status_label.add_theme_font_size_override("font_size", 10 if compact else 11)
 	equipment_label.add_theme_font_size_override("font_size", 11 if compact else 13)
+	vitals_region.custom_minimum_size = COMPACT_VITALS_SIZE if compact else STANDARD_VITALS_SIZE
+	equipment_region.custom_minimum_size = Vector2(100.0 if compact else 136.0, 76.0)
+	enchant_region.custom_minimum_size = Vector2(104.0 if compact else 108.0, 76.0)
+	curse_region.custom_minimum_size = Vector2(104.0 if compact else 108.0, 76.0)
+	command_region.custom_minimum_size = Vector2(42.0, 76.0)
+	character_resource_region.custom_minimum_size = Vector2(112.0 if compact else 132.0, 76.0)
+	status_region.custom_minimum_size = character_resource_region.custom_minimum_size
+	_queue_status_layout()
+
+
+func _queue_status_layout() -> void:
+	if not is_inside_tree():
+		return
+	call_deferred("_layout_status_groups")
+
+
+func _layout_status_groups() -> void:
+	if not is_instance_valid(status_row) or status_row.size.x <= 0.0:
+		return
+	var vitals_size := vitals_region.custom_minimum_size
+	vitals_region.offset_left = -vitals_size.x * 0.5
+	vitals_region.offset_top = -vitals_size.y
+	vitals_region.offset_right = vitals_size.x * 0.5
+	vitals_region.offset_bottom = 0.0
+
+	var left_size := left_status_group.get_combined_minimum_size()
+	var right_size := right_status_group.get_combined_minimum_size()
+	left_status_group.size = left_size
+	right_status_group.size = right_size
+	var vitals_rect := vitals_region.get_rect()
+	left_status_group.position = Vector2(
+		vitals_rect.position.x - STATUS_GROUP_GAP - left_size.x,
+		status_row.size.y - left_size.y
+	)
+	right_status_group.position = Vector2(
+		vitals_rect.end.x + STATUS_GROUP_GAP,
+		status_row.size.y - right_size.y
+	)
 
 
 func set_equipment_actions(action_count: int, direct_label: String = "", direct_enabled: bool = true) -> void:
@@ -275,14 +334,29 @@ func _add_class_action(
 
 func _build_resource_summary(unit: BattleUnitState) -> String:
 	var parts := PackedStringArray()
-	parts.append("力 %d  敏 %d  智 %d" % [unit.get_strength(), unit.get_agility(), unit.get_intelligence()])
+	if unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+		parts.append("势 %d/5" % unit.get_class_resource_value(BattleController.WARRIOR_MOMENTUM_RESOURCE))
 	if unit.is_druid():
 		parts.append("法力 %d/%d  %s" % [unit.get_available_mana(), unit.get_mana_capacity(), "变身" if unit.druid_transformed else "正位"])
 	if unit.is_ranger():
+		parts.append("元素 %s" % unit.ranger_state.get_summary())
 		parts.append("连击 %d  %s" % [unit.ranger_state.combo_points, "潜行" if unit.is_stealthed() else "显形"])
-	if unit.curse_wave > 0:
-		parts.append("咒波 %d" % unit.curse_wave)
-	return (" · " if _compact_mode else "\n").join(parts)
+	if unit.is_mage_adventurer():
+		var mana_parts := PackedStringArray()
+		for element in BattleSurfaceState.BASE_ELEMENTS:
+			mana_parts.append("%s%d" % [BattleSurfaceState.label(element), unit.mage_state.get_mana(element)])
+		parts.append("法术力 %s" % " ".join(mana_parts))
+	if unit.is_warlock_adventurer():
+		parts.append("术士法力 %d" % unit.warlock_state.get_mana())
+	return "\n".join(parts) if not parts.is_empty() else "无特色资源"
+
+
+func _build_status_summary(unit: BattleUnitState) -> String:
+	return "力量 %d\n敏捷 %d\n智力 %d" % [
+		unit.get_strength(),
+		unit.get_agility(),
+		unit.get_intelligence(),
+	]
 
 
 func _build_equipment_summary(unit: BattleUnitState, controller: BattleController) -> String:

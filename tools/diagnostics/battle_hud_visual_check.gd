@@ -45,7 +45,15 @@ func _ready() -> void:
 		])
 	var hand_list := bottom_hud.get_node("%HandList") as Control
 	print("BATTLE_HUD_VISUAL_CONTENT: hand=%s children=%d" % [hand_list.get_global_rect(), hand_list.get_child_count()])
-	for node_name in ["EnchantRegion", "EquipmentRegion", "VitalsRegion", "CommandRegion", "ResourceRegion", "CurseRegion"]:
+	for node_name in [
+		"CurseRegion",
+		"EnchantRegion",
+		"EquipmentRegion",
+		"VitalsRegion",
+		"CommandRegion",
+		"CharacterResourceRegion",
+		"StatusRegion",
+	]:
 		var region := bottom_hud.find_child(node_name, true, false) as Control
 		print("BATTLE_HUD_VISUAL_REGION: %s visible=%s rect=%s z=%d" % [
 			node_name,
@@ -53,7 +61,19 @@ func _ready() -> void:
 			region.get_global_rect(),
 			region.z_index,
 		])
-	await RenderingServer.frame_post_draw
+	var status_label := bottom_hud.get_node("%StatusLabel") as Label
+	print("BATTLE_HUD_VISUAL_STATUS: visible=%s rect=%s text=%s color=%s" % [
+		status_label.is_visible_in_tree(),
+		status_label.get_global_rect(),
+		status_label.text.replace("\n", "/"),
+		status_label.get_theme_color("font_color"),
+	])
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if DisplayServer.get_name() == "headless":
+		print("BATTLE_HUD_VISUAL_CHECK: SKIP screenshot under headless display driver")
+		get_tree().quit(0)
+		return
 
 	var image := get_viewport().get_texture().get_image()
 	var output_path := ProjectSettings.globalize_path("res://.godot_user/compact_hud_preview.png")

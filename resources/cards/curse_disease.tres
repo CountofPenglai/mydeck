@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="CardData" format=3 uid="uid://b3cmk743trm22"]
 
-[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
-[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
-[ext_resource type="Script" path="res://scripts/cards/curse_disease_card_effect.gd" id="3_effect"]
+[ext_resource type="Script" uid="uid://q0mn1r2vt85r" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" uid="uid://e0g61ii5ck0q" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Script" uid="uid://ct1nhkkg5jum7" path="res://scripts/cards/curse_disease_card_effect.gd" id="3_effect"]
 
 [sub_resource type="Resource" id="Effect"]
 script = ExtResource("3_effect")
@@ -12,8 +12,6 @@ script = ExtResource("1_card")
 card_name = "病症"
 description = "不可打出。回合结束时若仍在手中，自动放逐、失去2生命并获得1咒波。"
 artwork = ExtResource("2_art")
-card_class = 0
 card_type = 3
-target_type = 0
 ap_cost = 0
 effect = SubResource("Effect")

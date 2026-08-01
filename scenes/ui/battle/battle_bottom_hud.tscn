@@ -86,11 +86,11 @@ corner_radius_bottom_left = 2
 
 [sub_resource type="AtlasTexture" id="MoveIcon"]
 atlas = ExtResource("7")
-region = Rect2(0, 0, 724, 724)
+region = Rect2(150, 110, 430, 430)
 
 [sub_resource type="AtlasTexture" id="EndTurnIcon"]
 atlas = ExtResource("7")
-region = Rect2(1448, 0, 724, 724)
+region = Rect2(1510, 110, 430, 430)
 
 [node name="BattleBottomHud" type="Control"]
 unique_name_in_owner = true
@@ -156,16 +156,14 @@ offset_bottom = 50.0
 z_index = 3
 
 [node name="LeftStatusGroup" type="HBoxContainer" parent="StatusRow"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = -1
-anchor_bottom = 1.0
-offset_right = 248.0
-grow_vertical = 2
 theme_override_constants/separation = 4
 
 [node name="EnchantRegion" type="PanelContainer" parent="StatusRow/LeftStatusGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(108, 44)
+custom_minimum_size = Vector2(108, 76)
 layout_mode = 2
 theme_override_styles/panel = SubResource("EnchantRegion")
 
@@ -204,7 +202,7 @@ text_overrun_behavior = 3
 
 [node name="EquipmentRegion" type="PanelContainer" parent="StatusRow/LeftStatusGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(136, 44)
+custom_minimum_size = Vector2(136, 76)
 layout_mode = 2
 theme_override_styles/panel = SubResource("EquipmentRegion")
 
@@ -242,17 +240,18 @@ text_overrun_behavior = 3
 
 [node name="VitalsRegion" type="PanelContainer" parent="StatusRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(260, 82)
+custom_minimum_size = Vector2(286, 92)
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.5
+anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -130.0
-offset_top = -36.0
-offset_right = 130.0
+offset_left = -143.0
+offset_top = -92.0
+offset_right = 143.0
 grow_horizontal = 2
-grow_vertical = 2
+grow_vertical = 0
 theme_override_styles/panel = SubResource("RegionDark")
 
 [node name="VitalsFrameArtwork" type="NinePatchRect" parent="StatusRow/VitalsRegion"]
@@ -278,7 +277,7 @@ layout_mode = 2
 theme_override_constants/separation = 2
 
 [node name="Header" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack"]
-custom_minimum_size = Vector2(0, 32)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 
 [node name="BoundUnitLabel" type="Label" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header"]
@@ -298,16 +297,17 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 
 [node name="PortraitHolder" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header"]
-custom_minimum_size = Vector2(32, 32)
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.5
 anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -16.0
-offset_right = 16.0
+offset_left = -24.0
+offset_top = -36.0
+offset_right = 24.0
+offset_bottom = 12.0
 grow_horizontal = 2
-grow_vertical = 2
+z_index = 2
 
 [node name="PortraitRect" type="TextureRect" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/Header/PortraitHolder"]
 unique_name_in_owner = true
@@ -379,22 +379,18 @@ vertical_alignment = 1
 
 [node name="APOrbLayer" type="Control" parent="StatusRow/VitalsRegion/VitalsMargin/VitalsStack/APRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(159, 24)
+custom_minimum_size = Vector2(191, 30)
 layout_mode = 2
 
 [node name="RightStatusGroup" type="HBoxContainer" parent="StatusRow"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -328.0
-grow_horizontal = 0
-grow_vertical = 2
 theme_override_constants/separation = 4
 
 [node name="CommandRegion" type="PanelContainer" parent="StatusRow/RightStatusGroup"]
-custom_minimum_size = Vector2(86, 44)
+unique_name_in_owner = true
+custom_minimum_size = Vector2(42, 76)
 layout_mode = 2
 theme_override_styles/panel = SubResource("RegionDark")
 
@@ -409,7 +405,7 @@ patch_margin_top = 12
 patch_margin_right = 12
 patch_margin_bottom = 12
 
-[node name="Commands" type="HBoxContainer" parent="StatusRow/RightStatusGroup/CommandRegion"]
+[node name="Commands" type="VBoxContainer" parent="StatusRow/RightStatusGroup/CommandRegion"]
 layout_mode = 2
 theme_override_constants/separation = 2
 alignment = 1
@@ -418,28 +414,39 @@ alignment = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
+size_flags_horizontal = 4
 tooltip_text = "移动"
 icon = SubResource("MoveIcon")
-icon_max_width = 24
+icon_max_width = 28
 expand_icon = true
 flat = true
+theme_override_colors/icon_normal_color = Color(1.28, 1.15, 0.72, 1)
+theme_override_colors/icon_hover_color = Color(1.5, 1.34, 0.82, 1)
+theme_override_colors/icon_pressed_color = Color(1.12, 1.02, 0.68, 1)
+theme_override_colors/icon_disabled_color = Color(0.7, 0.66, 0.52, 0.62)
 
 [node name="HudEndTurnButton" type="Button" parent="StatusRow/RightStatusGroup/CommandRegion/Commands"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
+size_flags_horizontal = 4
 tooltip_text = "结束当前行动"
 icon = SubResource("EndTurnIcon")
-icon_max_width = 24
+icon_max_width = 28
 expand_icon = true
 flat = true
+theme_override_colors/icon_normal_color = Color(1.28, 1.15, 0.72, 1)
+theme_override_colors/icon_hover_color = Color(1.5, 1.34, 0.82, 1)
+theme_override_colors/icon_pressed_color = Color(1.12, 1.02, 0.68, 1)
+theme_override_colors/icon_disabled_color = Color(0.7, 0.66, 0.52, 0.62)
 
-[node name="ResourceRegion" type="PanelContainer" parent="StatusRow/RightStatusGroup"]
-custom_minimum_size = Vector2(126, 44)
+[node name="CharacterResourceRegion" type="PanelContainer" parent="StatusRow/RightStatusGroup"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(132, 76)
 layout_mode = 2
 theme_override_styles/panel = SubResource("RegionDark")
 
-[node name="ResourceFrameArtwork" type="NinePatchRect" parent="StatusRow/RightStatusGroup/ResourceRegion"]
+[node name="CharacterResourceFrameArtwork" type="NinePatchRect" parent="StatusRow/RightStatusGroup/CharacterResourceRegion"]
 unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
@@ -450,33 +457,34 @@ patch_margin_top = 12
 patch_margin_right = 12
 patch_margin_bottom = 12
 
-[node name="ResourceStack" type="VBoxContainer" parent="StatusRow/RightStatusGroup/ResourceRegion"]
+[node name="ResourceStack" type="VBoxContainer" parent="StatusRow/RightStatusGroup/CharacterResourceRegion"]
 layout_mode = 2
 theme_override_constants/separation = 1
 
-[node name="ResourceLabel" type="Label" parent="StatusRow/RightStatusGroup/ResourceRegion/ResourceStack"]
+[node name="CharacterResourceLabel" type="Label" parent="StatusRow/RightStatusGroup/CharacterResourceRegion/ResourceStack"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.82, 1, 0.78, 1)
 text = "角色资源 / 状态"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="ResourceActionList" type="HBoxContainer" parent="StatusRow/RightStatusGroup/ResourceRegion/ResourceStack"]
+[node name="ResourceActionList" type="HBoxContainer" parent="StatusRow/RightStatusGroup/CharacterResourceRegion/ResourceStack"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 alignment = 1
 
-[node name="CurseRegion" type="PanelContainer" parent="StatusRow/RightStatusGroup"]
+[node name="CurseRegion" type="PanelContainer" parent="StatusRow/LeftStatusGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(108, 44)
+custom_minimum_size = Vector2(108, 76)
 layout_mode = 2
 theme_override_styles/panel = SubResource("CurseRegion")
 
-[node name="CurseFrameArtwork" type="NinePatchRect" parent="StatusRow/RightStatusGroup/CurseRegion"]
+[node name="CurseFrameArtwork" type="NinePatchRect" parent="StatusRow/LeftStatusGroup/CurseRegion"]
 unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
@@ -487,13 +495,13 @@ patch_margin_top = 12
 patch_margin_right = 12
 patch_margin_bottom = 12
 
-[node name="HudCurseButton" type="Button" parent="StatusRow/RightStatusGroup/CurseRegion"]
+[node name="HudCurseButton" type="Button" parent="StatusRow/LeftStatusGroup/CurseRegion"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "查看诅咒区与畸变"
 flat = true
 
-[node name="CurseLabel" type="Label" parent="StatusRow/RightStatusGroup/CurseRegion/HudCurseButton"]
+[node name="CurseLabel" type="Label" parent="StatusRow/LeftStatusGroup/CurseRegion/HudCurseButton"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -504,6 +512,37 @@ grow_vertical = 2
 mouse_filter = 2
 theme_override_font_sizes/font_size = 10
 text = "诅咒 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+text_overrun_behavior = 3
+
+[node name="StatusRegion" type="PanelContainer" parent="StatusRow/RightStatusGroup"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(132, 76)
+layout_mode = 2
+theme_override_styles/panel = SubResource("RegionDark")
+
+[node name="StatusFrameArtwork" type="NinePatchRect" parent="StatusRow/RightStatusGroup/StatusRegion"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+modulate = Color(0.62, 0.78, 1, 0.82)
+texture = ExtResource("8")
+patch_margin_left = 12
+patch_margin_top = 12
+patch_margin_right = 12
+patch_margin_bottom = 12
+
+[node name="StatusLabel" type="Label" parent="StatusRow/RightStatusGroup/StatusRegion"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 2
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.86, 0.92, 1, 1)
+text = "力 0  敏 0  智 0"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3

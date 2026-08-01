@@ -13,7 +13,7 @@ const BOTTOM_MAX_HEIGHT := 196.0
 const WIDE_BOTTOM_MAX_WIDTH := 1560.0
 const MAP_HORIZONTAL_INSET := 24.0
 const MAP_VERTICAL_SHIFT_RATIO := 0.42
-const VITALS_OVERFLOW_HEIGHT := 36.0
+const VITALS_OVERFLOW_HEIGHT := 72.0
 
 var battle_scene: BattleScene
 var controller: BattleController
