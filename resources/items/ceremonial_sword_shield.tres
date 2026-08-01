@@ -11,7 +11,7 @@ next_card_damage_bonus = 1
 [sub_resource type="Resource" id="KnightShield"]
 script = ExtResource("1_equipment")
 item_name = "骑士中盾"
-description = "保留抵挡；切入时获得1层抵挡。"
+description = "切入该套装备时，装备者获得 1 层抵挡。装备者回合开始时不会移除其抵挡。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 0
@@ -24,7 +24,7 @@ subcategories = PackedStringArray("盾牌", "成对组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "圣礼直剑 / 骑士中盾"
-description = "抽牌时获得势；备战1使下一张牌伤害加值+1。"
+description = "装备者每抽 1 张牌，获得 1 点势。备战 1：装备者支付 1 点势，使下一张牌获得 +1 伤害加值；只要能够支付势，该动作可以重复发动。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3

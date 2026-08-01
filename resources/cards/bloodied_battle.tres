@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "浴血奋战"
-description = "附魔：每次行动中首次对敌人造成正数伤害后回复 1 点生命；若此时没有护甲则回复 3 点。累计触发 4 次后移入弃牌堆。"
+description = "附魔：每次行动中，你首次对敌人造成正数生命伤害后恢复 1 点生命；若你此时没有护甲，改为恢复 3 点生命。累计触发 4 次后，将本牌移入你的弃牌堆。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

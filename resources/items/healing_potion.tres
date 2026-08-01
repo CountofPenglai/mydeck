@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_consumable")
 item_name = "治疗药剂"
-description = "恢复少量生命值的基础消耗品。"
+description = "当前版本仅可作为消耗品存入背包，尚未实现主动使用或治疗效果。"
 icon = ExtResource("2_icon")
 max_stack = 10
 consume_label = "使用"

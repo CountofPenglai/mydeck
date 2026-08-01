@@ -11,7 +11,7 @@ curse_id = "disease"
 [resource]
 script = ExtResource("1_card")
 card_name = "痼病之业"
-description = "失去等同手牌数的生命，向范围3敌人牌库洗入D+2张病症并令其抽D。"
+description = "你失去等同于当前手牌数的生命，然后向范围 3 内 1 名敌人的牌库洗入 D+2 张病症，并令其抽 D 张牌。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

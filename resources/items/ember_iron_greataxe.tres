@@ -11,7 +11,7 @@ maximum_embers = 6
 [resource]
 script = ExtResource("1_equipment")
 item_name = "烬铁巨斧"
-description = "牌进入弃牌堆时积累余烬；切出时造成范围伤害并获得护甲。"
+description = "每当装备者的一张牌进入弃牌堆时，获得 1 层余烬，至多 6 层。切出时，若至少有 1 层余烬，则移除全部余烬，对装备者武器范围内的所有敌人造成等于余烬层数 + 装备者当前伤害加值的伤害，并使装备者获得等于余烬层数的护甲；没有余烬时不结算这些效果。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 5

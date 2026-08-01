@@ -12,7 +12,7 @@ switch_armor = 4
 [sub_resource type="Resource" id="BlackstoneShield"]
 script = ExtResource("1_equipment")
 item_name = "黑石大盾"
-description = "提供1点伤害减免，抵挡没有持续时间限制。"
+description = "装备者获得 1 点伤害减免。装备者回合开始时不会移除其抵挡。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 0
@@ -26,7 +26,7 @@ subcategories = PackedStringArray("盾牌", "成对组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "熔石锻剑 / 黑石大盾"
-description = "切入获得永久伤害加值与护甲；备战2获得抵挡。"
+description = "每次切入该套装备时，本装备获得 +5 伤害加值，并使装备者获得 4 护甲；装备者每次完成武器打击后，本装备的该伤害加值减少 1。备战 2：支付 2 点势，获得 1 层抵挡。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 2

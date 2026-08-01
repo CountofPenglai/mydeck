@@ -57,6 +57,7 @@ func _ready() -> void:
 		_fail("DRUID_DIAG: selected hand card was not placed into mana zone")
 	if druid.get_available_mana() < 1:
 		_fail("DRUID_DIAG: available mana did not update")
+	_test_root_counter_damage(controller, druid)
 
 	print("DRUID_DIAG: completed")
 	get_tree().quit(_exit_code)
@@ -99,6 +100,39 @@ func _test_moonlight_targets(controller: BattleController, druid: BattleUnitStat
 	}, [enemy])
 	if enemy.get_current_health() >= enemy_health_before:
 		_fail("DRUID_DIAG: moonlight did not damage its enemy target")
+
+
+func _test_root_counter_damage(controller: BattleController, druid: BattleUnitState) -> void:
+	var template := load("res://resources/cards/druid_verdant_strike.tres") as CardData
+	var enemy: BattleUnitState = controller.enemy_units[0] if not controller.enemy_units.is_empty() else null
+	if template == null or enemy == null:
+		_fail("DRUID_DIAG: root counter resources missing")
+		return
+	druid.set_druid_transformed(true, {"controller": controller, "reason": "diagnostic"})
+	if druid.get_active_weapon_face_index() != 1:
+		_fail("DRUID_DIAG: transformed druid did not project the weapon back face")
+		return
+	var profile := druid.build_strike_profile_object()
+	if profile.primary_base_damage != 3:
+		_fail("DRUID_DIAG: root counter resolved base damage %d instead of bear damage 3" % profile.primary_base_damage)
+	enemy.statuses.clear()
+	enemy.set_current_health(enemy.get_max_health())
+	enemy.set_hex_cell(Vector2i(druid.cell.x + 1, druid.cell.y), controller.map_data)
+	var root_counter := template.duplicate(true) as CardData
+	druid.hand.append(root_counter)
+	druid.current_ap = 10
+	var health_before := enemy.get_current_health()
+	if not controller.play_card(druid, root_counter, [enemy]):
+		_fail("DRUID_DIAG: root counter could not be played through the controller")
+	if health_before - enemy.get_current_health() <= 1:
+		_fail("DRUID_DIAG: root counter still dealt only one damage")
+	var equipped_weapon := druid.character_state.weapon_equipment
+	druid.character_state.weapon_equipment = null
+	var unarmed_root_counter := template.duplicate(true) as CardData
+	druid.hand.append(unarmed_root_counter)
+	if controller.play_card(druid, unarmed_root_counter, [enemy]):
+		_fail("DRUID_DIAG: root counter silently fell back to an unarmed strike")
+	druid.character_state.weapon_equipment = equipped_weapon
 
 
 func _deploy_players(controller: BattleController) -> void:

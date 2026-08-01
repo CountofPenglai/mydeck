@@ -8,7 +8,7 @@ weapon_kind = 5
 [sub_resource type="Resource" id="Tail"]
 script = ExtResource("1")
 item_name = "巨龙之尾"
-description = "范围2的大气元素尾击。"
+description = "使用本组件完成武器打击时，向目标格施加气元素。"
 icon = ExtResource("3")
 base_damage = 2
 attack_range = 2
@@ -21,7 +21,7 @@ subcategories = PackedStringArray("模式组件", "大气")
 [sub_resource type="Resource" id="Dragon"]
 script = ExtResource("1")
 item_name = "荒野巨龙"
-description = "飞行；龙首伤害随成熟度成长，造成生命伤害后获得护甲。"
+description = "装备者获得飞行。龙首的基础伤害改为 1 + 当前成熟度。装备者每次武器打击造成正数实际伤害后，获得等于成熟度的护甲。装备者回合开始时移除全部护甲；若最近敌人在距离 2 内，则对其造成等于所移除护甲的固定伤害。"
 icon = ExtResource("3")
 base_damage = 1
 attack_range = 1
@@ -38,7 +38,7 @@ trigger_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "悼龙重杖 / 荒野巨龙"
-description = "正位积累岁月，变身转化为成熟度；逆位在龙首和龙尾间选择。"
+description = "装备者敏捷 -3。装备者每打出 1 张牌获得 1 点岁月，至多 5 点；若该牌同时请求变为逆位，再获得 1 点岁月。变为逆位时，将全部岁月转化为等量成熟度并清空岁月；返回正位时清空成熟度。"
 icon = ExtResource("3")
 base_damage = 8
 attack_range = 1

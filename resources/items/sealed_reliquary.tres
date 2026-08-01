@@ -11,7 +11,7 @@ first_curse_armor = 4
 [resource]
 script = ExtResource("1_equipment")
 item_name = "封印圣匣"
-description = "负荷上限 +1。每场战斗首次打出诅咒牌后获得 4 护甲。"
+description = "装备者的负荷上限 +1。每场战斗中，装备者首次完成打出一张诅咒牌后，获得 4 护甲。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 0

@@ -9,6 +9,11 @@ func _init() -> void:
 	uses_strike = true
 
 
+func can_play(context: Dictionary = {}) -> bool:
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	return user != null and user.get_active_weapon_equipment() != null
+
+
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var controller: BattleController = context.get("controller") as BattleController
 	var user: BattleUnitState = context.get("user") as BattleUnitState
@@ -34,4 +39,3 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	armor.stacks = armor_amount
 	user.add_status(armor)
 	controller._emit_log("%s 获得 %d 点护甲。" % [user.get_display_name(), armor_amount])
-

@@ -11,7 +11,7 @@ switch_damage = 3
 [sub_resource type="Resource" id="RockBreaker"]
 script = ExtResource("1_equipment")
 item_name = "断岩"
-description = "回合结束时若未用本装备打击，获得1点势。"
+description = "装备者回合结束时，若本回合未使用该套装备完成武器打击，获得 1 点势。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3
@@ -26,7 +26,7 @@ subcategories = PackedStringArray("双持", "成对组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "斩铁 / 断岩"
-description = "切入时对范围内所有敌人造成3点力量伤害。"
+description = "切入该套装备时，对装备者武器范围内的所有敌人造成 3 + 装备者当前伤害加值的伤害。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3

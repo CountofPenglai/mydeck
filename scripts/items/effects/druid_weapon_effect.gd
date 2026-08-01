@@ -47,7 +47,8 @@ func modify_attribute(owner: BattleUnitState, _root: EquipmentData, _component: 
 
 
 func modify_resonance_cost(owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, _runtime: EquipmentRuntimeState, card: CardData, current_cost: int, _context: Dictionary = {}) -> int:
-	if weapon_kind == WeaponKind.KALEIDOSCOPE and owner.druid_transformed and card != null and (current_cost > 0 or card.description.contains("选择一项")):
+	if weapon_kind == WeaponKind.KALEIDOSCOPE and owner.druid_transformed and card != null \
+			and (current_cost > 0 or card.is_choice_one_card):
 		return 1
 	return current_cost
 
@@ -727,7 +728,7 @@ func _inject_corrosion(owner: BattleUnitState, enemy: BattleUnitState, runtime: 
 	runtime.set_flag(key, true)
 	var curse := CardData.new()
 	curse.card_name = "咒害·蛊蚀"
-	curse.description = "不可打出。若回合结束时仍在手中，则放逐并失去1点生命、获得1咒波。"
+	curse.description = "本牌不能打出。持有者的回合结束时，若本牌仍在其手牌中，将本牌移入放逐区，然后持有者失去 1 点生命并获得 1 点咒波。"
 	curse.card_class = CardEnums.CardClass.NEUTRAL
 	curse.card_type = CardEnums.CardType.CURSE
 	curse.ap_cost = 99

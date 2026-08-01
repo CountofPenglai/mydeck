@@ -2044,6 +2044,11 @@ func get_armor_stacks() -> int:
 	return armor.stacks if armor != null else 0
 
 
+func get_shared_armor_stacks() -> int:
+	var shared_armor := get_status("abyss_shared_armor")
+	return shared_armor.stacks if shared_armor != null else 0
+
+
 func gain_armor(amount: int, context: Dictionary = {}) -> int:
 	var modified_amount := amount
 	for status in statuses:

@@ -12,7 +12,7 @@ range_type = 1
 damage_type = 1
 equip_category = 2
 item_name = "寻迹短弓"
-description = "远程打击后强化本回合下一次主动移动。"
+description = "装备者完成远程武器打击后，本回合下一次主动移动的移动距离 +1；完成该次移动或回合结束时移除。"
 icon = ExtResource("3_icon")
 
 [sub_resource type="Resource" id="Effect_wolf"]
@@ -27,5 +27,5 @@ paired_attack_mode = 1
 passive_effects = Array[Resource]([SubResource("Effect_wolf")])
 trigger_effects = Array[Resource]([SubResource("Effect_wolf")])
 item_name = "乌狼猎刀 / 寻迹短弓"
-description = "远射后接近，移动后强化下一次近战打击。"
+description = "装备者完成一次非强制移动后，本回合下一次近战武器打击获得 +1 伤害加值；发动该次打击或回合结束时移除。"
 icon = ExtResource("3_icon")

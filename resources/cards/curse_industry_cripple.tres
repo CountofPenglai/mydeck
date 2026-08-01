@@ -11,7 +11,7 @@ curse_id = "cripple"
 [resource]
 script = ExtResource("1_card")
 card_name = "跛行之业"
-description = "获得眩晕4，传送至3+D格内合法位置并获得2+D AP。"
+description = "你获得 4 层眩晕，并选择距你不超过 3+D 格的目标格。若目标格合法且空置，你传送至该格；否则留在原位。然后你获得 2+D AP。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

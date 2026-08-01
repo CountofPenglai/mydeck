@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_equipment")
 item_name = "训练短弓"
-description = "基础远程武器，可装备到武器栏。"
+description = "无额外效果。"
 icon = ExtResource("2_icon")
 max_stack = 1
 base_damage = 4

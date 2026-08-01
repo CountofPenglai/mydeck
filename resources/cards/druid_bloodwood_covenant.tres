@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "血棘赐福"
-description = "正位：X 为你的手牌数 + 当前法力。敌方目标受到 X 点生命流失；友方目标获得 X 点伤害加值，持续到其下回合开始。"
+description = "正位：X 等于你的当前手牌数与当前可用法力之和。若目标是另一名友方，其获得 +X 伤害加值，持续到其下回合开始；若目标是敌人，对其造成 X 点伤害。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 4
@@ -21,7 +21,7 @@ card_range = 2
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "饮血播种"
-inverted_description = "逆位：进行一次打击。可按顺序选择手牌；将其中至多 X 张逆位置入法力区，X 为本次实际伤害 - 当前法力，最低为 0。"
+inverted_description = "逆位：你进行 1 次武器打击。你可以预先按顺序选择任意数量的其他手牌；打击后，将所选牌中的前 X 张移入你的法力区，X 等于本次实际生命伤害减去你的当前可用法力，最低为 0。"
 inverted_ap_cost = 2
 inverted_target_type = 1
 inverted_override_range = true

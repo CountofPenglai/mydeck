@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_equipment")
 item_name = "训练法杖"
-description = "给德鲁伊练习法术与变形用的木杖。"
+description = "无额外效果。"
 icon = ExtResource("2_icon")
 max_stack = 1
 base_damage = 3

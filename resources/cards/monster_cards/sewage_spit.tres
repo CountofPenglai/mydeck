@@ -11,7 +11,7 @@ kind = 4
 [resource]
 script = ExtResource("1")
 card_name = "污水喷吐"
-description = "造成2点智力伤害，并在目标格施加水元素。"
+description = "使用者对目标造成 2 点智力伤害，然后向目标所在格施加水元素；即使未造成伤害，仍施加水元素。"
 artwork = ExtResource("3")
 reward_eligible = false
 card_type = 0

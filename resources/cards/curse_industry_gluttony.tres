@@ -11,7 +11,7 @@ curse_id = "gluttony"
 [resource]
 script = ExtResource("1_card")
 card_name = "饕餮之业"
-description = "处决范围1内生命满足阈值的敌人并吸血；否则不能打出。"
+description = "选择范围 1 内 1 名敌人。若其当前生命不高于你的当前生命 +5×（D-1），令其失去全部生命，并使你恢复等同于其实际生命损失的生命；否则你失去全部生命。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

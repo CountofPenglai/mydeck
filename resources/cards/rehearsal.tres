@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "预演"
-description = "磨 5 张牌，回复 5 点生命。余势：从弃牌堆选择另一张牌加入手牌；该牌本回合 AP 消耗 -2，最低为 0，打出后或回合结束时放逐。"
+description = "你磨 5 张牌并恢复 5 点生命。\n\n余势：弃牌堆中存在至少 1 张其他牌。改为从弃牌堆选择 1 张其他牌移入手牌；该牌本回合 AP 消耗 -2，最低为 0，打出后或本回合结束时放逐。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

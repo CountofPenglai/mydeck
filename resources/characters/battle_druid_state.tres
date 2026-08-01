@@ -10,7 +10,7 @@
 [resource]
 script = ExtResource("1_character_state")
 character_data = ExtResource("2_character_data")
-current_health = 34
+current_health = 43
 deck = [ExtResource("3_strike"), ExtResource("4_moon"), ExtResource("6_insight")]
 weapon_equipment = ExtResource("7_staff")
 weapon_face = 0

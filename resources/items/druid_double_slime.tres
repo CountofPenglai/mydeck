@@ -8,7 +8,7 @@ weapon_kind = 8
 [sub_resource type="Resource" id="Slime"]
 script = ExtResource("1")
 item_name = "黏菌魔像"
-description = "随轮数提高移动能力；首次双生法术获得2 AP，可发动渗流。"
+description = "装备者每点 AP 提供的移动距离额外增加当前战斗轮数，至多 +3。装备者每回合首次打出双生法术后获得 2 AP。渗流：每回合限 1 次，将弃牌堆顶的 1 至 3 张牌移入法力区，获得每张 2 护甲，并获得等量虚弱层数；每层虚弱使伤害加值 -1，持续至装备者下次回合开始。弃牌堆不足所选数量时不能发动。"
 icon = ExtResource("3")
 base_damage = 6
 attack_range = 1
@@ -24,7 +24,7 @@ activated_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "双身魔杖 / 黏菌魔像"
-description = "部署黏菌身体并共享状态；逆位获得成长移动、双生法术和渗流。"
+description = "战斗开始时，在装备者距离 2 内按距离和坐标顺序寻找最近的空格，部署一个共享同一单位状态的黏菌身体；没有合法空格时不部署。两个身体均视为被装备者占据；正逆位切换时交换两个身体的位置。"
 icon = ExtResource("3")
 base_damage = 2
 attack_range = 4

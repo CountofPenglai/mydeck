@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "冲锋"
-description = "移动至选定方向，最多移动相当于敏捷+3的距离。对途经敌人进行一次伤害-2的打击。"
+description = "你沿选定的六边直线方向移动，最多移动相当于 2 AP 的移动距离；计算每 AP 移动距离时，你的敏捷 +3。你对途经的每名敌人各进行 1 次获得 -2 伤害加值的武器打击。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1

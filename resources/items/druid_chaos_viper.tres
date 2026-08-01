@@ -8,7 +8,7 @@ weapon_kind = 4
 [sub_resource type="Resource" id="Viper"]
 script = ExtResource("1")
 item_name = "巫蛊毒蝰"
-description = "打击转化为咒波；可消耗10层咒波造成生命折损与眩晕。"
+description = "装备者的武器打击不造成即时伤害，改为使目标获得等于该伤害数值的咒波。每轮每名敌人首次在装备者距离 3 内开始回合时，将 1 张“咒害·蛊蚀”置入其弃牌堆。蛊爆：对武器范围内列表中的首名至少具有 10 层咒波的敌人，移除 10 层咒波，使其失去当前生命一半、向上取整的生命，并施加等于其最大 AP、至少 1 层的眩晕；没有合法敌人时不能发动。"
 icon = ExtResource("3")
 base_damage = 3
 attack_range = 1
@@ -24,7 +24,7 @@ activated_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "混沌皿 / 巫蛊毒蝰"
-description = "正位将打击转为延迟异常并改写基础地表，逆位积累并引爆咒波。"
+description = "装备者的武器打击不造成即时伤害，改为向目标施加等于该伤害数值的异常；目标下次回合开始时失去等于异常层数的生命，然后移除全部异常。混沌转化：自动选择武器范围内最近的、具有可读元素的格，从除其首个可读元素外的基础元素中随机选择 1 种，在该格留下元素残留，并使装备者本回合后续武器打击携带该元素；没有合法格时发动失败。"
 icon = ExtResource("3")
 base_damage = 2
 attack_range = 2

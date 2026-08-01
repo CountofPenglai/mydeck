@@ -3,7 +3,7 @@ class_name PartyRunState
 
 const STARTING_RITUAL_POINTS := 3
 const MIN_RITUAL_DEBT := -2
-const SAVE_VERSION := 4
+const SAVE_VERSION := 5
 
 @export var ritual_points: int = STARTING_RITUAL_POINTS
 @export_group("Adventure")
@@ -23,6 +23,9 @@ const SAVE_VERSION := 4
 @export var floor_state: AdventureFloorState
 @export var pending_transaction: PendingAdventureTransaction
 @export var adventure_flags: Dictionary = {}
+@export var equipment_reward_drawn_paths: PackedStringArray = []
+@export var equipment_reward_offers: Dictionary = {}
+@export var equipment_class_miss_streaks: Dictionary = {}
 
 
 func initialize_adventure(seed_value: int, heroes: Array[CharacterState], definition: AdventureDefinition) -> void:
@@ -44,6 +47,9 @@ func initialize_adventure(seed_value: int, heroes: Array[CharacterState], defini
 	party = heroes
 	pending_transaction = PendingAdventureTransaction.new()
 	adventure_flags.clear()
+	equipment_reward_drawn_paths.clear()
+	equipment_reward_offers.clear()
+	equipment_class_miss_streaks.clear()
 	for index in range(party.size()):
 		var hero := party[index]
 		if hero != null:
@@ -97,6 +103,13 @@ func spend_camp_points(amount: int) -> bool:
 	if amount < 0 or camp_points < amount:
 		return false
 	camp_points -= amount
+	return true
+
+
+func mark_equipment_reward_drawn(item_path: String) -> bool:
+	if item_path.is_empty() or equipment_reward_drawn_paths.has(item_path):
+		return false
+	equipment_reward_drawn_paths.append(item_path)
 	return true
 
 

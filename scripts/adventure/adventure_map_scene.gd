@@ -346,7 +346,12 @@ func _build_current_room_actions(room: AdventureRoomState) -> void:
 				ranger_id.is_empty() or dig_progress >= 3,
 				_camp_activity_description("ranger_dig")
 			)
-			_add_action("德鲁伊：自然灌注 (3)", _show_infusion_cards, false, _camp_activity_description("druid_infusion"))
+			_add_action(
+				"德鲁伊：自然灌注 (3)",
+				_show_infusion_cards,
+				_first_hero_id_for_class(CardEnums.CardClass.DRUID).is_empty() or run_state.camp_points < 3,
+				_camp_activity_description("druid_infusion")
+			)
 			_add_action("兑换扎营物资", _exchange_supply, run_state.camp_supplies <= 0)
 			_build_ritual_actions()
 		AdventureEnums.RoomType.SHOP:
@@ -513,19 +518,7 @@ func _refresh_curse_zone_modal() -> void:
 			if curse == null or curse.definition == null:
 				continue
 			var curse_label := Label.new()
-			var zone_state := "牌库中的业"
-			if curse.sealed:
-				zone_state = "已封印 · 效果停用 · 负荷 0"
-			elif curse.state == CurseInstance.State.REPORT:
-				zone_state = "报 · 生效中 · 成熟 %d/%d" % [curse.maturity, curse.definition.maturity_threshold]
-			elif curse.state == CurseInstance.State.FRUIT:
-				zone_state = "果 · 生效中"
-			curse_label.text = "%s  深度 %d  |  %s\n%s" % [
-				curse.get_display_name(),
-				curse.depth,
-				zone_state,
-				curse.definition.get_description_for_state(curse.state),
-			]
+			curse_label.text = RulesTextFormatter.format_curse(curse)
 			curse_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			curse_label.add_theme_color_override(
 				"font_color",
@@ -805,15 +798,14 @@ func _inventory_item_summary(hero: CharacterState, item_stack: InventoryStack) -
 	var equipment := item as EquipmentData
 	var count_text := " x%d" % item_stack.count if item_stack.count > 1 else ""
 	if equipment == null:
-		return "%s%s\n%s" % [item.item_name, count_text, item.description]
+		return "%s%s\n%s" % [item.item_name, count_text, RulesTextFormatter.format_item(item)]
 	var modifier_text := ""
 	var modifiers := hero.equipment_adventure_modifiers.get(item_stack.stack_id, {}) as Dictionary
 	var adventure_bonus := int(modifiers.get("damage_bonus", 0))
 	if adventure_bonus != 0:
 		modifier_text = " · 冒险伤害 %+d" % adventure_bonus
-	return "%s%s\n%s · %s%s" % [
-		equipment.item_name, count_text, equipment.get_equip_slot_label(), equipment.get_rarity_label(),
-		modifier_text,
+	return "%s%s\n%s%s" % [
+		equipment.item_name, count_text, RulesTextFormatter.format_equipment_summary(equipment), modifier_text,
 	]
 
 
@@ -877,33 +869,10 @@ func _equipment_detail_text(
 	equipment: EquipmentData,
 	adventure_modifiers: Dictionary = {}
 ) -> String:
-	var lines := PackedStringArray([
-		"%s · %s" % [equipment.get_rarity_label(), equipment.get_equip_slot_label()],
-	])
-	if equipment.is_weapon():
-		lines.append("基础伤害 %d · 范围 %d · %s · %s" % [
-			equipment.base_damage,
-			equipment.attack_range,
-			equipment.get_range_type_label(),
-			equipment.get_damage_type_label(),
-		])
-	if equipment.damage_bonus != 0:
-		lines.append("永久伤害加值 %+d" % equipment.damage_bonus)
-	if equipment.damage_reduction != 0:
-		lines.append("伤害减免 %+d" % equipment.damage_reduction)
-	if equipment.curse_load_limit_bonus != 0:
-		lines.append("负荷上限 %+d" % equipment.curse_load_limit_bonus)
+	var lines := PackedStringArray([RulesTextFormatter.format_equipment(equipment)])
 	var adventure_bonus := int(adventure_modifiers.get("damage_bonus", 0))
 	if adventure_bonus != 0:
-		lines.append("本次冒险伤害加值 %+d" % adventure_bonus)
-	if equipment.paired_component != null:
-		lines.append("\n成对组件：%s" % _equipment_summary(equipment.paired_component))
-	if equipment.back_face != null:
-		lines.append("\n逆面：%s" % _equipment_summary(equipment.back_face))
-	if not equipment.subcategories.is_empty():
-		lines.append("标签：%s" % "、".join(equipment.subcategories))
-	if not equipment.description.is_empty():
-		lines.append("\n%s" % equipment.description)
+		lines.append("\n本次冒险伤害加值 %+d" % adventure_bonus)
 	return "\n".join(lines)
 
 
@@ -960,7 +929,7 @@ func _show_reward_modal() -> void:
 			var card_path := str(card_data.get("path", ""))
 			var card := load(card_path) as CardData if ResourceLoader.exists(card_path) else null
 			if card != null:
-				button.tooltip_text = "%d AP · %s\n%s" % [card.ap_cost, card.get_card_type_label(), card.description]
+				button.tooltip_text = RulesTextFormatter.format_card(card)
 			button.pressed.connect(_claim_reward.bind(candidate_id))
 			modal_body.add_child(button)
 	if card_count == 0:
@@ -1076,8 +1045,9 @@ func _show_infusion_cards() -> void:
 		if hero == null:
 			continue
 		for stack in hero.deck:
+			var modifier := hero.card_adventure_modifiers.get(stack.stack_id, {}) as Dictionary if stack != null else {}
 			if stack == null or stack.card_data == null or stack.card_data.is_curse_card() \
-				or hero.card_adventure_modifiers.has(stack.stack_id):
+				or modifier.has("element"):
 				continue
 			var button := Button.new()
 			button.text = "%s · %s" % [hero.get_character_name(), stack.card_data.card_name]
@@ -1222,6 +1192,10 @@ func _apply_infusion(druid_id: String, target_id: String, stack_id: String, elem
 	if session.infuse_card(druid_id, target_id, stack_id, element):
 		_hide_modal()
 		_refresh()
+		return
+	_hide_modal()
+	_show_status("自然灌注未完成：请检查扎营点、目标牌和该牌是否已被元素灌注。")
+	_refresh()
 
 
 func _ritual_seal(hero_id: String, curse_id: String) -> void:

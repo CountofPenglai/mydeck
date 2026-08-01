@@ -44,10 +44,10 @@ func _refresh() -> void:
 		return
 
 	name_label.text = _card_data.card_name
-	rarity_label.text = _card_data.get_rarity_label()
-	description_label.text = _card_data.description
-	class_label.text = "职业：" + _card_data.get_class_label()
-	target_label.text = "目标：" + _card_data.get_target_label()
+	rarity_label.visible = false
+	description_label.text = RulesTextFormatter.format_card(_card_data, play_context)
+	class_label.visible = false
+	target_label.visible = false
 	target_hint_label.text = _target_hint_text(_card_data.target_type)
 	play_button.text = _card_data.get_action_label()
 	play_button.disabled = not _card_data.can_play(play_context)
@@ -59,6 +59,9 @@ func _refresh() -> void:
 
 
 func _show_empty_state() -> void:
+	rarity_label.visible = true
+	class_label.visible = true
+	target_label.visible = true
 	name_label.text = "未绑定卡牌"
 	rarity_label.text = "-"
 	description_label.text = "在 Inspector 中绑定 CardData Resource。"

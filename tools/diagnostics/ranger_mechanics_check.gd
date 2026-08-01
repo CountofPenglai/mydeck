@@ -94,7 +94,8 @@ func _test_attribute_damage_formula(ranger: BattleUnitState) -> void:
 			or CharacterAttributeRules.get_damage_bonus(8) != 4:
 		_fail("RANGER_DIAG: attribute damage conversion is not one bonus per two points")
 	if ranger.character_state == null \
-			or ranger.character_state.get_agility_damage_bonus() != 4:
+			or ranger.character_state.get_agility_damage_bonus() \
+			!= CharacterAttributeRules.get_damage_bonus(ranger.character_state.get_agility()):
 		_fail("RANGER_DIAG: ranger agility damage bonus did not use the shared formula")
 
 

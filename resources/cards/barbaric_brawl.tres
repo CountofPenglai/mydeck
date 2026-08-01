@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "野蛮斗殴"
-description = "对武器范围内所有敌人进行一次武器打击。余势：支付 2 AP，范围 +2。放逐区：每场战斗限一次，弃置所有手牌，将此牌移回弃牌堆，下一张牌伤害加值 +2。"
+description = "你对武器范围内所有敌人各进行 1 次武器打击。\n\n余势：支付 2 AP。将目标范围改为武器范围 +2，然后对范围内所有敌人各进行 1 次武器打击。\n\n放逐区：每场战斗限 1 次。你可以弃置所有手牌，将本牌移回你的弃牌堆，并使你打出的下一张牌获得 +2 伤害加值。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

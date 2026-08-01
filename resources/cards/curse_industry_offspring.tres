@@ -11,7 +11,7 @@ curse_id = "offspring"
 [resource]
 script = ExtResource("1_card")
 card_name = "孽生之业"
-description = "范围3召唤友方活根，从每名友方与活根原点伤害相邻敌人并吸血。"
+description = "你在范围 3 内选择 1 个空格，召唤具有 10+5D 生命的友方活根；召唤失败时效果结束。召唤成功后，以每名其他友方各 1 次、该活根 2 次为原点，对各原点范围 1 内每名敌人造成 3+D 点固定伤害，然后你恢复等同于这些伤害造成的实际生命损失总和的生命。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

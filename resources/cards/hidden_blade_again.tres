@@ -9,7 +9,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "藏锋再起"
-description = "进行一次武器打击。连击：自动弃置 1 张其他手牌，以 0 AP 进行一次武器打击。余势：额外放逐弃牌堆中 1 张其他牌，以 0 AP 进行一次获得 +2 伤害加值的武器打击。"
+description = "你进行 1 次武器打击。\n\n连击：弃置 1 张手牌。你以 0 AP 进行 1 次武器打击。\n\n余势：从弃牌堆放逐 1 张牌。你以 0 AP 进行 1 次获得 +2 伤害加值的武器打击。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

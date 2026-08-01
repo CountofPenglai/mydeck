@@ -11,7 +11,7 @@ curse_id = "possession"
 [resource]
 script = ExtResource("1_card")
 card_name = "凭依之业"
-description = "范围3敌人立即以+2D伤害加值攻击最近的另一敌人；无目标则反噬。"
+description = "令范围 3 内 1 名敌人立即对距离最近的另一名同阵营单位进行 1 次获得 +2D 伤害加值的武器打击；若没有合法目标，令该敌人对自己造成等同于其当前攻击值的伤害。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

@@ -205,7 +205,7 @@ func _test_clockwork_pair(controller: BattleController, warrior: BattleUnitState
 	if pool.current_value != 1:
 		_fail("WARRIOR_WEAPONS: clockwork strike momentum triggered more than once")
 	pool.current_value = 2
-	var base_bonus := warrior.get_strength()
+	var base_bonus := CharacterAttributeRules.get_damage_bonus(warrior.get_strength())
 	if warrior.get_damage_bonus({"controller": controller, "equipment": clockwork}) < base_bonus + 2:
 		_fail("WARRIOR_WEAPONS: gear disc turn damage bonus missing")
 	var action := _first_action(warrior, controller)

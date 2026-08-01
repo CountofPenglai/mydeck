@@ -8,7 +8,7 @@ weapon_kind = 3
 [sub_resource type="Resource" id="Fire"]
 script = ExtResource("1")
 item_name = "不熄火灵"
-description = "飞行与火元素打击；可添薪并在受击后自动反击。"
+description = "装备者获得飞行，武器打击向目标格施加火元素。添薪：将手牌中的第一张牌指定为燃料。装备者每轮首次受到武器范围内敌人的正数实际伤害后，若该燃料仍在手中，则弃置它并自动对伤害来源完成 1 次武器打击；燃料不存在、来源无效或超出范围时不反击。"
 icon = ExtResource("3")
 base_damage = 5
 attack_range = 2
@@ -25,7 +25,7 @@ activated_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "彷徨者提灯 / 不熄火灵"
-description = "以收纳或启示替代普通变身，也可点燃法力化为火灵。"
+description = "装备者可以在收纳与启示之间切换预设。装备者请求变为逆位且牌库非空时，以预设效果替代普通变身：收纳将牌库顶牌移入法力区；启示改为抽 1 张牌。点燃：支付 3 法力并消耗本回合的备战次数，直接变为逆位；然后对最近的敌人造成等于支付后剩余可用法力的固定伤害并施加火元素。没有敌人或剩余法力为 0 时仍会变为逆位，但不造成伤害。"
 icon = ExtResource("3")
 base_damage = 3
 attack_range = 1

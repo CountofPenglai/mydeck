@@ -11,7 +11,7 @@ weapon_kind = 5
 [sub_resource type="Resource" id="SacredBow"]
 script = ExtResource("1_equipment")
 item_name = "圣树枝弓"
-description = "远程载荷完成后返还当前较少的配方原料。"
+description = "远程载荷结算完成后，从该载荷使用的原料中选择装备者当前持有数量最少的一种，返还 1 个；数量相同时按原料顺序选择。没有原料时不返还。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "圣树荆棘 / 圣树枝弓"
-description = "开战补充稀缺元素；近战载荷转化为抵挡，远程载荷回收原料。"
+description = "战斗开始时，从装备者持有数量最少的基础元素中按火、水、土、气顺序选取 2 种，各获得 1 个。近战载荷结算完成后，装备者获得 1 层抵挡。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4

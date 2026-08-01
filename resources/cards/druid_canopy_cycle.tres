@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "蓄翠化形"
-description = "正位：抽 2 张牌。选择至多等同于当前法力的其他手牌，逆位置入法力区；至少放置一张则变身。"
+description = "正位：你预先选择至多等同于当前可用法力的其他手牌，然后抽 2 张牌并将所选牌移入你的法力区。至少成功移入 1 张时，你进入变身状态。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 4
@@ -17,6 +17,6 @@ ap_cost = 2
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "冬眠甲壳"
-inverted_description = "逆位：额外弃置 1 张手牌，将当前护甲翻倍。你的下回合开始时保留一半当前护甲并抽 2 张牌。"
+inverted_description = "逆位：你必须额外弃置 1 张其他手牌，然后获得等同于当前护甲的护甲。你的下回合开始时，清空当前护甲，再获得其一半并向下取整的护甲，然后抽 2 张牌。"
 inverted_ap_cost = 2
 inverted_target_type = 4

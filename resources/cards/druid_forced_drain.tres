@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "强制汲取"
-description = "这张牌不能直接打出。可通过准备动作或其他效果置入法力区。"
+description = "本牌不能直接打出；你可以通过准备动作或其他效果将其移入法力区。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 4
@@ -19,7 +19,6 @@ is_druid_dual_card = true
 allow_upright_play = false
 allow_inverted_play = false
 inverted_name = "强制汲取"
-inverted_description = "本牌在法力区时，每当区域持有者抽一张牌，若可以则支付 1 点法力；否则失去等同于当前手牌数的生命。"
+inverted_description = "本牌在法力区时，每当区域持有者抽 1 张牌，若除本牌外仍可支付 1 点法力，则自动支付；否则区域持有者受到等同于其当前手牌数的伤害。"
 inverted_ap_cost = 1
 inverted_target_type = 0
-

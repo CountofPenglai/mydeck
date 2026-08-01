@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 card_name = "交错猎步"
-description = "选择模式、敌人与落点。弩打击后移至目标相邻格并强化下次匕首；匕首打击后移至距目标 2 至 3 格并进入潜行。"
+description = "你选择近战或远程组件、1 名敌人和合法落点。使用远程组件时，打击后特殊移动至目标相邻空格，并使你本回合下一次由游侠武器牌结算的近战打击伤害 x1.5；使用近战组件时，打击后特殊移动至距目标 2 至 3 格的空格并进入潜行。"
 artwork = ExtResource("2")
 rarity = 1
 card_class = 3
