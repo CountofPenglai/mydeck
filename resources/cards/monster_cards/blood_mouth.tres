@@ -20,4 +20,5 @@ card_type = 0
 card_tags = 1
 damage_type = 3
 target_type = 1
+mutation_fields = PackedStringArray("bloodseeking")
 effect = SubResource("Effect")

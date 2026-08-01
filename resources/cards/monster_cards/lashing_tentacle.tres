@@ -22,4 +22,5 @@ damage_type = 3
 target_type = 1
 override_range = true
 card_range = 1
+mutation_fields = PackedStringArray("lashing")
 effect = SubResource("Effect")

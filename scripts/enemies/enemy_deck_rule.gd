@@ -5,6 +5,20 @@ class_name EnemyDeckRule
 @export var random_pool: Array[CardStack] = []
 @export_range(0, 99, 1) var random_pick_count: int = 0
 @export var category_slots: Array[EnemyDeckSlot] = []
+@export var tactical_entries: Array[EnemyCardPoolEntry] = []
+
+
+func find_tactical_entry(card: CardData) -> EnemyCardPoolEntry:
+	for entry in tactical_entries:
+		if entry != null and entry.matches_card(card):
+			return entry
+	for slot in category_slots:
+		if slot == null:
+			continue
+		for entry in slot.entries:
+			if entry != null and entry.matches_card(card):
+				return entry
+	return null
 
 func generate_deck(seed: int = -1) -> Array[CardStack]:
 	var result: Array[CardStack] = []

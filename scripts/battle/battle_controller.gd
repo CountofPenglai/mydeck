@@ -3709,9 +3709,6 @@ func _lock_enemy_intent(unit: BattleUnitState) -> void:
 	var behavior := _get_enemy_behavior(unit)
 	if behavior != null and unit != null and unit.is_alive():
 		behavior.lock_intent({"controller": self, "phase": "intent_lock"}, unit)
-		if unit.enemy_state != null and unit.enemy_state.intent_plan != null:
-			for step in unit.enemy_state.intent_plan.steps:
-				unit.enemy_state.remember_seen_card(step.get("card") as CardData)
 
 
 func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:

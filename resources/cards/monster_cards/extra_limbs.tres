@@ -20,4 +20,5 @@ card_type = 0
 card_tags = 1
 damage_type = 3
 target_type = 5
+mutation_fields = PackedStringArray("appendage")
 effect = SubResource("Effect")

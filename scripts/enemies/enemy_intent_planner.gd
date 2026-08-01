@@ -7,69 +7,157 @@ const BEAM_WIDTH := 6
 
 static func build_plan(controller: BattleController, unit: BattleUnitState, round_number: int) -> EnemyIntentPlan:
 	var plan := EnemyIntentPlan.new()
-	plan.round_locked = round_number
 	if controller == null or unit == null or unit.enemy_state == null:
 		return plan
-	var candidates := _build_candidates(controller, unit)
-	var beams: Array[Dictionary] = [{"steps": [], "used": {}, "ap": 0, "score": 0}]
-	var ap_budget := unit.get_max_ap(controller.config)
-	for _depth in range(MAX_STEPS):
-		var expanded: Array[Dictionary] = beams.duplicate(true)
-		for beam in beams:
-			for candidate in candidates:
-				var card := candidate.get("card") as CardData
-				if card == null or beam.used.has(card.get_instance_id()):
-					continue
-				var cost := int(candidate.get("ap", 0))
-				if int(beam.ap) + cost > ap_budget:
-					continue
-				var next := beam.duplicate(true)
-				next.steps.append(candidate)
-				next.used[card.get_instance_id()] = true
-				next.ap = int(beam.ap) + cost
-				next.score = int(beam.score) + int(candidate.get("score", 0))
-				expanded.append(next)
-		expanded.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.score) > int(b.score))
-		beams.assign(expanded.slice(0, mini(BEAM_WIDTH, expanded.size())))
-	var best: Dictionary = beams[0] if not beams.is_empty() else {}
-	for step in best.get("steps", []):
-		plan.steps.append(step)
-		plan.attack_total += int(step.get("attack", 0))
-		plan.defense_total += int(step.get("defense", 0))
+	var profile := _get_profile(unit)
+	var categories := _select_intents(controller, unit, profile)
+	plan.configure(categories[0], categories[1], categories[2], round_number)
 	if unit.enemy_state.enemy_data.archetype_id == &"fish_champion" and unit.enemy_state.active_weapon_index == 0:
 		var switch_target := controller.get_nearest_opponent(unit)
 		var projected_momentum := mini(5, int(unit.enemy_state.runtime_state.get("momentum", 0)) + 1)
-		plan.steps.push_front({
+		plan.forced_steps.push_front({
 			"type": "switch",
 			"label": "切换长枪",
 			"target_id": switch_target.unit_id if switch_target != null else -1,
 			"ap": 0,
-			"attack": projected_momentum * 2,
-			"defense": 0,
+			"projected_bonus": projected_momentum * 2,
 		})
 	ChapterTwoEnemyRules.decorate_intent_plan(controller, unit, plan)
-	_append_public_fallback(controller, unit, plan, ap_budget - int(best.get("ap", 0)))
 	_plan_manifestations(unit, plan)
 	return plan
 
 
+static func _get_profile(unit: BattleUnitState) -> EnemyAIProfile:
+	if unit != null and unit.enemy_state != null and unit.enemy_state.enemy_data != null \
+			and unit.enemy_state.enemy_data.ai_profile != null:
+		return unit.enemy_state.enemy_data.ai_profile
+	return EnemyAIProfile.create_preset(EnemyAIProfile.Preset.BALANCED)
+
+
+static func _select_intents(controller: BattleController, unit: BattleUnitState, profile: EnemyAIProfile) -> PackedInt32Array:
+	var scored: Array[Dictionary] = []
+	for category in range(EnemyIntentCategory.COUNT):
+		scored.append({"category": category, "score": _score_intent(controller, unit, profile, category)})
+	var first_scores := scored.duplicate(true)
+	for entry in first_scores:
+		match int(entry.category):
+			EnemyIntentCategory.Type.APPROACH, EnemyIntentCategory.Type.DEFEND, EnemyIntentCategory.Type.UTILITY:
+				entry.score = float(entry.score) + 3.0
+			EnemyIntentCategory.Type.RETREAT:
+				entry.score = float(entry.score) + 2.0
+			_:
+				pass
+	_sort_intent_scores(first_scores)
+	var primary_one := int(first_scores[0].category)
+	var second_scores := scored.duplicate(true)
+	for entry in second_scores:
+		if int(entry.category) == primary_one:
+			entry.score = float(entry.score) - 3.0
+	_sort_intent_scores(second_scores)
+	var primary_two := int(second_scores[0].category)
+	var fallback_scores := scored.duplicate(true)
+	for entry in fallback_scores:
+		if int(entry.category) in [primary_one, primary_two]:
+			entry.score = float(entry.score) - 5.0
+	_sort_intent_scores(fallback_scores)
+	return PackedInt32Array([primary_one, primary_two, int(fallback_scores[0].category)])
+
+
+static func _score_intent(controller: BattleController, unit: BattleUnitState, profile: EnemyAIProfile, category: int) -> float:
+	var score := profile.get_intent_weight(category)
+	score += _score_hand_support(unit, category)
+	var health_ratio := float(unit.get_current_health()) / float(maxi(1, unit.get_max_health()))
+	if health_ratio <= profile.low_health_ratio:
+		score += profile.get_low_health_modifier(category)
+	var nearest := controller.get_nearest_opponent(unit)
+	var distance := unit.cell_distance_to(nearest) if nearest != null else 99
+	match category:
+		EnemyIntentCategory.Type.APPROACH:
+			score += 6.0 if nearest != null and distance > unit.get_attack_range() else -4.0
+		EnemyIntentCategory.Type.ATTACK:
+			score += 7.0 if nearest != null and distance <= controller.get_effective_attack_range_against(unit, nearest) else -2.0
+		EnemyIntentCategory.Type.DEFEND:
+			score += (1.0 - health_ratio) * 6.0
+		EnemyIntentCategory.Type.RETREAT:
+			if not _uses_ranged_weapon(unit):
+				score = -100.0
+			elif distance < profile.preferred_range_min:
+				score += 9.0
+			else:
+				score -= 5.0
+		EnemyIntentCategory.Type.HARVEST:
+			score = score + 12.0 if _has_harvest_target(controller, unit, profile.harvest_health_ratio) else -100.0
+		_:
+			pass
+	return score
+
+
+static func _score_hand_support(unit: BattleUnitState, category: int) -> float:
+	if unit == null or unit.enemy_state == null or unit.enemy_state.enemy_data == null:
+		return 0.0
+	var rule := unit.enemy_state.enemy_data.deck_rule
+	if rule == null:
+		return 0.0
+	var matching_ratings: Array[EnemyCardIntentRating] = []
+	for card in unit.hand:
+		var entry := rule.find_tactical_entry(card)
+		var rating := entry.get_intent_rating(category) if entry != null else null
+		if rating != null:
+			matching_ratings.append(rating)
+	var score := mini(4, matching_ratings.size()) * 1.5
+	if matching_ratings.is_empty() and category in [
+		EnemyIntentCategory.Type.DEFEND,
+		EnemyIntentCategory.Type.UTILITY,
+		EnemyIntentCategory.Type.CURSE,
+	]:
+		score -= 8.0
+	if category != EnemyIntentCategory.Type.UTILITY:
+		return score
+	for setup_rating in matching_ratings:
+		if setup_rating.provided_tags.is_empty():
+			continue
+		for card in unit.hand:
+			var followup_entry := rule.find_tactical_entry(card)
+			var followup := followup_entry.get_intent_rating(EnemyIntentCategory.Type.ATTACK) if followup_entry != null else null
+			if followup != null and _tags_overlap(setup_rating.provided_tags, followup.preferred_tags):
+				score += 5.0 + followup.combo_bonus
+				return score
+	return score
+
+
+static func _sort_intent_scores(values: Array[Dictionary]) -> void:
+	values.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_score := float(a.score)
+		var b_score := float(b.score)
+		return a_score > b_score if not is_equal_approx(a_score, b_score) else int(a.category) < int(b.category)
+	)
+
+
+static func _uses_ranged_weapon(unit: BattleUnitState) -> bool:
+	var weapon: EquipmentData = unit.get_active_weapon_equipment()
+	return weapon != null and weapon.range_type == EquipmentData.WeaponRangeType.RANGED
+
+
+static func _has_harvest_target(controller: BattleController, unit: BattleUnitState, threshold: float) -> bool:
+	for target in controller.get_opposing_units(unit):
+		if target != null and target.is_alive() \
+				and float(target.get_current_health()) / float(maxi(1, target.get_max_health())) <= threshold:
+			return true
+	return false
+
+
 static func _plan_manifestations(unit: BattleUnitState, plan: EnemyIntentPlan) -> void:
 	plan.expected_decay_life = unit.distortion_state.manifested_cards.size()
-	var reserved_card_ids := PackedInt64Array()
-	for step in plan.steps:
-		var step_card := step.get("card") as CardData
-		if step_card != null:
-			reserved_card_ids.append(step_card.get_instance_id())
 	var candidates: Array[CardData] = []
 	for card in unit.hand:
-		if card != null and card.has_mutation_fields() and not reserved_card_ids.has(card.get_instance_id()):
+		if card != null and card.has_mutation_fields():
 			candidates.append(card)
 	var projected_draw_count := unit.preview_distortion_draw_count()
 	var available_draws := mini(projected_draw_count, unit.draw_pile.size())
 	for index in range(available_draws):
 		var draw_index := unit.draw_pile.size() - 1 - index
 		var drawn_card: CardData = unit.draw_pile[draw_index]
-		if drawn_card != null and drawn_card.has_mutation_fields() and not reserved_card_ids.has(drawn_card.get_instance_id()):
+		if drawn_card != null and drawn_card.has_mutation_fields():
 			candidates.append(drawn_card)
 	var planned_fields := unit.get_active_distortion_fields()
 	for card in candidates:
@@ -85,102 +173,268 @@ static func _plan_manifestations(unit: BattleUnitState, plan: EnemyIntentPlan) -
 			break
 
 
-static func _build_candidates(controller: BattleController, unit: BattleUnitState) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
+static func choose_action(
+	controller: BattleController,
+	unit: BattleUnitState,
+	category: int,
+	ap_budget: int,
+	combo_tags: PackedStringArray = PackedStringArray()
+) -> EnemyIntentAction:
+	if controller == null or unit == null or unit.enemy_state == null or ap_budget < 0:
+		return null
+	var candidates: Array[EnemyIntentAction] = []
+	_add_card_candidates(candidates, controller, unit, category, ap_budget, combo_tags)
+	if category in [EnemyIntentCategory.Type.ATTACK, EnemyIntentCategory.Type.HARVEST]:
+		_add_basic_attack_candidates(candidates, controller, unit, category, ap_budget)
+	if category == EnemyIntentCategory.Type.APPROACH:
+		_add_movement_candidate(candidates, controller, unit, category, ap_budget, false)
+	elif category == EnemyIntentCategory.Type.RETREAT:
+		_add_movement_candidate(candidates, controller, unit, category, ap_budget, true)
+	if candidates.is_empty():
+		return null
+	candidates.sort_custom(func(a: EnemyIntentAction, b: EnemyIntentAction) -> bool:
+		return a.score > b.score if not is_equal_approx(a.score, b.score) else a.ap_cost < b.ap_cost
+	)
+	return candidates[0]
+
+
+static func has_legal_action(
+	controller: BattleController,
+	unit: BattleUnitState,
+	category: int,
+	ap_budget: int,
+	combo_tags: PackedStringArray = PackedStringArray()
+) -> bool:
+	return choose_action(controller, unit, category, ap_budget, combo_tags) != null
+
+
+static func _add_card_candidates(
+	result: Array[EnemyIntentAction],
+	controller: BattleController,
+	unit: BattleUnitState,
+	category: int,
+	ap_budget: int,
+	combo_tags: PackedStringArray
+) -> void:
 	for card in unit.hand:
 		if card == null or not card.can_play({"controller": controller, "user": unit, "card": card}):
 			continue
-		var targets: Variant = _pick_targets(controller, unit, card)
-		if targets == null:
-			continue
 		var entry := _find_pool_entry(unit, card)
-		var estimate := _estimate_card(unit, card)
-		result.append({
-			"type": "card",
-			"label": card.card_name,
-			"card": card,
-			"card_id": card.get_instance_id(),
-			"targets": targets,
-			"ap": controller.get_card_ap_cost(unit, card),
-			"score": (entry.base_score if entry != null else 10) + int(estimate.attack) + int(estimate.defense),
-			"attack": estimate.attack,
-			"defense": estimate.defense,
-		})
-	return result
+		var rating := entry.get_intent_rating(category) if entry != null else null
+		if rating == null or not _has_required_tags(rating.required_tags, combo_tags):
+			continue
+		var cost := controller.get_card_ap_cost(unit, card)
+		if cost > ap_budget:
+			continue
+		for targets in _get_target_options(controller, unit, card):
+			var action := EnemyIntentAction.new()
+			action.kind = EnemyIntentAction.Kind.CARD
+			action.label = card.card_name
+			action.card = card
+			action.targets = targets
+			action.ap_cost = cost
+			action.provided_tags = rating.provided_tags.duplicate()
+			action.score = _score_card_action(controller, unit, entry, rating, targets, category, combo_tags)
+			action.score += _score_followup(unit, card, category, rating.provided_tags)
+			result.append(action)
 
 
-static func _pick_targets(controller: BattleController, unit: BattleUnitState, card: CardData) -> Variant:
+static func _get_target_options(controller: BattleController, unit: BattleUnitState, card: CardData) -> Array:
+	var result: Array = []
 	var context := {"controller": controller, "user": unit, "card": card}
 	var target_type := card.get_target_type_for_mode(CardEnums.CardPlayMode.NORMAL, context)
-	if target_type in [CardEnums.TargetType.NONE, CardEnums.TargetType.SELF, CardEnums.TargetType.ALL]:
+	if target_type in [CardEnums.TargetType.NONE, CardEnums.TargetType.ALL]:
 		var empty: Array = []
-		return empty if controller._targets_are_valid(unit, card, empty, false) else null
+		if controller._targets_are_valid(unit, card, empty, false):
+			result.append(empty)
+		return result
+	if target_type == CardEnums.TargetType.SELF:
+		var self_targets: Array = [unit]
+		if controller._targets_are_valid(unit, card, self_targets, false):
+			result.append(self_targets)
+		return result
 	if target_type == CardEnums.TargetType.AREA and card.effect != null and card.effect.provides_area_target_cells():
-		var cells := card.effect.get_area_target_cells(context)
-		return [cells[0]] if not cells.is_empty() else null
-	var candidates: Array[BattleUnitState] = []
+		var cells: Array[Vector2i] = card.effect.get_area_target_cells(context)
+		for cell in cells.slice(0, mini(6, cells.size())):
+			var cell_targets: Array = [cell]
+			if controller._targets_are_valid(unit, card, cell_targets, false):
+				result.append(cell_targets)
+		return result
 	for target in controller.units:
 		if target != null and target.is_alive() and controller._targets_are_valid(unit, card, [target], false):
-			candidates.append(target)
-	if candidates.is_empty():
-		return null
-	candidates.sort_custom(func(a: BattleUnitState, b: BattleUnitState) -> bool:
-		var da := unit.cell_distance_to(a)
-		var db := unit.cell_distance_to(b)
-		return da < db if da != db else a.get_current_health() < b.get_current_health()
-	)
-	return [candidates[0]]
+			result.append([target])
+	return result
 
 
 static func _find_pool_entry(unit: BattleUnitState, card: CardData) -> EnemyCardPoolEntry:
 	var rule := unit.enemy_state.enemy_data.deck_rule if unit.enemy_state != null and unit.enemy_state.enemy_data != null else null
+	return rule.find_tactical_entry(card) if rule != null else null
+
+
+static func _score_card_action(
+	controller: BattleController,
+	unit: BattleUnitState,
+	entry: EnemyCardPoolEntry,
+	rating: EnemyCardIntentRating,
+	targets: Array,
+	category: int,
+	combo_tags: PackedStringArray
+) -> float:
+	var score := float(rating.base_score)
+	if not rating.preferred_tags.is_empty() and _has_required_tags(rating.preferred_tags, combo_tags):
+		score += rating.combo_bonus
+	score += rating.damage_value
+	score += rating.defense_value * (1.0 + _missing_health_ratio(unit))
+	score += mini(rating.healing_value, unit.get_max_health() - unit.get_current_health()) * 1.5
+	score += rating.draw_value * 2.5
+	score += rating.movement_value * 2.0
+	score += rating.control_value * 3.0
+	score += rating.curse_value * 2.5
+	score += rating.utility_value * 2.0
+	var target := targets[0] as BattleUnitState if targets.size() == 1 and targets[0] is BattleUnitState else null
+	if target != null:
+		var target_preference := rating.target_preference if rating.target_preference >= 0 else entry.target_preference
+		score += _score_target_preference(unit, target, target_preference)
+		if target_preference == EnemyCardPoolEntry.TargetPreference.ALLY and target.faction == unit.faction:
+			score += mini(rating.healing_value, target.get_max_health() - target.get_current_health()) * 1.5
+		if target.faction != unit.faction and rating.damage_value > 0:
+			var projected := rating.damage_value + unit.get_damage_bonus({"controller": controller, "target": target})
+			if projected >= target.get_current_health():
+				score += 30.0 if category == EnemyIntentCategory.Type.HARVEST else 14.0
+	return score
+
+
+static func _score_followup(unit: BattleUnitState, source_card: CardData, category: int, provided_tags: PackedStringArray) -> float:
+	if provided_tags.is_empty() or unit.enemy_state == null or unit.enemy_state.enemy_data == null:
+		return 0.0
+	var best := 0.0
+	var rule := unit.enemy_state.enemy_data.deck_rule
 	if rule == null:
-		return null
-	for slot in rule.category_slots:
-		if slot == null:
+		return 0.0
+	for card in unit.hand:
+		if card == null or card == source_card:
 			continue
-		for entry in slot.entries:
-			if entry != null and entry.card == card:
-				return entry
-	return null
+		var entry := rule.find_tactical_entry(card)
+		var rating := entry.get_intent_rating(category) if entry != null else null
+		if rating != null and (_matches_nonempty_requirement(rating.required_tags, provided_tags) \
+				or _matches_nonempty_requirement(rating.preferred_tags, provided_tags)):
+			best = maxf(best, float(rating.combo_bonus) * 0.5)
+	return best
 
 
-static func _estimate_card(unit: BattleUnitState, card: CardData) -> Dictionary:
-	var attack := 0
-	var defense := 0
-	if card.effect is MonsterCardEffect:
-		var effect := card.effect as MonsterCardEffect
-		match effect.kind:
-			MonsterCardEffect.Kind.HUNKER_HIDE: defense = 5
-			MonsterCardEffect.Kind.GUARD_HISS: defense = 4
-			MonsterCardEffect.Kind.SEWAGE_SPIT: attack = 2 + unit.get_intelligence()
-			MonsterCardEffect.Kind.SCORCH_SAC: attack = 3 + unit.get_intelligence()
-			MonsterCardEffect.Kind.EXTRA_LIMBS: attack = 3 * (1 + unit.get_damage_bonus())
-			MonsterCardEffect.Kind.NIGHT_MEMBRANE: attack = unit.enchant_zone.size() * 2
-			_:
-				if card.is_attack_card():
-					attack = unit.get_attack()
-	return {"attack": attack, "defense": defense}
-
-
-static func _append_public_fallback(controller: BattleController, unit: BattleUnitState, plan: EnemyIntentPlan, remaining_ap: int) -> void:
-	if remaining_ap < controller.config.basic_attack_ap_cost:
+static func _add_basic_attack_candidates(
+	result: Array[EnemyIntentAction],
+	controller: BattleController,
+	unit: BattleUnitState,
+	category: int,
+	ap_budget: int
+) -> void:
+	var cost := controller.config.basic_attack_ap_cost
+	if cost > ap_budget:
 		return
-	var target := controller.get_nearest_opponent(unit)
-	if target == null:
+	var profile := _get_profile(unit)
+	for target in controller.get_opposing_units(unit):
+		if target == null or not target.is_alive() \
+				or unit.cell_distance_to(target) > controller.get_effective_attack_range_against(unit, target):
+			continue
+		if category == EnemyIntentCategory.Type.HARVEST \
+				and float(target.get_current_health()) / float(maxi(1, target.get_max_health())) > profile.harvest_health_ratio:
+			continue
+		var action := EnemyIntentAction.new()
+		action.kind = EnemyIntentAction.Kind.BASIC_ATTACK
+		action.label = "武器打击"
+		action.targets = [target]
+		action.ap_cost = cost
+		action.score = 8.0 + unit.get_attack() + (20.0 if unit.get_attack() >= target.get_current_health() else 0.0)
+		result.append(action)
+
+
+static func _add_movement_candidate(
+	result: Array[EnemyIntentAction],
+	controller: BattleController,
+	unit: BattleUnitState,
+	category: int,
+	ap_budget: int,
+	move_away: bool
+) -> void:
+	if ap_budget <= 0:
 		return
-	if unit.cell_distance_to(target) <= controller.get_effective_attack_range_against(unit, target):
-		plan.steps.append({"type": "basic_attack", "label": "基础打击", "target_id": target.unit_id, "ap": controller.config.basic_attack_ap_cost, "attack": unit.get_attack(), "defense": 0})
-		plan.attack_total += unit.get_attack()
+	var opponents := controller.get_opposing_units(unit)
+	if opponents.is_empty():
 		return
+	var profile := _get_profile(unit)
 	var best_cell := BattleHexGrid.INVALID_CELL
-	var best_distance := unit.cell_distance_to(target)
-	for cell in controller.get_reachable_cells_for_ap(unit, remaining_ap):
+	var best_score := -INF
+	var best_cost := 0
+	for cell in controller.get_reachable_cells_for_ap(unit, ap_budget):
 		if cell == unit.cell:
 			continue
-		var distance := controller.map_data.get_distance(cell, target.cell)
-		if distance < best_distance:
-			best_distance = distance
+		var nearest_distance := 999
+		var can_attack := false
+		for target in opponents:
+			if target == null or not target.is_alive():
+				continue
+			var distance := controller.map_data.get_distance(cell, target.cell)
+			nearest_distance = mini(nearest_distance, distance)
+			can_attack = can_attack or distance <= unit.get_attack_range()
+		var cell_score := float(nearest_distance * 5) if move_away else float(-nearest_distance * 4)
+		if not move_away and can_attack:
+			cell_score += 30.0
+		if move_away and nearest_distance >= profile.preferred_range_min \
+				and nearest_distance <= profile.preferred_range_max:
+			cell_score += 12.0
+		var path := controller.get_movement_path(unit, cell)
+		var movement_cost := controller._get_path_movement_cost(unit, path)
+		var ap_cost := unit.get_move_ap_cost(movement_cost, controller.config)
+		cell_score -= ap_cost * 0.5
+		if cell_score > best_score:
+			best_score = cell_score
 			best_cell = cell
-	if best_cell != BattleHexGrid.INVALID_CELL:
-		plan.steps.append({"type": "move", "label": "逼近", "cell": best_cell, "ap": remaining_ap, "attack": 0, "defense": 0})
+			best_cost = ap_cost
+	if best_cell == BattleHexGrid.INVALID_CELL:
+		return
+	var action := EnemyIntentAction.new()
+	action.kind = EnemyIntentAction.Kind.MOVE
+	action.label = EnemyIntentCategory.get_label(category)
+	action.cell = best_cell
+	action.ap_cost = best_cost
+	action.score = best_score
+	result.append(action)
+
+
+static func _score_target_preference(unit: BattleUnitState, target: BattleUnitState, preference: int) -> float:
+	match preference:
+		EnemyCardPoolEntry.TargetPreference.LOWEST_HEALTH:
+			return -float(target.get_current_health()) * 0.25
+		EnemyCardPoolEntry.TargetPreference.HIGHEST_HEALTH:
+			return float(target.get_current_health()) * 0.1
+		EnemyCardPoolEntry.TargetPreference.SELF:
+			return 5.0 if target == unit else -5.0
+		EnemyCardPoolEntry.TargetPreference.ALLY:
+			return 5.0 if target.faction == unit.faction else -5.0
+		EnemyCardPoolEntry.TargetPreference.OPPONENT:
+			return 5.0 if target.faction != unit.faction else -5.0
+		_:
+			return -float(unit.cell_distance_to(target)) * 0.5
+
+
+static func _has_required_tags(required: PackedStringArray, available: PackedStringArray) -> bool:
+	for tag in required:
+		if not available.has(tag):
+			return false
+	return true
+
+
+static func _matches_nonempty_requirement(required: PackedStringArray, available: PackedStringArray) -> bool:
+	return not required.is_empty() and _has_required_tags(required, available)
+
+
+static func _tags_overlap(first: PackedStringArray, second: PackedStringArray) -> bool:
+	for tag in first:
+		if second.has(tag):
+			return true
+	return false
+
+
+static func _missing_health_ratio(unit: BattleUnitState) -> float:
+	return 1.0 - float(unit.get_current_health()) / float(maxi(1, unit.get_max_health()))

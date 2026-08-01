@@ -201,29 +201,29 @@ static func decorate_intent_plan(controller: BattleController, unit: BattleUnitS
 	match _id(unit):
 		&"holy_bastion_commander":
 			var command := "hold" if (controller.battle_round + 1) % 2 == 0 else "advance"
-			plan.steps.push_front(_special_step(command, "固守" if command == "hold" else "推进"))
+			plan.forced_steps.push_front(_special_step(command, "固守" if command == "hold" else "推进"))
 		&"creation_shard":
-			plan.steps.push_front(_special_step("shard_exchange", "放逐手牌并生成怪物化职业牌"))
+			plan.forced_steps.push_front(_special_step("shard_exchange", "放逐手牌并生成怪物化职业牌"))
 			if unit.get_current_health() <= unit.get_max_health() / 2:
-				plan.steps.push_front(_special_step("shard_overload", "过载：本回合伤害+3，行动后死亡"))
+				plan.forced_steps.push_front(_special_step("shard_overload", "过载：本回合伤害+3，行动后死亡"))
 		&"corrupt_heart_veil":
 			if bool(unit.enemy_state.runtime_state.get("gospel_pending", false)):
-				plan.steps.push_front(_special_step("gospel", "福音"))
+				plan.forced_steps.push_front(_special_step("gospel", "福音"))
 		&"blood_construct":
 			var inverted := bool(unit.enemy_state.runtime_state.get("inverted", false))
 			if not inverted and unit.curse_wave > 0:
-				plan.steps.push_front(_special_step("construct_invert", "倒转并显化畸变"))
+				plan.forced_steps.push_front(_special_step("construct_invert", "倒转并显化畸变"))
 			elif not inverted and unit.get_current_health() > 5 and _find_enemy(controller, &"flesh_spawn") == null:
-				plan.steps.push_front(_special_step("construct_spawn", "支付5生命派出血肉衍生物"))
+				plan.forced_steps.push_front(_special_step("construct_spawn", "支付5生命派出血肉衍生物"))
 			elif inverted and _has_devour_target(controller, unit):
-				plan.steps.push_front(_special_step("construct_devour", "吞噬相邻非首领友军"))
+				plan.forced_steps.push_front(_special_step("construct_devour", "吞噬相邻非首领友军"))
 			elif inverted and unit.curse_wave == 0 and not bool(unit.enemy_state.runtime_state.get("rebirth_used", false)):
-				plan.steps.push_front(_special_step("construct_rebirth", "往生"))
+				plan.forced_steps.push_front(_special_step("construct_rebirth", "往生"))
 		&"military_god_remains":
-			plan.steps.push_front(_special_step("remains_switch", "切换军神武器"))
+			plan.forced_steps.push_front(_special_step("remains_switch", "切换军神武器"))
 			var badges: PackedStringArray = unit.enemy_state.runtime_state.get("badges", PackedStringArray())
 			if not badges.is_empty():
-				plan.steps.push_front(_special_step("remains_miracle", "%s圣徽奇迹" % _badge_label(badges[0])))
+				plan.forced_steps.push_front(_special_step("remains_miracle", "%s圣徽奇迹" % _badge_label(badges[0])))
 
 
 static func execute_intent_step(controller: BattleController, unit: BattleUnitState, step: Dictionary) -> bool:

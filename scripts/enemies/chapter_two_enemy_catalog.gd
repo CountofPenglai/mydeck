@@ -59,6 +59,7 @@ static func create_enemy(archetype: StringName, seed: int = -1) -> EnemyState:
 	data.innate_damage_type = data.weapon_equipment.damage_type
 	data.base_attack_range = data.weapon_equipment.attack_range
 	data.deck_rule = _make_deck_rule(spec)
+	data.ai_profile = EnemyTacticalCardCatalog.create_profile(int(spec.get("ai_profile", EnemyAIProfile.Preset.BALANCED)))
 	data.behavior = TacticalEnemyBehavior.new()
 	data.behavior.behavior_label = "第二章公开意图"
 	var texture := _make_atlas_texture(int(spec.art_index))
@@ -178,6 +179,7 @@ static func _append_fixed_card(rule: EnemyDeckRule, card: CardData) -> void:
 	stack.card_data = runtime_card
 	stack.count = 1
 	rule.fixed_cards.append(stack)
+	rule.tactical_entries.append(EnemyTacticalCardCatalog.create_entry(runtime_card))
 
 
 static func _make_card_slot(label: String, count: int, cards: Array) -> EnemyDeckSlot:
@@ -185,10 +187,7 @@ static func _make_card_slot(label: String, count: int, cards: Array) -> EnemyDec
 	slot.slot_label = label
 	slot.pick_count = mini(count, cards.size())
 	for card in cards:
-		var entry := EnemyCardPoolEntry.new()
-		entry.card = card
-		entry.max_copies = 1
-		entry.base_score = 10
+		var entry := EnemyTacticalCardCatalog.create_entry(card)
 		slot.entries.append(entry)
 	return slot
 
@@ -278,11 +277,11 @@ static func _make_atlas_texture(index: int) -> Texture2D:
 static func _get_spec(id: StringName) -> Dictionary:
 	var military := ["military"]
 	var specs := {
-		&"gray_shield_guard": {"name": "灰垒盾卫", "base_health": 17, "strength": 3, "agility": 2, "intelligence": 1, "weapon": {"name": "灰垒重盾", "damage": 2, "range": 1}, "military": 6, "mutation": 1, "fields": ["rock_scale"], "tags": military, "art_index": 0, "trait": "军阵：回合开始获得4护甲。"},
+		&"gray_shield_guard": {"name": "灰垒盾卫", "base_health": 17, "strength": 3, "agility": 2, "intelligence": 1, "weapon": {"name": "灰垒重盾", "damage": 2, "range": 1}, "military": 6, "mutation": 1, "fields": ["rock_scale"], "tags": military, "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_GUARD, "art_index": 0, "trait": "军阵：回合开始获得4护甲。"},
 		&"holy_spearman": {"name": "圣枪兵", "base_health": 13, "strength": 3, "agility": 4, "intelligence": 1, "weapon": {"name": "圣垒长枪", "damage": 3, "range": 2}, "military": 6, "mutation": 1, "fields": ["lashing"], "tags": military, "art_index": 1, "trait": "军阵：每回合首次极限距离打击+2伤害加值。"},
-		&"fortress_crossbow": {"name": "要塞弩手", "base_health": 15, "strength": 1, "agility": 5, "intelligence": 2, "weapon": {"name": "要塞重弩", "damage": 3, "range": 4, "damage_type": CardEnums.DamageType.AGILITY, "range_type": EquipmentData.WeaponRangeType.RANGED}, "military": 6, "mutation": 1, "fields": ["scorch_throat"], "tags": military, "art_index": 2, "trait": "军阵：首次远程生命伤害施加2咒波。"},
+		&"fortress_crossbow": {"name": "要塞弩手", "base_health": 15, "strength": 1, "agility": 5, "intelligence": 2, "weapon": {"name": "要塞重弩", "damage": 3, "range": 4, "damage_type": CardEnums.DamageType.AGILITY, "range_type": EquipmentData.WeaponRangeType.RANGED}, "military": 6, "mutation": 1, "fields": ["scorch_throat"], "tags": military, "ai_profile": EnemyAIProfile.Preset.RANGED_CONTROL, "art_index": 2, "trait": "军阵：首次远程生命伤害施加2咒波。"},
 		&"field_priest": {"name": "战地司祭", "base_health": 17, "strength": 1, "agility": 3, "intelligence": 4, "weapon": {"name": "战地圣杖", "damage": 2, "range": 3, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "military": 6, "mutation": 1, "fields": ["mud_lung"], "tags": military, "art_index": 3, "trait": "军阵：回合开始治疗相邻军阵友军。"},
-		&"punishment_knight": {"name": "刑罚骑士", "base_health": 16, "strength": 4, "agility": 4, "intelligence": 1, "weapon": {"name": "刑罚巨刃", "damage": 4, "range": 1}, "military": 6, "mutation": 2, "fields": ["stampede"], "tags": military, "art_index": 4, "trait": "从军阵开始行动时，下一次移动距离+2。"},
+		&"punishment_knight": {"name": "刑罚骑士", "base_health": 16, "strength": 4, "agility": 4, "intelligence": 1, "weapon": {"name": "刑罚巨刃", "damage": 4, "range": 1}, "military": 6, "mutation": 2, "fields": ["stampede"], "tags": military, "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_BERSERK, "art_index": 4, "trait": "从军阵开始行动时，下一次移动距离+2。"},
 		&"standard_bearer": {"name": "执旗官", "base_health": 17, "strength": 2, "agility": 3, "intelligence": 3, "weapon": {"name": "圣旗辉光", "damage": 2, "range": 2, "damage_type": CardEnums.DamageType.INTELLIGENCE}, "military": 6, "mutation": 1, "fields": ["enlightenment"], "tags": military, "art_index": 5, "trait": "回合开始令一名相邻军阵友军抽1并获得3护甲。"},
 		&"holy_bastion_commander": {"name": "圣垒军团长", "rank": EnemyEnums.EnemyRank.ELITE, "base_health": 28, "strength": 4, "agility": 4, "intelligence": 2, "weapon": {"name": "军团长战戟", "damage": 4, "range": 2}, "military": 6, "mutation": 2, "fields": ["empty_eye"], "tags": military + ["commander"], "art_index": 6, "trait": "公开锁定固守或推进；相邻随从提供至多2点伤害减免。"},
 		&"creation_shard": {"name": "造物裂片", "base_health": 11, "strength": 3, "agility": 3, "intelligence": 5, "weapon": {"name": "造物射线", "damage": 2, "range": 3, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "variant_pools": ["mage", "warlock", "ranger", "monster"], "variant_counts": {"monster": 2}, "tags": ["aberration"], "art_index": 7, "trait": "公开换牌与过载；过载获得+3伤害加值并在行动阶段结束时死亡。"},

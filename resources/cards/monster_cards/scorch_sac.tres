@@ -22,4 +22,5 @@ damage_type = 2
 target_type = 1
 override_range = true
 card_range = 3
+mutation_fields = PackedStringArray("scorch_throat")
 effect = SubResource("Effect")

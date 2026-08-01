@@ -8,6 +8,7 @@ enum TargetPreference {
 	MOST_CLUSTERED,
 	SELF,
 	ALLY,
+	OPPONENT,
 }
 
 @export var card: CardData
@@ -18,8 +19,25 @@ enum TargetPreference {
 @export var required_tags: PackedStringArray = []
 @export var provided_tags: PackedStringArray = []
 @export var combo_bonus: int = 0
+@export var card_key: StringName
+@export var intent_ratings: Array[EnemyCardIntentRating] = []
 
 
 func is_valid() -> bool:
 	return card != null and weight > 0 and max_copies > 0
 
+
+func matches_card(candidate: CardData) -> bool:
+	if card == null or candidate == null:
+		return false
+	if candidate == card:
+		return true
+	var expected_key := card_key if not card_key.is_empty() else StringName(card.card_name)
+	return not expected_key.is_empty() and expected_key == StringName(candidate.card_name)
+
+
+func get_intent_rating(category: int) -> EnemyCardIntentRating:
+	for rating in intent_ratings:
+		if rating != null and rating.category == category:
+			return rating
+	return null

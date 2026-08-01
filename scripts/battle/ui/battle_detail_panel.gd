@@ -195,10 +195,25 @@ func _build_enemy_intent(unit: BattleUnitState) -> String:
 	var plan := unit.enemy_state.intent_plan
 	if plan == null:
 		return "\n\n意图\n观望"
-	var lines := PackedStringArray(["", "意图：%s" % plan.get_headline(), plan.get_summary()])
-	for index in range(plan.steps.size()):
-		var step: Dictionary = plan.steps[index]
-		lines.append("%d. %s · %d AP" % [index + 1, str(step.get("label", "行动")), int(step.get("ap", 0))])
+	var lines := PackedStringArray([
+		"",
+		"意图",
+		"主要：%s" % plan.get_headline(),
+		"备用：%s" % EnemyIntentCategory.get_label(plan.fallback_intent),
+	])
+	if not plan.is_finished():
+		var current_category := plan.get_current_category()
+		lines.append("当前：%s" % EnemyIntentCategory.get_label(current_category))
+		lines.append(EnemyIntentCategory.get_description(current_category))
+	if not plan.forced_steps.is_empty():
+		var special_labels := PackedStringArray()
+		for step in plan.forced_steps:
+			special_labels.append(str(step.get("label", "特殊行动")))
+		lines.append("特殊：%s" % " → ".join(special_labels))
+	if not plan.planned_manifest_fields.is_empty():
+		lines.append("显化：%s" % "、".join(plan.planned_manifest_fields))
+	if plan.expected_decay_life > 0:
+		lines.append("预计衰退：失去%d生命" % plan.expected_decay_life)
 	return "\n".join(lines)
 
 

@@ -32,6 +32,7 @@ class_name EnemyData
 @export_group("Deck and Behavior")
 @export var deck_rule: EnemyDeckRule
 @export var behavior: EnemyBehavior
+@export var ai_profile: EnemyAIProfile
 
 func get_rank_label() -> String:
 	return EnemyEnums.rank_label(enemy_rank)
