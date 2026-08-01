@@ -8,7 +8,7 @@ weapon_kind = 1
 [sub_resource type="Resource" id="Cheetah"]
 script = ExtResource("1")
 item_name = "猎豹"
-description = "每回合首次武器打击后自动对同一目标追加一次打击。"
+description = "装备者每回合首次完成武器打击后，若原目标仍存活且仍在当前武器范围内，自动使用同一组件对其追加 1 次武器打击；追加打击不会再次触发本效果。"
 icon = ExtResource("3")
 base_damage = 3
 attack_range = 1
@@ -22,7 +22,7 @@ trigger_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "疾风魔杖 / 猎豹"
-description = "正位提高敏捷并以生命伤害换取抽牌，逆位连续追击。"
+description = "装备者敏捷 +1。装备者每回合首次造成正数实际伤害后抽 1 张牌。"
 icon = ExtResource("3")
 base_damage = 5
 attack_range = 3

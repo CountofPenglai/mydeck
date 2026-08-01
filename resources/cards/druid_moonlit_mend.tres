@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "月光"
-description = "正位：选择一个单位。若为友方，恢复生命；若为敌方，造成智力类型的魔法伤害。若能支付共鸣，数值提高。"
+description = "正位：数值等于 4 加你的伤害加值。若目标是友方，使其恢复等同于该数值的生命；若目标是敌人，对其造成等同于该数值的智力伤害。打出时若你能支付 1 点法力，则自动支付并使该数值 +2。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 4
@@ -21,7 +21,7 @@ card_range = 3
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "暗月"
-inverted_description = "逆位：选择一个单位。若为友方，恢复生命；若为敌方，造成智力类型的魔法伤害。打出后进入法力区。"
+inverted_description = "逆位：数值等于 4 加你的伤害加值。若目标是友方，使其恢复等同于该数值的生命；若目标是敌人，对其造成等同于该数值的智力伤害。打出时若你能支付 1 点法力，则自动支付并使该数值 +2。打出后将本牌移入你的法力区。"
 inverted_ap_cost = 2
 inverted_target_type = 1
 inverted_override_range = true

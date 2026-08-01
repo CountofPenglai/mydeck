@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "根系洞察"
-description = "正位：抽 2 张牌。若能支付共鸣，获得 1 点本回合临时法力。"
+description = "正位：你抽 2 张牌。打出时若你能支付 1 点法力，则自动支付并获得 1 点本回合临时法力。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 4
@@ -17,7 +17,7 @@ ap_cost = 1
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "倒生灵感"
-inverted_description = "逆位：抽 1 张牌，获得 1 点本回合临时法力。打出后进入法力区。"
+inverted_description = "逆位：你抽 1 张牌并获得 1 点本回合临时法力。打出时若你能支付 1 点法力，仍会自动支付，但不会产生额外效果。打出后将本牌移入你的法力区。"
 inverted_ap_cost = 1
 inverted_target_type = 0
 resonance_cost = 1

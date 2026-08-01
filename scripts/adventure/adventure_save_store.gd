@@ -85,6 +85,9 @@ func _serialize_run(run_state: PartyRunState) -> Dictionary:
 		"run_complete": run_state.run_complete,
 		"run_failed": run_state.run_failed,
 		"adventure_flags": run_state.adventure_flags.duplicate(true),
+		"equipment_reward_drawn_paths": Array(run_state.equipment_reward_drawn_paths),
+		"equipment_reward_offers": run_state.equipment_reward_offers.duplicate(true),
+		"equipment_class_miss_streaks": run_state.equipment_class_miss_streaks.duplicate(true),
 		"party": party_data,
 		"floor": run_state.floor_state.to_dict() if run_state.floor_state != null else {},
 		"pending": run_state.pending_transaction.to_dict() if run_state.pending_transaction != null else {},
@@ -110,6 +113,13 @@ func _deserialize_run(data: Dictionary) -> PartyRunState:
 	result.run_complete = bool(data.get("run_complete", false))
 	result.run_failed = bool(data.get("run_failed", false))
 	result.adventure_flags = (data.get("adventure_flags", {}) as Dictionary).duplicate(true)
+	result.equipment_reward_drawn_paths = PackedStringArray(data.get("equipment_reward_drawn_paths", []))
+	result.equipment_reward_offers = _deserialize_equipment_reward_offers(
+		data.get("equipment_reward_offers", {}) as Dictionary
+	)
+	result.equipment_class_miss_streaks = _deserialize_equipment_class_misses(
+		data.get("equipment_class_miss_streaks", {}) as Dictionary
+	)
 	for hero_data in data.get("party", []):
 		if hero_data is Dictionary:
 			var hero := _deserialize_character(hero_data)
@@ -120,6 +130,32 @@ func _deserialize_run(data: Dictionary) -> PartyRunState:
 		result.floor_state = AdventureFloorState.from_dict(floor_data)
 	var pending_data := data.get("pending", {}) as Dictionary
 	result.pending_transaction = PendingAdventureTransaction.from_dict(pending_data)
+	return result
+
+
+func _deserialize_equipment_reward_offers(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for source_value in raw:
+		var source_id := str(source_value)
+		var records: Array[Dictionary] = []
+		var raw_records = raw[source_value]
+		if raw_records is Array:
+			for record_value in raw_records as Array:
+				if not (record_value is Dictionary):
+					continue
+				var record := record_value as Dictionary
+				records.append({
+					"path": str(record.get("path", "")),
+					"reward_class": int(record.get("reward_class", CardEnums.CardClass.NEUTRAL)),
+				})
+		result[source_id] = records
+	return result
+
+
+func _deserialize_equipment_class_misses(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for key_value in raw:
+		result[str(key_value)] = maxi(0, int(raw[key_value]))
 	return result
 
 

@@ -556,11 +556,11 @@ static func terrain_label(terrain: int) -> String:
 static func terrain_description(terrain: int) -> String:
 	match terrain:
 		Terrain.SHALLOW_WATER:
-			return "移动距离消耗 2；提供永久水元素源。"
+			return "没有地面效果覆盖时，非飞行单位进入该格需要 2 点移动距离。该地形始终提供永久水元素源。"
 		Terrain.MAGMA_FISSURE:
-			return "进入和回合开始时受到 3 点环境伤害；提供永久火元素源。"
+			return "没有地面效果覆盖时，非飞行单位进入该格以及在该格开始回合时受到 3 点环境伤害。该地形始终提供永久火元素源。"
 		Terrain.ABYSS:
-			return "移动距离消耗 2；每回合第一张非诅咒牌 AP +1；提供永久水元素源。"
+			return "没有地面效果覆盖时，非飞行单位进入该格需要 2 点移动距离；位于该格的单位每回合打出的第一张非诅咒牌 AP 消耗 +1。该地形始终提供永久水元素源。"
 		_:
 			return "没有额外地形效果。"
 
@@ -570,17 +570,17 @@ static func element_description(element: int) -> String:
 		Element.FIRE, Element.WATER, Element.EARTH, Element.AIR:
 			return "基础元素仅用于反应、采集与条件读取，不直接提供战斗加成。"
 		Element.STEAM:
-			return "生成时将占用者推开 1 格；提供隐蔽，远程伤害减免 1。"
+			return "生成时，尝试将本格的非飞行单位沿远离元素来源的方向强制移动 1 格；没有合法落点时留在原格。存在期间，本格提供隐蔽，位于本格的单位受到远程伤害时获得 1 点伤害减免。"
 		Element.LAVA:
-			return "生成、进入及回合开始时造成 3 点环境伤害。"
+			return "生成时，本格的非飞行单位和可破坏对象受到 3 点环境伤害；存在期间，非飞行单位进入本格或在本格开始回合时再受到 3 点环境伤害。"
 		Element.BLAZE:
-			return "生成时造成 2 点环境伤害；每段伤害 +2，造成正数伤害的行动后自身受到 1 点环境伤害。"
+			return "生成时，本格的非飞行单位和可破坏对象受到 2 点环境伤害。存在期间，位于本格的伤害来源每段伤害获得 +2 伤害加值；同一行动首次造成正数实际伤害后，该来源受到 1 点环境伤害。"
 		Element.POISON_BOG:
-			return "移动距离消耗 2，伤害加值 -1；移动中生成时终止移动。"
+			return "存在期间，进入本格需要 2 点移动距离，位于本格的单位伤害加值 -1。"
 		Element.ICE:
-			return "进入时终止移动；下一次移动 AP +1，伤害减免 -1。"
+			return "生成时，本格的非飞行单位获得 1 层冻结：主动移动的 AP 消耗 +1，持续至其下次回合结束。单位进入本格时立即停止本次移动；位于本格的单位伤害减免 -1。"
 		Element.SANDSTORM:
-			return "提供隐蔽；其中单位的远程最大距离变为 2。"
+			return "生成时，本格的非飞行单位获得致盲，使其远程范围至多为 2，持续至其下次回合结束。存在期间，本格提供隐蔽；远程打击的来源格或目标格为沙暴时，范围至多为 2。"
 		_:
 			return ""
 

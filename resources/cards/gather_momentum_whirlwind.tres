@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "蓄势/回旋斩"
-description = "获得 3 层势。余势：支付 2 AP，对攻击范围 +1 内所有敌人依次进行一次打击，此打击获得势层数 * 2 的伤害加值。"
+description = "你获得 3 点势。\n\n余势：支付 2 AP。改为选择 1 种武器，并以该武器对其攻击范围 +1 内每名敌人与每个战场对象各进行 1 次武器打击；每次打击获得等同于你当前势点数 x2 的伤害加值。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

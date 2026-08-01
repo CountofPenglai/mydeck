@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "树灵结契"
-description = "正位：将这张牌逆位置入目标角色的附魔区。附魔区效果：区域持有者每当进行打击时，获得等同于当前手牌数的护甲。"
+description = "正位：将本牌从你的手牌移入范围 2 内 1 名敌人的附魔区。附魔：区域持有者每次进行打击后，获得等同于其当前手牌数的护甲。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 4
@@ -19,7 +19,7 @@ card_range = 2
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "树灵法力"
-inverted_description = "逆位持续面：本牌在法力区时，区域持有者打出的牌获得“支付 1 点法力：抽 2 张牌”。双生法术面不能直接打出。"
+inverted_description = "逆位持续：本牌不能直接打出。本牌在法力区时，每当区域持有者为 1 张牌支付 AP 后，若其可用法力至少为 1 点，则自动支付 1 点法力并抽 2 张牌；法力不足时不触发。"
 allow_inverted_play = false
 inverted_ap_cost = 2
 inverted_target_type = 0

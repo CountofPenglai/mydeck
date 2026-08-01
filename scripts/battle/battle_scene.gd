@@ -1581,7 +1581,7 @@ func _show_curse_choice(card: CardData, play_mode: int, extra_context: Dictionar
 	for curse in card.get_curse_choice_options(context):
 		var button := Button.new()
 		button.text = curse.get_summary()
-		button.tooltip_text = curse.definition.get_description_for_state(curse.state) if curse.definition != null else ""
+		button.tooltip_text = RulesTextFormatter.format_curse(curse)
 		button.pressed.connect(_on_curse_choice_selected.bind(curse))
 		_curse_choice_list.add_child(button)
 	_curse_choice_popup.popup_centered()
@@ -1658,7 +1658,7 @@ func _refresh_manifest_popup() -> void:
 	for card in eligible:
 		var toggle := CheckBox.new()
 		toggle.text = "%s · %s" % [card.card_name, card.get_mutation_label()]
-		toggle.tooltip_text = card.description
+		toggle.tooltip_text = RulesTextFormatter.format_card(card, {"user": unit})
 		toggle.button_pressed = _manifest_selected.has(card)
 		toggle.disabled = _manifest_selected.size() >= 2 and not toggle.button_pressed
 		toggle.toggled.connect(_on_manifest_card_toggled.bind(card))
@@ -1734,14 +1734,9 @@ func _refresh_curse_popup(force: bool = false) -> void:
 			if curse == null:
 				continue
 			var summary := Label.new()
-			summary.text = curse.get_summary()
+			summary.text = RulesTextFormatter.format_curse(curse)
 			summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_curse_list.add_child(summary)
-			var description := Label.new()
-			description.text = curse.definition.get_description_for_state(curse.state) if curse.definition != null else ""
-			description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			description.modulate = Color(0.82, 0.82, 0.82)
-			_curse_list.add_child(description)
 	if controller.current_unit != null and controller.current_unit.faction == BattleUnitState.Faction.PLAYER:
 		var actions := controller.current_unit.get_curse_actions({"controller": controller, "phase": "action"})
 		if not actions.is_empty():

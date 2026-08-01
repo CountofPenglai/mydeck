@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "坚守"
-description = "磨 3 张牌，从弃牌堆将至多 3 张牌以任意顺序置于牌库顶。余势：放逐弃牌堆中的所有牌，获得等同于放逐牌数 2 倍的护甲。"
+description = "你磨 3 张牌，然后从弃牌堆选择至多 3 张牌，按所选顺序置于牌库顶。\n\n余势：无条件。改为放逐弃牌堆中的所有剩余牌，并获得等同于实际放逐牌数 x2 的护甲。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

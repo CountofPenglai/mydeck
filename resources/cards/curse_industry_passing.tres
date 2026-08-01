@@ -11,7 +11,7 @@ curse_id = "passing"
 [resource]
 script = ExtResource("1_card")
 card_name = "遗逝之业"
-description = "弃置其他手牌，从任意单位弃牌堆选择至多D+1张生成0 AP临时副本。"
+description = "你弃置所有其他手牌，然后从任意单位当前弃牌堆选择至多 D+1 张牌，在你的手牌中生成其 0 AP 副本；副本打出后或本回合结束时放逐。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

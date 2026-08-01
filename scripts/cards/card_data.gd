@@ -63,6 +63,7 @@ var bound_curse_instance: CurseInstance
 @export_range(-12, 12, 1) var inverted_range_modifier: int = 0
 @export_range(0, 99, 1) var resonance_cost: int = 0
 @export var auto_pay_resonance: bool = true
+@export var is_choice_one_card: bool = false
 @export var is_twin_spell: bool = false
 
 

@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "猎杀时刻"
-description = "衍生。使用所选武器打击；目标生命值不高于 50% 时伤害 x2。匕首击杀后进入潜行；弩的本牌射程 +2。"
+description = "你选择近战或远程组件进行 1 次武器打击。若目标在打击前的生命不高于生命上限的 50%，本次打击伤害 x2。近战组件击杀目标后，你进入潜行。使用远程组件时，本牌攻击范围 +2，并忽略远程攻击的地表伤害减免。"
 artwork = ExtResource("2_scroll")
 rarity = 3
 card_class = 3

@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "铁壁不移"
-description = "附魔：进入附魔区并获得 4 护甲。有护甲时，每段受到的伤害先减 2，再由护甲吸收；护甲因任何原因归零时，本牌立即进入弃牌堆。"
+description = "附魔：本牌进入你的附魔区时，你获得 4 护甲。只要你有护甲，每段对你造成的伤害先获得 2 点伤害减免，再由护甲吸收。你的护甲因任何原因降为 0 时，将本牌移入你的弃牌堆。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

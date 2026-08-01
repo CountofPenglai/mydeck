@@ -153,7 +153,7 @@ func _test_battle_objects() -> void:
 				cistern
 			):
 		_fail("BATTLEFIELD_FEATURES_DIAG: strike attack card did not accept a destructible object")
-	elif controller.get_cell_detail_text(cistern.cell).find("摧毁后") < 0:
+	elif controller.get_cell_detail_text(cistern.cell).find("被摧毁时") < 0:
 		_fail("BATTLEFIELD_FEATURES_DIAG: object detail omitted its destruction effect")
 	else:
 		var cistern_health := cistern.current_health

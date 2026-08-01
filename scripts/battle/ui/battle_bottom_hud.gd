@@ -105,6 +105,9 @@ func bind_unit(unit: BattleUnitState, controller: BattleController, interactive:
 	health_bar.max_value = float(max_health)
 	health_bar.value = float(clampi(unit.get_current_health(), 0, max_health))
 	health_label.text = "%d/%d  护甲 %d" % [unit.get_current_health(), max_health, unit.get_armor_stacks()]
+	var shared_armor := unit.get_shared_armor_stacks()
+	if shared_armor > 0:
+		health_label.text += "  共有 %d" % shared_armor
 	var max_ap := unit.get_max_ap(controller.config) if controller != null else 0
 	ap_label.text = "AP"
 	_refresh_ap_orbs(unit.current_ap, max_ap)
@@ -212,7 +215,10 @@ func _create_card_button(card: CardData, cost: int, interactive: bool) -> Textur
 	button.ignore_texture_size = true
 	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	button.custom_minimum_size = Vector2(96.0, 116.0)
-	button.tooltip_text = "%s\n%s" % [card.card_name, card.description]
+	button.tooltip_text = "%s\n%s" % [card.card_name, RulesTextFormatter.format_card(card, {
+		"user": bound_unit,
+		"effective_ap_cost": cost,
+	})]
 	button.disabled = not interactive
 	button.set_meta("card", card)
 	button.pressed.connect(func() -> void: card_pressed.emit(card))

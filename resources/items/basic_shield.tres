@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_equipment")
 item_name = "基础盾"
-description = "基础防具。装备后提供少量伤害减免。"
+description = "装备者获得 1 点伤害减免。"
 icon = ExtResource("2_icon")
 max_stack = 1
 base_damage = 0

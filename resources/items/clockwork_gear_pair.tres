@@ -11,7 +11,7 @@ maximum_dynamic_bonus = 2
 [sub_resource type="Resource" id="GearDisc"]
 script = ExtResource("1_equipment")
 item_name = "齿轮圆盘"
-description = "随当前势在自身回合提供伤害加值，其他回合提供伤害减免。"
+description = "装备者自身回合内获得等于当前势、至多 +2 的伤害加值；其他单位回合内获得等于当前势、至多 2 点的伤害减免。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 1
@@ -26,7 +26,7 @@ subcategories = PackedStringArray("双持", "成对组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "机芯战斧 / 齿轮圆盘"
-description = "打击与切出前获得势；备战1使下一张牌AP-1。"
+description = "装备者每回合首次完成武器打击后获得 1 点势；切出该套装备前再获得 1 点势。每次切入后可以发动 1 次备战 1：支付 1 点势，使下一张牌的 AP 消耗 -1。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3

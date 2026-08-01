@@ -11,7 +11,7 @@ intelligence_bonus = 2
 [resource]
 script = ExtResource("1_equipment")
 item_name = "奥能坠饰"
-description = "智力 +2。"
+description = "装备者智力 +2。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 0

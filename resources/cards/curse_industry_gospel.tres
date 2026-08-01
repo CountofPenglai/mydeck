@@ -11,7 +11,7 @@ curse_id = "gospel"
 [resource]
 script = ExtResource("1_card")
 card_name = "福音之业"
-description = "失去3D生命。对范围3内所有其他单位造成4+2D智力伤害；生命受损者获得D咒波并被洗入1张临时咒害。"
+description = "你须拥有多于 3D 点生命才能打出。你失去 3D 点生命，然后对范围 3 内每个其他单位造成 4+2D 加你的智力伤害加值的伤害。每名实际失去生命的单位获得 D 点咒波，并将 1 张临时辐照咒害洗入其牌库。"
 artwork = ExtResource("2_art")
 rarity = 2
 reward_eligible = false

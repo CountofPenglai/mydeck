@@ -11,7 +11,7 @@ weapon_kind = 2
 [sub_resource type="Resource" id="BloodRepeater"]
 script = ExtResource("1_equipment")
 item_name = "逐血连弩"
-description = "为无印记目标铺标，并在连击里程碑自动齐射。"
+description = "远程武器打击造成正数实际伤害后，若目标没有游侠印记，为其施加 1 层游侠印记。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "放血者 / 逐血连弩"
-description = "近战叠加游侠印记，连击里程碑消耗印记齐射。"
+description = "近战武器打击造成正数实际伤害后，为目标施加 1 层游侠印记；每个目标至多 3 层。本回合连击首次达到 2、4、6 时，自动对每名具有游侠印记的存活敌人造成 2 点固定敏捷伤害，并各移除 1 层印记；若至少命中一个目标，装备者退出潜行。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4

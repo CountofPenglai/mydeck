@@ -26,7 +26,7 @@ equip_category = 2
 [sub_resource type="Resource" id="Firefly"]
 script = ExtResource("1")
 item_name = "无主流萤 / 繁星若虫"
-description = "基础伤害等于打击开始时可用法力，不能攻击距离1。"
+description = "武器打击开始时，基础伤害改为装备者当前可用法力；不能以距离 1 的单位为目标。装备者非强制移动后，在移动起点留下 1 个虫群投影，至多保留 3 个，并在自身回合开始时清空。投影可以作为范围原点；使用投影命中超出装备者自身范围的目标后移除该投影。德鲁伊牌打出后不再进入法力区。"
 icon = ExtResource("3")
 base_damage = 0
 attack_range = 3
@@ -43,7 +43,7 @@ activated_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "星辉猎弓·夜明扳指 / 无主流萤·繁星若虫"
-description = "以法力区驱动星辉轮换，逆位按可用法力攻击并留下虫群投影。"
+description = "装备者每回合抽到的第 1 张牌正常进入手牌；本回合之后抽到的牌改为从手牌移入法力区。法力区非空时，装备者获得 +3 伤害加值。每回合可以将法力区最后一张牌移回手牌 1 次；该牌在本次打出中造成正数实际伤害后，星辉轮换依次结算：抽 1 张牌；获得 +3 伤害加值直到下个自身回合结束；将武器范围改为 6 且伤害类型改为智力直到下个自身回合结束。"
 icon = ExtResource("3")
 base_damage = 3
 attack_range = 3

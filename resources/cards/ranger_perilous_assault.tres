@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1")
 card_name = "险步突袭"
-description = "选择匕首或弩并打击。连击：获得眩晕 1。"
+description = "你选择近战或远程组件进行 1 次武器打击。\n\n连击：获得眩晕 1。你以 0 AP 进行该武器打击。"
 artwork = ExtResource("2")
 rarity = 4
 card_class = 3

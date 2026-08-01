@@ -11,7 +11,7 @@ weapon_kind = 1
 [sub_resource type="Resource" id="OriginCrossbow"]
 script = ExtResource("1_equipment")
 item_name = "溯源手弩"
-description = "远程打击后将脚下基础元素施加至目标格。"
+description = "完成远程武器打击后，若目标仍存活，将装备者所在格的每种可读基础元素依次施加至目标格。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "食髓者 / 溯源手弩"
-description = "近战强化元素采集并治疗，远程调整目标地表。"
+description = "近战武器打击触发的元素采集数量 x2；每成功采集 1 个基础元素，装备者恢复 1 点生命。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3

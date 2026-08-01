@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "野性变形"
-description = "正位：进入变身状态，抽 1 张牌。本牌结算后进入法力区。"
+description = "正位：你请求进入变身状态并抽 1 张牌。本牌结算后移入你的法力区。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 4
@@ -17,7 +17,6 @@ ap_cost = 1
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "返生本能"
-inverted_description = "逆位：恢复自身生命并获得 1 点本回合临时法力。打出后进入法力区。"
+inverted_description = "逆位：你恢复 4 点生命并获得 1 点本回合临时法力。打出后将本牌移入你的法力区。"
 inverted_ap_cost = 1
 inverted_target_type = 0
-

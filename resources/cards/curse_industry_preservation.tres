@@ -11,7 +11,7 @@ curse_id = "preservation"
 [resource]
 script = ExtResource("1_card")
 card_name = "守成之业"
-description = "加深另一张诅咒，将其报效果投射给范围3敌人；其他敌人眩晕2+D。"
+description = "你选择另一张深度低于 3 的诅咒并将其加深 1，然后令范围 3 内 1 名敌人获得该诅咒当前深度的报效果，持续到该敌人的下回合结束。所有其他存活敌人获得 2+D 层眩晕。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

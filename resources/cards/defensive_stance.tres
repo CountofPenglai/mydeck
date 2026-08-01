@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "防御架势"
-description = "获得 1 层抵挡。本轮下次抵挡成功时，切换你的武器。"
+description = "你获得 1 层抵挡。你下次抵挡成功时，自动尝试切换武器；没有可切换武器时仍消耗该触发。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1

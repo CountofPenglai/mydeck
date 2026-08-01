@@ -14,6 +14,7 @@ func _ready() -> void:
 	_test_encounter_catalog()
 	_test_reverse_fish()
 	_test_champion_weapon_switch()
+	_test_abyss_shared_armor()
 	_test_tactical_turn()
 	print("CHAPTER_ONE_ENEMY_DIAG: completed")
 	get_tree().quit(_exit_code)
@@ -136,6 +137,59 @@ func _test_champion_weapon_switch() -> void:
 	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 	if not controller.play_card(champion, charge, [charge_cells[0]]):
 		_fail("champion could not resolve a cell-target charge after switching")
+
+
+func _test_abyss_shared_armor() -> void:
+	var scenario := (load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario).duplicate(true) as BattleScenario
+	scenario.scene_prototype = null
+	scenario.players.clear()
+	scenario.players.append(load("res://resources/characters/battle_warrior_state.tres") as CharacterState)
+	scenario.players.append(load("res://resources/characters/battle_ranger_state.tres") as CharacterState)
+	scenario.enemies.clear()
+	scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"abyss_scale", 1888))
+	var controller := BattleController.new()
+	controller.setup(scenario)
+	var boss := controller.enemy_units[0]
+	ChapterOneEnemyRules.on_battle_started(controller)
+	if boss.get_armor_stacks() != 0:
+		_fail("abyss scale incorrectly owns the shared armor")
+	for player in controller.player_units:
+		var shared := player.get_status("abyss_shared_armor")
+		if shared == null or shared.stacks != 16:
+			_fail("player did not receive the 16-point shared armor status")
+		elif not (shared is AbyssSharedArmorStatus) \
+				or (shared as AbyssSharedArmorStatus).boss_unit_id != boss.unit_id:
+			_fail("shared armor status lost its abyss scale runtime reference")
+	var first_player := controller.player_units[0]
+	var second_player := controller.player_units[1]
+	var first_health := first_player.get_current_health()
+	# The warrior's equipped shield reduces the requested 6 damage to 5 before armor absorption.
+	controller.apply_damage(boss, first_player, 6, "shared armor diagnostic", {"fixed_damage": true})
+	if first_player.get_current_health() != first_health:
+		_fail("shared armor did not absorb damage to the first player")
+	for player in controller.player_units:
+		var shared := player.get_status("abyss_shared_armor")
+		if shared == null or shared.stacks != 11:
+			_fail("shared armor pool did not synchronize after partial damage: status=%d runtime=%d" % [
+				shared.stacks if shared != null else -1,
+				int(boss.enemy_state.runtime_state.get("abyss_shared_armor", -1)),
+			])
+	if int(boss.enemy_state.runtime_state.get("abyss_phase", 0)) != 1:
+		_fail("abyss scale changed phase before shared armor was broken")
+	var second_health := second_player.get_current_health()
+	controller.apply_damage(boss, second_player, 20, "shared armor break diagnostic", {"fixed_damage": true})
+	if second_player.get_current_health() != second_health - 9:
+		_fail("shared armor overflow damage was not applied correctly: before=%d after=%d runtime=%d" % [
+			second_health,
+			second_player.get_current_health(),
+			int(boss.enemy_state.runtime_state.get("abyss_shared_armor", -1)),
+		])
+	for player in controller.player_units:
+		if player.has_status("abyss_shared_armor"):
+			_fail("broken shared armor status remained on a player")
+	if int(boss.enemy_state.runtime_state.get("abyss_phase", 0)) != 2 \
+			or boss.enemy_state.active_weapon_index != 1:
+		_fail("abyss scale did not enter phase two when shared armor broke")
 
 
 func _test_tactical_turn() -> void:

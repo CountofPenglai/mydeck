@@ -11,8 +11,7 @@ kind = 11
 [resource]
 script = ExtResource("1")
 card_name = "灼喉囊"
-description = "范围3造成3点智力伤害并施加火。
-畸变~灼喉"
+description = "使用者对目标造成 3 点智力伤害，然后向目标所在格施加火元素。"
 artwork = ExtResource("3")
 rarity = 1
 reward_eligible = false

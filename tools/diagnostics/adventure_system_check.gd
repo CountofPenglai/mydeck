@@ -17,6 +17,7 @@ var exit_code: int = 0
 func _ready() -> void:
 	_test_starter_deck_configuration()
 	_test_reward_card_filtering()
+	_test_equipment_reward_pool()
 	_test_map_generation()
 	_test_save_round_trip()
 	_test_distortion_map_ui()
@@ -26,6 +27,7 @@ func _ready() -> void:
 	_test_adventure_instance_modifiers()
 	_test_inventory_loadout_model()
 	_test_ranger_dig_activity()
+	_test_repeatable_druid_infusion()
 	_test_event_choices_and_feedback()
 	print("ADVENTURE_DIAG: completed")
 	get_tree().quit(exit_code)
@@ -83,7 +85,85 @@ func _test_starter_deck_configuration() -> void:
 			_fail("ADVENTURE_DIAG: %s does not have only its starter weapon equipped" % character_path)
 		if not loadout_character.inventory.is_empty():
 			_fail("ADVENTURE_DIAG: %s starter inventory still contains test weapons" % character_path)
+	var expected_attributes := {
+		"res://resources/characters/battle_warrior_state.tres": [7, 5, 3],
+		"res://resources/characters/battle_ranger_state.tres": [3, 7, 5],
+		"res://resources/characters/battle_druid_state.tres": [5, 3, 7],
+	}
+	for character_path in expected_attributes:
+		var hero := load(character_path) as CharacterState
+		var expected := expected_attributes[character_path] as Array
+		if hero == null or hero.character_data == null:
+			_fail("ADVENTURE_DIAG: missing starter attributes for %s" % character_path)
+			continue
+		if hero.character_data.base_strength != int(expected[0]) \
+				or hero.character_data.base_agility != int(expected[1]) \
+				or hero.character_data.base_intelligence != int(expected[2]):
+			_fail("ADVENTURE_DIAG: starter attribute profile mismatch for %s" % character_path)
+		if hero.current_health != hero.get_max_health():
+			_fail("ADVENTURE_DIAG: starter health is not aligned to max health for %s" % character_path)
 	print("ADVENTURE_DIAG: starter deck configuration passed")
+
+
+func _test_equipment_reward_pool() -> void:
+	var heroes: Array[CharacterState] = []
+	for path in [
+		"res://resources/characters/battle_warrior_state.tres",
+		"res://resources/characters/battle_ranger_state.tres",
+		"res://resources/characters/battle_druid_state.tres",
+	]:
+		var template := load(path) as CharacterState
+		var hero := template.duplicate(true) as CharacterState
+		hero.ensure_initialized()
+		heroes.append(hero)
+	var run := PartyRunState.new()
+	run.initialize_adventure(97531, heroes, AdventureDefinition.new())
+	var service := AdventureRewardService.new()
+	var first := service.get_equipment_candidates(run, 1001, 3)
+	if first.size() != 3:
+		_fail("ADVENTURE_DIAG: first equipment reward did not contain three options")
+		return
+	var first_paths := _candidate_paths(first)
+	var first_misses := run.equipment_class_miss_streaks.duplicate(true)
+	var repeated := service.get_equipment_candidates(run, 1001, 3)
+	if _candidate_paths(repeated) != first_paths \
+			or run.equipment_class_miss_streaks != first_misses:
+		_fail("ADVENTURE_DIAG: repeated equipment source was not idempotent")
+	if not run.equipment_reward_drawn_paths.is_empty():
+		_fail("ADVENTURE_DIAG: displaying equipment incorrectly removed it from the pool")
+	var claimed_path := str(first[0].get("path", ""))
+	run.mark_equipment_reward_drawn(claimed_path)
+	var second := service.get_equipment_candidates(run, 1002, 3)
+	var second_paths := _candidate_paths(second)
+	if second_paths.has(claimed_path):
+		_fail("ADVENTURE_DIAG: equipment reward returned a previously claimed item: %s" % claimed_path)
+	if run.equipment_reward_drawn_paths != PackedStringArray([claimed_path]):
+		_fail("ADVENTURE_DIAG: viewing later rewards changed claimed equipment history")
+	for card_class in [CardEnums.CardClass.WARRIOR, CardEnums.CardClass.RANGER, CardEnums.CardClass.DRUID]:
+		var represented := false
+		for candidate in second:
+			if int((candidate as Dictionary).get("reward_class", CardEnums.CardClass.NEUTRAL)) == card_class:
+				represented = true
+				break
+		var previous := int(first_misses.get(str(card_class), 0))
+		var actual := int(run.equipment_class_miss_streaks.get(str(card_class), 0))
+		if actual != (0 if represented else previous + 1):
+			_fail("ADVENTURE_DIAG: equipment class pity did not update for class %d" % card_class)
+	var history_before_shop := run.equipment_reward_drawn_paths.duplicate()
+	var shop := AdventureRoomState.new()
+	shop.room_id = "diag_shop"
+	shop.room_type = AdventureEnums.RoomType.SHOP
+	service.get_shop_stock(run, shop)
+	if run.equipment_reward_drawn_paths != history_before_shop:
+		_fail("ADVENTURE_DIAG: shop stock consumed the equipment reward pool")
+	print("ADVENTURE_DIAG: equipment reward pool passed")
+
+
+func _candidate_paths(candidates: Array[Dictionary]) -> PackedStringArray:
+	var result := PackedStringArray()
+	for candidate in candidates:
+		result.append(str(candidate.get("path", "")))
+	return result
 
 
 func _test_reward_card_filtering() -> void:
@@ -197,6 +277,11 @@ func _test_save_round_trip() -> void:
 	run.party[0].strength_bonus += 1
 	run.party[0].agility_bonus += 1
 	run.party[0].intelligence_bonus += 1
+	run.equipment_reward_drawn_paths = PackedStringArray(["res://resources/items/lion_greatsword.tres"])
+	run.equipment_reward_offers = {
+		"diag": [{"path": "res://resources/items/lion_greatsword.tres", "reward_class": CardEnums.CardClass.WARRIOR}],
+	}
+	run.equipment_class_miss_streaks = {str(CardEnums.CardClass.RANGER): 2}
 	run.begin_transaction(AdventureEnums.TransactionType.MOVE, "diag_move", {"roll": 17})
 	var store := AdventureSaveStore.new("adventure_diagnostic")
 	store.delete_save()
@@ -225,8 +310,23 @@ func _test_save_round_trip() -> void:
 		_fail("ADVENTURE_DIAG: floor state changed during round trip")
 	if loaded.pending_transaction == null or loaded.pending_transaction.transaction_id != "diag_move":
 		_fail("ADVENTURE_DIAG: pending transaction changed during round trip")
+	if loaded.equipment_reward_drawn_paths != run.equipment_reward_drawn_paths:
+		_fail("ADVENTURE_DIAG: equipment draw history changed during round trip")
+	if JSON.stringify(loaded.equipment_reward_offers) != JSON.stringify(run.equipment_reward_offers):
+		_fail("ADVENTURE_DIAG: equipment offer cache changed during round trip: %s != %s" % [
+			JSON.stringify(loaded.equipment_reward_offers),
+			JSON.stringify(run.equipment_reward_offers),
+		])
+	if JSON.stringify(loaded.equipment_class_miss_streaks) != JSON.stringify(run.equipment_class_miss_streaks):
+		_fail("ADVENTURE_DIAG: equipment class pity changed during round trip: %s != %s" % [
+			JSON.stringify(loaded.equipment_class_miss_streaks),
+			JSON.stringify(run.equipment_class_miss_streaks),
+		])
 	var v3_payload := store._serialize_run(run)
 	v3_payload["version"] = 3
+	v3_payload.erase("equipment_reward_drawn_paths")
+	v3_payload.erase("equipment_reward_offers")
+	v3_payload.erase("equipment_class_miss_streaks")
 	for hero_data_value in v3_payload.get("party", []):
 		if hero_data_value is Dictionary:
 			var hero_data := hero_data_value as Dictionary
@@ -237,7 +337,10 @@ func _test_save_round_trip() -> void:
 			hero_data.erase("agility_bonus")
 			hero_data.erase("intelligence_bonus")
 	var migrated := store._deserialize_run(v3_payload)
-	if migrated == null or migrated.save_version != PartyRunState.SAVE_VERSION:
+	if migrated == null or migrated.save_version != PartyRunState.SAVE_VERSION \
+			or not migrated.equipment_reward_drawn_paths.is_empty() \
+			or not migrated.equipment_reward_offers.is_empty() \
+			or not migrated.equipment_class_miss_streaks.is_empty():
 		_fail("ADVENTURE_DIAG: v3 save migration failed")
 	print("ADVENTURE_DIAG: save round trip passed")
 
@@ -440,6 +543,8 @@ func _test_battle_reward_selection() -> void:
 	if run.party[0].get_inventory_item_count() != first_inventory_before \
 			or equipment_receiver.get_inventory_item_count() != receiver_inventory_before + 1:
 		_fail("ADVENTURE_DIAG: equipment reward was assigned to the wrong hero")
+	if not run.equipment_reward_drawn_paths.has("res://resources/items/lion_greatsword.tres"):
+		_fail("ADVENTURE_DIAG: claimed equipment was not removed from the reward pool")
 	var map_scene := AdventureMapScene.new()
 	map_scene.session = service
 	map_scene.run_state = run
@@ -645,6 +750,72 @@ func _test_ranger_dig_activity() -> void:
 		_fail("ADVENTURE_DIAG: third ranger dig did not open an equipment choice")
 	service.save_store.delete_save()
 	print("ADVENTURE_DIAG: ranger dig activity passed")
+
+
+func _test_repeatable_druid_infusion() -> void:
+	var heroes: Array[CharacterState] = []
+	for path in [
+		"res://resources/characters/battle_warrior_state.tres",
+		"res://resources/characters/battle_ranger_state.tres",
+		"res://resources/characters/battle_druid_state.tres",
+	]:
+		var template := load(path) as CharacterState
+		var hero := template.duplicate(true) as CharacterState
+		hero.adventure_source_path = path
+		hero.ensure_initialized()
+		heroes.append(hero)
+	var run := PartyRunState.new()
+	run.initialize_adventure(86420, heroes, AdventureDefinition.new())
+	run.floor_state = AdventureMapGenerator.new().generate(run.run_seed, 0, AdventureDefinition.new())
+	var shelter: AdventureRoomState
+	for room in run.floor_state.rooms:
+		if room != null and room.room_type == AdventureEnums.RoomType.SHELTER:
+			shelter = room
+			break
+	if shelter == null:
+		_fail("ADVENTURE_DIAG: shelter missing for druid infusion test")
+		return
+	run.floor_state.current_room_id = shelter.room_id
+	run.camp_points = 10
+	var session := AdventureSessionService.new()
+	session.current_run = run
+	session.save_store = AdventureSaveStore.new("druid_infusion_diagnostic")
+	session.save_store.delete_save()
+	var druid := heroes[2]
+	var first_stack := heroes[0].deck[0]
+	var second_stack := heroes[1].deck[0]
+	heroes[0].card_adventure_modifiers[first_stack.stack_id] = {"diagnostic_bonus": 2}
+	if not session.infuse_card(
+		druid.adventure_character_id,
+		heroes[0].adventure_character_id,
+		first_stack.stack_id,
+		BattleSurfaceState.Element.FIRE
+	):
+		_fail("ADVENTURE_DIAG: first druid infusion failed")
+	if not session.infuse_card(
+		druid.adventure_character_id,
+		heroes[1].adventure_character_id,
+		second_stack.stack_id,
+		BattleSurfaceState.Element.WATER
+	):
+		_fail("ADVENTURE_DIAG: second druid infusion failed")
+	var first_modifier := heroes[0].card_adventure_modifiers.get(first_stack.stack_id, {}) as Dictionary
+	var second_modifier := heroes[1].card_adventure_modifiers.get(second_stack.stack_id, {}) as Dictionary
+	if int(first_modifier.get("element", BattleSurfaceState.Element.NONE)) != BattleSurfaceState.Element.FIRE \
+			or int(first_modifier.get("diagnostic_bonus", 0)) != 2 \
+			or int(second_modifier.get("element", BattleSurfaceState.Element.NONE)) != BattleSurfaceState.Element.WATER \
+			or run.camp_points != 4:
+		_fail("ADVENTURE_DIAG: repeated infusion did not preserve modifiers or costs")
+	var points_before_failure := run.camp_points
+	if session.infuse_card(
+		druid.adventure_character_id,
+		heroes[0].adventure_character_id,
+		first_stack.stack_id,
+		BattleSurfaceState.Element.EARTH
+	) or run.camp_points != points_before_failure:
+		_fail("ADVENTURE_DIAG: duplicate infusion was not rejected atomically")
+	session.save_store.delete_save()
+	print("ADVENTURE_DIAG: repeatable druid infusion passed")
 
 
 func _test_event_choices_and_feedback() -> void:

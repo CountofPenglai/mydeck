@@ -11,7 +11,7 @@ weapon_kind = 6
 [sub_resource type="Resource" id="Beloved"]
 script = ExtResource("1_equipment")
 item_name = "游荡者的挚爱"
-description = "使用战前有序预装特调弹；弹尽后报废。"
+description = "部署或战斗准备阶段必须按顺序装填 3 枚特调弹，否则不能完成战斗准备。每次远程武器打击消耗弹仓首枚弹并结算其载荷；最后一枚弹结算后，本组件永久报废，装备者进入潜行。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 5
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "折弦短刃 / 游荡者的挚爱"
-description = "近战复制预装弹；弹仓耗尽后近战永久强化并进入潜行。"
+description = "近战武器打击造成正数实际伤害后，复制弹仓首枚尚未被复制的原装弹并置于弹仓末尾；每枚原装弹至多复制 1 次，每场战斗至多复制 2 次。远程组件报废后，本组件获得 +3 伤害加值。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 2

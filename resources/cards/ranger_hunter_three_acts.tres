@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "猎手三幕"
-description = "附魔：预选敌人与武器。之后每打出一张牌，依次令目标随机弃1、自动打击目标、进入潜行；第三幕后弃置。"
+description = "附魔：你预选 1 名敌人与 1 种武器模式，并将本牌移入你的附魔区。你此后打出的第 1 张其他牌令目标随机弃置 1 张手牌；第 2 张使你在目标仍存活且位于所选武器范围内时自动打击目标；第 3 张使你进入潜行，然后将本牌移入弃牌堆。本牌最晚在本回合结束时移入弃牌堆。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 3

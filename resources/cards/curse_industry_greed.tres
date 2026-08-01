@@ -11,7 +11,7 @@ curse_id = "greed"
 [resource]
 script = ExtResource("1_card")
 card_name = "贪欲之业"
-description = "磨空牌库，从任意单位弃牌堆选择2+D张加入手牌。"
+description = "你预先从所有单位的弃牌堆和你的牌库选择至多 2+D 张牌；若候选不足则选择全部。你磨空牌库，然后将所选牌从其当前弃牌堆移入你的手牌。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

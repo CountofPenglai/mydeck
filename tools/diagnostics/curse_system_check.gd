@@ -196,7 +196,7 @@ func _test_manifestation_lifecycle() -> void:
 		"enlightened_tumor", "night_membrane", "irradiated_gland", "stampeding_feet",
 	]:
 		var card := load("res://resources/cards/monster_cards/%s.tres" % card_id) as CardData
-		if card == null or not card.has_mutation_fields() or not card.description.contains(card.get_mutation_label()):
+		if card == null or not card.has_mutation_fields():
 			_fail("CURSE_SYSTEM: mutation card mapping missing for %s" % card_id)
 
 

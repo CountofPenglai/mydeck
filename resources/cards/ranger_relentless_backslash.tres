@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1")
 card_name = "回锋不止"
-description = "使用匕首打击。位于弃牌堆时可弃 1 张手牌将其返回手牌。连击：匕首本回合伤害加值 -2，可叠加。"
+description = "你使用当前近战组件进行 1 次武器打击。本牌在弃牌堆时，你可以弃置 1 张手牌，将本牌移回手牌。\n\n连击：近战模式本回合伤害加值 -2（可叠加）。你以 0 AP 进行该近战武器打击。"
 artwork = ExtResource("2")
 rarity = 1
 card_class = 3

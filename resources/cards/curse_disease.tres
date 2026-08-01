@@ -10,7 +10,7 @@ script = ExtResource("3_effect")
 [resource]
 script = ExtResource("1_card")
 card_name = "病症"
-description = "不可打出。回合结束时若仍在手中，自动放逐、失去2生命并获得1咒波。"
+description = "本牌不能打出。持有者的回合结束时，若本牌仍在其手牌中，将本牌移入放逐区，然后持有者失去 2 点生命并获得 1 点咒波。"
 artwork = ExtResource("2_art")
 card_type = 3
 ap_cost = 0

@@ -367,6 +367,7 @@ func claim_pending_event_reward(action_id: String, hero_id: String, candidate_id
 			var result := _grant_event_item(hero, str(candidate.get("path", "")), "event_equipment_%s" % candidate_id)
 			if not bool(result.get("ok", false)):
 				return result
+			current_run.mark_equipment_reward_drawn(str(candidate.get("path", "")))
 			reward["claimed_equipment"] = candidate_id
 			reward["equipment_receiver"] = hero_id
 			_save_and_emit("%s 获得装备「%s」。" % [hero.get_character_name(), str(candidate.get("name", "装备"))])
@@ -462,6 +463,7 @@ func claim_reward_candidate(candidate_id: String, receiver_id: String = "") -> b
 		if stack == null:
 			return false
 		receiver.inventory.append(stack)
+		current_run.mark_equipment_reward_drawn(str(equipment_data.get("path", "")))
 		claimed_equipment.append(candidate_id)
 		_save_and_emit("获得装备 %s。" % str(equipment_data.get("name", "装备")))
 		return true
@@ -709,10 +711,8 @@ func infuse_card(druid_id: String, target_hero_id: String, stack_id: String, ele
 		return false
 	var druid := _get_hero(druid_id)
 	var target := _get_hero(target_hero_id)
-	var flag := "druid_infusion_%s" % druid_id
 	if druid == null or target == null or druid.character_data == null \
 		or druid.character_data.character_class != CardEnums.CardClass.DRUID \
-		or bool(current_run.adventure_flags.get(flag, false)) \
 		or not BattleSurfaceState.BASE_ELEMENTS.has(element):
 		return false
 	var selected_stack: CardStack
@@ -720,10 +720,12 @@ func infuse_card(druid_id: String, target_hero_id: String, stack_id: String, ele
 		if stack != null and stack.stack_id == stack_id and stack.card_data != null and not stack.card_data.is_curse_card():
 			selected_stack = stack
 			break
-	if selected_stack == null or target.card_adventure_modifiers.has(stack_id) or not current_run.spend_camp_points(3):
+	var existing_modifier := target.card_adventure_modifiers.get(stack_id, {}) as Dictionary
+	if selected_stack == null or existing_modifier.has("element") or not current_run.spend_camp_points(3):
 		return false
-	target.card_adventure_modifiers[stack_id] = {"element": element}
-	current_run.adventure_flags[flag] = true
+	var updated_modifier := existing_modifier.duplicate(true)
+	updated_modifier["element"] = element
+	target.card_adventure_modifiers[stack_id] = updated_modifier
 	_save_and_emit("%s 为 %s 注入了%s元素。" % [druid.get_character_name(), selected_stack.card_data.card_name, BattleSurfaceState.label(element)])
 	return true
 
@@ -1592,7 +1594,7 @@ func _event_card_entries() -> Array[Dictionary]:
 		for stack in hero.deck:
 			if stack == null or stack.card_data == null or stack.card_data.is_curse_card():
 				continue
-			cards.append({"id": stack.stack_id, "name": stack.card_data.card_name, "description": stack.card_data.description})
+			cards.append({"id": stack.stack_id, "name": stack.card_data.card_name, "description": RulesTextFormatter.format_card(stack.card_data)})
 		if not cards.is_empty():
 			result.append({"id": hero.adventure_character_id, "name": hero.get_character_name(), "cards": cards, "max_count": mini(2, mini(cards.size(), hero.deck.size() - 1)), "curse_capacity": _get_available_curse_capacity(hero)})
 	return result

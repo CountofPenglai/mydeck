@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "伤铸壁垒"
-description = "获得等同于已损生命值的护甲；你的下回合开始时清空全部护甲。余势：摧毁全部护甲，对范围 1 内所有敌人造成等量伤害。"
+description = "你获得等同于已损生命的护甲；你的下回合开始时清空全部护甲。\n\n余势：你具有至少 1 点护甲。改为清空你的护甲，并以清空数量为基础，对范围 1 内每名敌人与每个战场对象造成 1 段伤害。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

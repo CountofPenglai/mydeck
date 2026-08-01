@@ -180,7 +180,7 @@ func _test_kaleidoscope_resonance(druid: BattleUnitState) -> void:
 	_set_weapon(druid, load("res://resources/items/druid_kaleidoscope.tres") as EquipmentData)
 	druid.set_druid_transformed(true)
 	var choice := CardData.new()
-	choice.description = "选择一项执行。"
+	choice.is_choice_one_card = true
 	choice.resonance_cost = 3
 	if druid.get_card_resonance_cost(choice) != 1:
 		_fail("DRUID_WEAPONS: unifier did not override choice-card resonance to 1")

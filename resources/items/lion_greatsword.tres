@@ -16,7 +16,7 @@ next_card_damage_bonus = 3
 [sub_resource type="Resource" id="LionRoar"]
 script = ExtResource("1_equipment")
 item_name = "翼狮咆哮"
-description = "备战1使下一张牌伤害加值+3；打击后按实际伤害获得护甲并倒转。"
+description = "备战 1：装备者支付 1 点势，使下一张牌获得 +3 伤害加值；该动作可以重复发动。装备者以逆位完成武器打击后，获得等于该次实际伤害的护甲，然后倒转为怒狮大剑。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 7
@@ -33,7 +33,7 @@ activated_effects = [SubResource("Effect_back")]
 [resource]
 script = ExtResource("1_equipment")
 item_name = "怒狮大剑"
-description = "切入后可以倒转；正位打击后获得1点势。"
+description = "每次切入后且尚未使用本装备打击时，装备者可以免费倒转为翼狮咆哮。装备者每次以正位完成武器打击后获得 1 点势。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 5

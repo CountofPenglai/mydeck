@@ -11,7 +11,7 @@ curse_id = "unbound"
 [resource]
 script = ExtResource("1_card")
 card_name = "无羁之业"
-description = "结束当前回合；跳过下一名敌人的抽牌与行动，并获得2+D AP额外行动阶段。"
+description = "本牌结算后结束你的当前回合，跳过下一名敌人的抽牌与行动，然后你获得 1 个额外行动阶段；该阶段的当前 AP 改为 2+D，而非在原 AP 上增加。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

@@ -1,6 +1,8 @@
 extends RefCounted
 class_name ChapterOneEnemyRules
 
+const ABYSS_SHARED_ARMOR := 16
+const ABYSS_SHARED_ARMOR_KEY := "abyss_shared_armor"
 
 
 static func on_battle_started(controller: BattleController) -> void:
@@ -8,8 +10,17 @@ static func on_battle_started(controller: BattleController) -> void:
 		return
 	for unit in controller.enemy_units:
 		if _id(unit) == &"abyss_scale":
-			unit.gain_armor(20, {"controller": controller, "reason": "shared_armor"})
 			unit.enemy_state.runtime_state["abyss_phase"] = 1
+			unit.enemy_state.runtime_state[ABYSS_SHARED_ARMOR_KEY] = ABYSS_SHARED_ARMOR
+			for player in controller.player_units:
+				if player == null or not player.is_alive():
+					continue
+				player.remove_status("abyss_shared_armor")
+				var shared_armor := AbyssSharedArmorStatus.new()
+				shared_armor.boss_unit_id = unit.unit_id
+				shared_armor.stacks = ABYSS_SHARED_ARMOR
+				player.add_status(shared_armor)
+			controller._emit_log("渊鳞展开 %d 点共有护甲，所有冒险者共享该护甲池。" % ABYSS_SHARED_ARMOR)
 
 
 static func on_turn_started(controller: BattleController, unit: BattleUnitState) -> void:
@@ -69,16 +80,37 @@ static func on_card_played(controller: BattleController, unit: BattleUnitState, 
 	controller._emit_log("%s 获得污化%d。" % [unit.get_display_name(), corruption])
 
 
-static func on_armor_changed(controller: BattleController, unit: BattleUnitState, previous: int, current: int) -> void:
-	if controller == null or unit == null or _id(unit) != &"abyss_scale" or previous <= 0 or current > 0:
+static func on_armor_changed(_controller: BattleController, _unit: BattleUnitState, _previous: int, _current: int) -> void:
+	pass
+
+
+static func sync_abyss_shared_armor(controller: BattleController, remaining: int) -> void:
+	if controller == null:
 		return
-	if int(unit.enemy_state.runtime_state.get("abyss_phase", 1)) >= 2:
+	for player in controller.player_units:
+		if player == null:
+			continue
+		var status := player.get_status("abyss_shared_armor")
+		if status == null:
+			continue
+		if remaining <= 0:
+			player.remove_status("abyss_shared_armor")
+		else:
+			status.stacks = remaining
+
+
+static func break_abyss_shared_armor(controller: BattleController, unit: BattleUnitState) -> void:
+	if controller == null or unit == null or unit.enemy_state == null \
+			or _id(unit) != &"abyss_scale" \
+			or int(unit.enemy_state.runtime_state.get("abyss_phase", 1)) >= 2:
 		return
+	unit.enemy_state.runtime_state[ABYSS_SHARED_ARMOR_KEY] = 0
+	sync_abyss_shared_armor(controller, 0)
 	unit.enemy_state.runtime_state["abyss_phase"] = 2
 	unit.enemy_state.active_weapon_index = 1
 	for cell in controller.map_data.get_all_cells():
 		controller.surface_state.set_terrain(cell, BattleSurfaceState.Terrain.ABYSS)
-	controller._emit_log("渊鳞击穿共有护甲，战场坠入深渊。")
+	controller._emit_log("渊鳞的共有护甲被击穿，战场坠入深渊。")
 	controller.state_changed.emit()
 
 

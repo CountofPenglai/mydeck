@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "百折不饶"
-description = "从牌库中选择一张牌置入弃牌堆。余势：从弃牌堆放逐 3 张牌，进行一次打击，将你所有被放逐的牌洗回牌库，每洗回一张，本次打击获得 +2 伤害加值。"
+description = "你从牌库选择 1 张牌置入弃牌堆。\n\n余势：从弃牌堆放逐 3 张牌。改为将你的放逐区中的所有牌洗入牌库，然后进行 1 次武器打击；每洗入 1 张牌，本次打击获得 +2 伤害加值。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 1

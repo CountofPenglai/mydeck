@@ -11,7 +11,7 @@ weapon_kind = 7
 [sub_resource type="Resource" id="WindHunter"]
 script = ExtResource("1_equipment")
 item_name = "乘风猎手"
-description = "按六边风向修正远程范围与伤害，并可发射风钉弹。"
+description = "沿本回合风向进行远程武器打击时，范围 +1 且获得 +1 伤害加值；其他方向范围 -1 且伤害加值 -1，范围最低为 1。若已预备风钉弹，则下一次顺风远程打击消耗它并使存活目标定身，直到目标下次回合结束。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "御风短刃 / 乘风猎手"
-description = "近战强化移动，移动后定风，以顺风远射和风钉控制敌人。"
+description = "完成近战武器打击后，本回合下一次主动移动的移动距离 +2。完成该次移动后，装备者可以在本回合选择一个六边方向作为风向；风向在装备者下次回合开始时清除。每场战斗可以预备 1 次风钉弹。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4

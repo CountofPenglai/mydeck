@@ -11,10 +11,11 @@ script = ExtResource("2")
 script = ExtResource("1")
 base_damage = 3
 equip_category = 1
+subcategories = PackedStringArray("druid_weapon", "逆位", "野兽")
 passive_effects = Array[Resource]([SubResource("Effect")])
 trigger_effects = Array[Resource]([SubResource("Effect")])
 item_name = "巨熊"
-description = "每回合首次武器打击按护甲获得伤害加值，打击后按手牌数获得护甲。"
+description = "装备者每回合首次完成武器打击时，获得等于当前护甲层数的伤害加值；打击后获得等于当前手牌数的护甲。"
 icon = ExtResource("3")
 
 [resource]
@@ -22,8 +23,10 @@ script = ExtResource("1")
 base_damage = 4
 attack_range = 2
 back_face = SubResource("Bear")
+allowed_classes = PackedInt32Array(4)
+subcategories = PackedStringArray("druid_weapon", "德鲁伊武器", "T0")
 passive_effects = Array[Resource]([SubResource("Effect")])
 trigger_effects = Array[Resource]([SubResource("Effect")])
 item_name = "蛮力魔杖 / 巨熊"
-description = "正位强化贴身力量打击，逆位以护甲和手牌维持攻防。"
+description = "装备者每回合首次对距离 1 的目标完成武器打击时，获得等于自身力量的伤害加值。"
 icon = ExtResource("3")

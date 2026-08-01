@@ -11,7 +11,7 @@ weapon_kind = 4
 [sub_resource type="Resource" id="ForestHunter"]
 script = ExtResource("1_equipment")
 item_name = "树海猎手"
-description = "潜行抵消敌方行动后自动反击合法来源。"
+description = "敌方单位的行动取消装备者的潜行后，若该敌人仍存活且位于本组件范围内，装备者自动使用本组件对其完成 1 次武器打击；来源无效、已死亡、属于友方或超出范围时不反击。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 4
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "叶影猎刀 / 树海猎手"
-description = "强化近战主动破隐，并在防御破隐后远程反击。"
+description = "装备者主动退出潜行并使用本组件打击时，潜行伤害倍率至少为 x2。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 3

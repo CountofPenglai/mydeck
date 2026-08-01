@@ -11,7 +11,7 @@ curse_id = "universal_love"
 [resource]
 script = ExtResource("1_card")
 card_name = "兼爱之业"
-description = "弃置其他手牌，其他队友合计抽队友数+D张，随后各获得2D护甲。"
+description = "你弃置所有其他手牌。令其他存活队友合计抽取队友数量 +D 张牌，每次由当前手牌最少的队友抽 1 张；然后每名其他队友获得 2D 护甲。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

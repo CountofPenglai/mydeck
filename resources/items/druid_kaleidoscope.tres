@@ -8,7 +8,7 @@ weapon_kind = 7
 [sub_resource type="Resource" id="Unifier"]
 script = ExtResource("1")
 item_name = "万元归一者"
-description = "飞行并锁定预设基础元素，武器打击携带该元素。"
+description = "装备者获得飞行。装备者可以循环切换预设基础元素，武器打击携带当前预设元素。需要支付法力的共鸣牌费用改为 1；本回合第一次支付法力后，若此前未获得法力且尚未返还法力，则获得 1 点临时法力。"
 icon = ExtResource("3")
 base_damage = 1
 attack_range = 5
@@ -25,7 +25,7 @@ activated_effects = [SubResource("Effect")]
 [resource]
 script = ExtResource("1")
 item_name = "神代万花筒 / 万元归一者"
-description = "正位从随机现象中获取收益并预设元素，逆位归一元素规则。"
+description = "装备者每回合开始或切入时随机获得 2 个不同的万象选项，本回合可以发动其中 1 项：借域将最近友方作为双方本回合的额外范围原点；异职发现将 1 张临时“战斗猛击”加入手牌；倒错使本回合武器的基础伤害与范围互换，并使第一张单目标牌复制至最近的另一个合法目标，其复制伤害改为异常与咒波；硬币预押允许选择预押 1 至 3 次，每次成功抽 1 张牌并储存 1 个随机基础元素，任一次失败则当前 AP 变为 0；命运置顶将牌库底牌移至牌库顶。储存的元素由后续武器打击依次消耗。"
 icon = ExtResource("3")
 base_damage = 5
 attack_range = 1

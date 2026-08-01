@@ -11,7 +11,7 @@ curse_id = "unrest"
 [resource]
 script = ExtResource("1_card")
 card_name = "不休之业"
-description = "生命降至1，本回合致命伤害只能降至1，并获得2+D AP、抽D。"
+description = "将你的当前生命设为 1。直到本回合结束，对你的致命伤害或生命损失最低将生命降至 1。你获得 2+D AP，然后抽 D 张牌。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

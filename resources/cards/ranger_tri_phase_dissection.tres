@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card")
 card_name = "三相解剖"
-description = "对同一目标进行 3 次匕首打击，每次将匕首基础伤害替换为 1；每次正数生命伤害均可独立采集。连击条件：本回合实际加入库存的元素至少 3 枚。"
+description = "你对同一目标依次进行至多 3 次近战武器打击；每次打击将武器基础伤害改为 1，目标死亡后停止后续打击。每次造成正数生命伤害时，分别按通用规则采集目标格。\n\n连击：本回合实际加入库存的元素至少 3 枚。你以 0 AP 结算上述效果。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 3

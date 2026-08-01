@@ -11,7 +11,7 @@ curse_id = "counterfeit"
 [resource]
 script = ExtResource("1_card")
 card_name = "赝作之业"
-description = "加深另一张诅咒，复制一张非诅咒手牌；副本费用降低D且临时放逐。"
+description = "你选择另一张深度低于 3 的诅咒和 1 张非诅咒手牌。将所选诅咒加深 1，然后复制所选手牌并将副本加入你的手牌；副本 AP 消耗 -D，最低为 0，打出后或本回合结束时放逐。"
 artwork = ExtResource("2_art")
 rarity = 2
 card_class = 0

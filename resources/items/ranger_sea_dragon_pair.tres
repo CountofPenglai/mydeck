@@ -11,7 +11,7 @@ weapon_kind = 3
 [sub_resource type="Resource" id="DragonCrossbow"]
 script = ExtResource("1_equipment")
 item_name = "海龙骨重弩"
-description = "高伤远程组件，打击后冷却至下个自身回合结束。"
+description = "完成远程武器打击后，本组件进入冷却，直到装备者的下一个自身回合结束后才能再次使用。装备者进入潜行时立即结束该冷却。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 7
@@ -27,7 +27,7 @@ subcategories = PackedStringArray("远程", "武器", "模式组件")
 [resource]
 script = ExtResource("1_equipment")
 item_name = "潜鳞猎刀 / 海龙骨重弩"
-description = "以潜行和连击重装高伤重弩。"
+description = "本回合连击首次达到 4 时，若该连击牌刚以本组件完成近战武器打击且重弩仍在冷却，装备者进入潜行并立即结束重弩冷却；每回合限触发 1 次。"
 icon = ExtResource("3_icon")
 max_stack = 1
 base_damage = 2

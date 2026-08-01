@@ -29,13 +29,21 @@ func create_battle_reward(run_state: PartyRunState, room: AdventureRoomState, en
 		reward["provisions"] = 1 if rng.randf() < 0.2 else 0
 	elif room.room_type == AdventureEnums.RoomType.ELITE_BATTLE:
 		_add_elite_card_candidates(reward, run_state.get_active_party(), rng, 1)
-		reward["equipment"] = _equipment_candidates(run_state, rng, 3)
+		reward["equipment"] = _equipment_candidates(
+			run_state, rng, 3, -1, "battle:%s" % room.room_id
+		)
 		reward["max_equipment"] = 1
 		reward["ritual_points"] = 1 if rng.randf() < 0.25 else 0
 	elif room.room_type == AdventureEnums.RoomType.BOSS_BATTLE:
 		_add_elite_card_candidates(reward, run_state.get_active_party(), rng, 2)
 		if run_state.floor_index < run_state.floor_count - 1:
-			reward["equipment"] = _equipment_candidates(run_state, rng, 3, run_state.floor_index + 1)
+			reward["equipment"] = _equipment_candidates(
+				run_state,
+				rng,
+				3,
+				run_state.floor_index + 1,
+				"battle:%s" % room.room_id
+			)
 			reward["max_equipment"] = 1
 			reward["ritual_points"] = 1
 			reward["camp_supplies"] = 1
@@ -60,7 +68,7 @@ func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array
 		for index in range(mini(2, candidates.size())):
 			var card := candidates[index]
 			stock.append(_stock_entry("card", card.resource_path, card.card_name, _card_price(card.rarity), hero.adventure_character_id))
-	for equipment in _pick_equipment(run_state, rng, 2):
+	for equipment in _pick_shop_equipment(run_state, rng, 2):
 		stock.append(_stock_entry("equipment", equipment.resource_path, equipment.item_name, _equipment_price(equipment.rarity)))
 	var consumables: Array[ConsumableData] = _consumable_pool.duplicate()
 	_shuffle(consumables, rng)
@@ -87,7 +95,7 @@ func get_wilderness_merchant_stock(run_state: PartyRunState, room: AdventureRoom
 		for index in range(3):
 			var consumable: ConsumableData = consumables[index % consumables.size()]
 			stock.append(_stock_entry("consumable", consumable.resource_path, consumable.item_name, 12))
-	for equipment in _pick_equipment(run_state, rng, 2):
+	for equipment in _pick_shop_equipment(run_state, rng, 2):
 		stock.append(_stock_entry("equipment", equipment.resource_path, equipment.item_name, _equipment_price(equipment.rarity)))
 	stock.append(_stock_entry("camp_supply", "", "扎营物资", 15))
 	room.runtime_data["shop_stock"] = stock.duplicate(true)
@@ -151,7 +159,7 @@ func get_consumable_candidates(run_seed: int, salt: int, count: int = 3) -> Arra
 	var result: Array[Dictionary] = []
 	for index in range(mini(maxi(0, count), candidates.size())):
 		var item: ConsumableData = candidates[index]
-		result.append({"id": "consumable_%02d" % index, "path": item.resource_path, "name": item.item_name, "description": item.description})
+		result.append({"id": "consumable_%02d" % index, "path": item.resource_path, "name": item.item_name, "description": RulesTextFormatter.format_item(item)})
 	return result
 
 
@@ -173,7 +181,7 @@ func get_card_candidates(card_class: int, rarity: int, run_seed: int, salt: int,
 			"id": "card_%02d" % index,
 			"path": card.resource_path,
 			"name": card.card_name,
-			"description": card.description,
+			"description": RulesTextFormatter.format_card(card),
 			"ap": card.ap_cost,
 			"rarity": card.rarity,
 		})
@@ -184,7 +192,13 @@ func get_equipment_candidates(run_state: PartyRunState, salt: int, count: int = 
 	_ensure_catalog()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "event_equipment", salt)
-	return _equipment_candidates(run_state, rng, count, floor_override)
+	return _equipment_candidates(
+		run_state,
+		rng,
+		count,
+		floor_override,
+		"event:%d:%d" % [salt, floor_override]
+	)
 
 
 func _add_normal_card_candidates(reward: Dictionary, party: Array[CharacterState], tier: int, rng: RandomNumberGenerator) -> void:
@@ -229,34 +243,162 @@ func _add_card_candidate(reward: Dictionary, hero: CharacterState, rarity: int, 
 	})
 
 
-func _equipment_candidates(run_state: PartyRunState, rng: RandomNumberGenerator, count: int, floor_override: int = -1) -> Array[Dictionary]:
-	var equipment := _pick_equipment(run_state, rng, count, floor_override)
+func _equipment_candidates(
+	run_state: PartyRunState,
+	rng: RandomNumberGenerator,
+	count: int,
+	floor_override: int = -1,
+	source_id: String = ""
+) -> Array[Dictionary]:
+	var resolved_source := source_id if not source_id.is_empty() else "anonymous:%d" % rng.seed
+	if run_state.equipment_reward_offers.has(resolved_source):
+		var cached = run_state.equipment_reward_offers.get(resolved_source, [])
+		return _equipment_candidate_entries(cached as Array, resolved_source) if cached is Array else []
+	var equipment := _pick_reward_equipment(run_state, rng, count, floor_override)
+	var offer_records: Array[Dictionary] = []
+	for entry in equipment:
+		var item := entry.get("equipment") as EquipmentData
+		if item == null:
+			continue
+		offer_records.append({
+			"path": item.resource_path,
+			"reward_class": int(entry.get("reward_class", CardEnums.CardClass.NEUTRAL)),
+		})
+	run_state.equipment_reward_offers[resolved_source] = offer_records.duplicate(true)
+	return _equipment_candidate_entries(offer_records, resolved_source)
+
+
+func _equipment_candidate_entries(offer_records: Array, source_id: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	for index in range(equipment.size()):
+	for record_value in offer_records:
+		if not (record_value is Dictionary):
+			continue
+		var record := record_value as Dictionary
+		var equipment := load(str(record.get("path", ""))) as EquipmentData
+		if equipment == null:
+			continue
+		var index := result.size()
 		result.append({
-			"id": "equipment_%03d" % index,
-			"path": equipment[index].resource_path,
-			"name": equipment[index].item_name,
-			"rarity": equipment[index].rarity,
+			"id": "equipment_%s_%03d" % [abs(source_id.hash()), index],
+			"path": equipment.resource_path,
+			"name": equipment.item_name,
+			"rarity": equipment.rarity,
+			"reward_class": int(record.get("reward_class", CardEnums.CardClass.NEUTRAL)),
 		})
 	return result
 
 
-func _pick_equipment(run_state: PartyRunState, rng: RandomNumberGenerator, count: int, floor_override: int = -1) -> Array[EquipmentData]:
+func _pick_reward_equipment(
+	run_state: PartyRunState,
+	rng: RandomNumberGenerator,
+	count: int,
+	floor_override: int = -1
+) -> Array[Dictionary]:
+	var floor_index := run_state.floor_index if floor_override < 0 else floor_override
+	var target_rarity := CardEnums.Rarity.RARE if floor_index <= 0 else CardEnums.Rarity.EPIC
+	var party_classes := _get_party_classes(run_state)
+	var class_buckets: Dictionary = {}
+	for card_class in party_classes:
+		class_buckets[int(card_class)] = []
+	for equipment in _equipment_pool:
+		if equipment.rarity != target_rarity \
+				or run_state.equipment_reward_drawn_paths.has(equipment.resource_path):
+			continue
+		for card_class in party_classes:
+			if equipment.is_available_to_class(int(card_class)):
+				(class_buckets[int(card_class)] as Array).append(equipment)
+
+	var eligible_classes: Array[int] = []
+	for card_class in party_classes:
+		if not (class_buckets[int(card_class)] as Array).is_empty():
+			eligible_classes.append(int(card_class))
+	var appeared: Dictionary = {}
+	var selected_paths: Dictionary = {}
+	var result: Array[Dictionary] = []
+	for _index in range(maxi(0, count)):
+		var available_classes: Array[int] = []
+		for card_class in eligible_classes:
+			if _bucket_has_unselected(class_buckets[card_class] as Array, selected_paths):
+				available_classes.append(card_class)
+		if available_classes.is_empty():
+			break
+		var selected_class := _pick_weighted_equipment_class(
+			available_classes, run_state.equipment_class_miss_streaks, rng
+		)
+		var available_items: Array[EquipmentData] = []
+		for item in class_buckets[selected_class] as Array:
+			if item is EquipmentData and not selected_paths.has((item as EquipmentData).resource_path):
+				available_items.append(item as EquipmentData)
+		if available_items.is_empty():
+			continue
+		var selected := available_items[rng.randi_range(0, available_items.size() - 1)]
+		selected_paths[selected.resource_path] = true
+		appeared[selected_class] = true
+		result.append({"equipment": selected, "reward_class": selected_class})
+
+	for card_class in eligible_classes:
+		var key := str(card_class)
+		if appeared.has(card_class):
+			run_state.equipment_class_miss_streaks[key] = 0
+		else:
+			run_state.equipment_class_miss_streaks[key] = int(
+				run_state.equipment_class_miss_streaks.get(key, 0)
+			) + 1
+	return result
+
+
+func _pick_shop_equipment(
+	run_state: PartyRunState,
+	rng: RandomNumberGenerator,
+	count: int,
+	floor_override: int = -1
+) -> Array[EquipmentData]:
 	var floor_index := run_state.floor_index if floor_override < 0 else floor_override
 	var target_rarity := CardEnums.Rarity.RARE if floor_index <= 0 else CardEnums.Rarity.EPIC
 	var candidates: Array[EquipmentData] = []
 	for equipment in _equipment_pool:
 		if equipment.rarity != target_rarity:
 			continue
-		for hero in run_state.party:
-			if hero != null and hero.character_data != null and equipment.is_available_to_class(hero.character_data.character_class):
+		for card_class in _get_party_classes(run_state):
+			if equipment.is_available_to_class(int(card_class)):
 				candidates.append(equipment)
 				break
-	if candidates.is_empty():
-		candidates = _equipment_pool.duplicate()
 	_shuffle(candidates, rng)
-	return candidates.slice(0, mini(count, candidates.size())) as Array[EquipmentData]
+	return candidates.slice(0, mini(maxi(0, count), candidates.size())) as Array[EquipmentData]
+
+
+func _get_party_classes(run_state: PartyRunState) -> Array[int]:
+	var result: Array[int] = []
+	for hero in run_state.party:
+		if hero == null or hero.character_data == null:
+			continue
+		var card_class := hero.character_data.character_class
+		if not result.has(card_class):
+			result.append(card_class)
+	return result
+
+
+func _bucket_has_unselected(bucket: Array, selected_paths: Dictionary) -> bool:
+	for value in bucket:
+		if value is EquipmentData and not selected_paths.has((value as EquipmentData).resource_path):
+			return true
+	return false
+
+
+func _pick_weighted_equipment_class(
+	classes: Array[int],
+	miss_streaks: Dictionary,
+	rng: RandomNumberGenerator
+) -> int:
+	var total_weight := 0.0
+	for card_class in classes:
+		total_weight += 1.0 + float(maxi(0, int(miss_streaks.get(str(card_class), 0))))
+	var roll := rng.randf() * total_weight
+	for card_class in classes:
+		roll -= 1.0 + float(maxi(0, int(miss_streaks.get(str(card_class), 0))))
+		if roll <= 0.0:
+			return card_class
+	return classes.back()
 
 
 func _cards_for_class(card_class: int) -> Array[CardData]:

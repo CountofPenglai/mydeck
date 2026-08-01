@@ -10,7 +10,7 @@ script = ExtResource("2")
 [resource]
 script = ExtResource("1")
 card_name = "逼近啃咬"
-description = "移动至多1格；进入武器范围后打击。"
+description = "使用者向目标移动至多 1 格。移动后，若目标仍存活且位于使用者的有效攻击范围内，使用者对其进行一次武器打击；否则不进行打击。"
 artwork = ExtResource("3")
 reward_eligible = false
 card_type = 0

@@ -36,6 +36,7 @@ func _ready() -> void:
 			_fail("INVENTORY_UI_DIAG: equipment detail view omitted combat fields")
 	if not map_scene._camp_activity_description("ranger_dig").contains("第三次"):
 		_fail("INVENTORY_UI_DIAG: camp activity description is incomplete")
+	_test_repeatable_infusion_ui(map_scene)
 	if map_scene.enemy_health_spin_box == null:
 		_fail("INVENTORY_UI_DIAG: enemy health test control missing")
 	elif int(map_scene.enemy_health_spin_box.value) != map_scene.run_state.enemy_health_percent \
@@ -44,6 +45,49 @@ func _ready() -> void:
 		_fail("INVENTORY_UI_DIAG: enemy health test control is out of sync")
 	print("INVENTORY_UI_DIAG: completed")
 	get_tree().quit(exit_code)
+
+
+func _test_repeatable_infusion_ui(map_scene: AdventureMapScene) -> void:
+	var shelter: AdventureRoomState
+	for room in map_scene.run_state.floor_state.rooms:
+		if room != null and room.room_type == AdventureEnums.RoomType.SHELTER:
+			shelter = room
+			break
+	var druid: CharacterState
+	var first_target: CharacterState
+	var second_target: CharacterState
+	for hero in map_scene.run_state.party:
+		if hero == null or hero.character_data == null:
+			continue
+		if hero.character_data.character_class == CardEnums.CardClass.DRUID:
+			druid = hero
+		elif first_target == null:
+			first_target = hero
+		else:
+			second_target = hero
+	if shelter == null or druid == null or first_target == null or second_target == null:
+		_fail("INVENTORY_UI_DIAG: infusion UI setup is incomplete")
+		return
+	map_scene.run_state.floor_state.current_room_id = shelter.room_id
+	map_scene.run_state.camp_points = 10
+	var first_stack := first_target.deck[0]
+	var second_stack := second_target.deck[0]
+	map_scene._show_infusion_cards()
+	await get_tree().process_frame
+	if not map_scene.modal_layer.visible or _find_button(map_scene.modal_body, first_stack.card_data.card_name) == null:
+		_fail("INVENTORY_UI_DIAG: first infusion chooser did not expose a valid card")
+	map_scene._apply_infusion(
+		druid.adventure_character_id,
+		first_target.adventure_character_id,
+		first_stack.stack_id,
+		BattleSurfaceState.Element.FIRE
+	)
+	await get_tree().process_frame
+	map_scene._show_infusion_cards()
+	await get_tree().process_frame
+	if not map_scene.modal_layer.visible or _find_button(map_scene.modal_body, second_stack.card_data.card_name) == null:
+		_fail("INVENTORY_UI_DIAG: infusion chooser became unusable after a successful infusion")
+	map_scene._hide_modal()
 
 
 func _fail(message: String) -> void:

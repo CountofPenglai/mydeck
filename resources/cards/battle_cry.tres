@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "临阵怒喝"
-description = "磨 2 张牌，给予武器范围内一个敌人眩晕 3，然后自动切换武器。没有可切换武器时，仍结算磨牌与眩晕。"
+description = "你磨 2 张牌，给予武器范围内 1 名敌人 3 层眩晕，然后自动切换武器。若目标在眩晕结算前死亡，不施加眩晕；若没有可切换武器，仍结算其他效果。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

@@ -14,5 +14,5 @@ attack_range = 3
 equip_category = 1
 trigger_effects = Array[Resource]([SubResource("Effect_mountain")])
 item_name = "砍山刀"
-description = "回合开始时支付1点势，否则尝试切换武器。"
+description = "装备者回合开始时，若至少有 1 点势，则自动支付 1 点势；否则自动尝试切换为背包中的第一件可用武器。背包中没有可用武器时，继续使用本装备。"
 icon = ExtResource("3_icon")

@@ -1,7 +1,6 @@
 extends CardEffect
 class_name RelentlessCardEffect
 
-@export_range(0, 99, 1) var banish_count: int = 3
 @export_range(0, 99, 1) var damage_bonus_per_returned_card: int = 1
 
 
@@ -24,6 +23,29 @@ func requires_draw_pile_choice(context: Dictionary = {}) -> bool:
 	return int(context.get("play_mode", CardEnums.CardPlayMode.NORMAL)) == CardEnums.CardPlayMode.NORMAL
 
 
+func requires_ordered_discard_choice(context: Dictionary = {}) -> bool:
+	return int(context.get("play_mode", CardEnums.CardPlayMode.NORMAL)) == CardEnums.CardPlayMode.MOMENTUM \
+		and not context.has("ordered_discard_cards")
+
+
+func get_ordered_discard_choice_cards(context: Dictionary = {}) -> Array[CardData]:
+	var user: BattleUnitState = context.get("user") as BattleUnitState
+	var card: CardData = context.get("card") as CardData
+	return user.get_discard_cards_excluding(card) if user != null else []
+
+
+func get_ordered_discard_choice_max_count(_context: Dictionary = {}) -> int:
+	return _get_banish_count(_context)
+
+
+func get_ordered_discard_choice_min_count(_context: Dictionary = {}) -> int:
+	return _get_banish_count(_context)
+
+
+func get_ordered_discard_choice_prompt(_context: Dictionary = {}) -> String:
+	return "选择 %d 张要放逐的弃牌堆牌" % _get_banish_count(_context)
+
+
 func can_play(context: Dictionary = {}) -> bool:
 	var play_mode := int(context.get("play_mode", CardEnums.CardPlayMode.NORMAL))
 	var user: BattleUnitState = context.get("user") as BattleUnitState
@@ -33,7 +55,7 @@ func can_play(context: Dictionary = {}) -> bool:
 		return not user.draw_pile.is_empty()
 	if play_mode == CardEnums.CardPlayMode.MOMENTUM:
 		var card: CardData = context.get("card") as CardData
-		return user.count_discard_cards_excluding(card) >= banish_count
+		return user.count_discard_cards_excluding(card) >= _get_banish_count(context)
 
 	return true
 
@@ -92,3 +114,12 @@ func _play_momentum(context: Dictionary, controller: BattleController, user: Bat
 		"百折不饶",
 		str(context.get("equipment_slot", ""))
 	)
+
+
+func _get_banish_count(context: Dictionary) -> int:
+	var card: CardData = context.get("card") as CardData
+	if card != null:
+		for condition in card.momentum_conditions:
+			if condition is BanishDiscardCondition:
+				return (condition as BanishDiscardCondition).banish_count
+	return 3

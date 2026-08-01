@@ -79,7 +79,7 @@ func _test_wolf_cycle(controller: BattleController, ranger: BattleUnitState, ene
 		_fail("RANGER_WEAPONS: tracking bow move bonus missing")
 	ranger.notify_movement_completed({"controller": controller, "forced": false})
 	var profile := ranger.build_strike_profile_object("weapon", {"controller": controller, "target": enemy})
-	if profile.primary_damage_bonus < ranger.get_agility() + 1:
+	if profile.primary_damage_bonus < CharacterAttributeRules.get_damage_bonus(ranger.get_agility()) + 1:
 		_fail("RANGER_WEAPONS: wolf knife melee bonus missing")
 	controller.perform_strike(ranger, enemy, null, "wolf melee", "weapon")
 	if ranger.get_equipment_runtime_state(weapon).get_flag("next_melee_bonus"):

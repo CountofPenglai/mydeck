@@ -18,6 +18,7 @@ func _ready() -> void:
 	_prepare_combat(controller, warrior, enemy)
 	_test_resources_and_runtime_identity(warrior)
 	_test_hidden_blade_again(controller, warrior, enemy)
+	_test_relentless_selection(controller, warrior, enemy)
 	_test_battle_cry(controller, warrior, enemy)
 	_test_wound_forged_bulwark(controller, warrior, enemy)
 	_test_attack_defense_dance(controller, warrior, enemy)
@@ -90,12 +91,80 @@ func _test_hidden_blade_again(controller: BattleController, warrior: BattleUnitS
 	_reset_enemy(enemy)
 	var momentum := template.duplicate() as CardData
 	var momentum_filler := filler_template.duplicate() as CardData
-	warrior.discard_pile.assign([momentum_filler, momentum])
+	var unselected_filler := filler_template.duplicate() as CardData
+	warrior.discard_pile.assign([unselected_filler, momentum_filler, momentum])
 	warrior.current_ap = 0
-	if not controller.play_card(warrior, momentum, [enemy], {}, CardEnums.CardPlayMode.MOMENTUM):
+	var momentum_context := {
+		"controller": controller,
+		"user": warrior,
+		"card": momentum,
+		"play_mode": CardEnums.CardPlayMode.MOMENTUM,
+	}
+	if not momentum.requires_ordered_discard_choice(momentum_context):
+		_fail("WARRIOR_MECH: hidden blade momentum did not request a discard-pile choice")
+	if not controller.play_card(
+		warrior,
+		momentum,
+		[enemy],
+		{"ordered_discard_cards": [momentum_filler]},
+		CardEnums.CardPlayMode.MOMENTUM
+	):
 		_fail("WARRIOR_MECH: hidden blade momentum play failed")
 	if warrior.exiled_pile.find(momentum) < 0 or warrior.exiled_pile.find(momentum_filler) < 0:
 		_fail("WARRIOR_MECH: hidden blade momentum did not banish both cards")
+	if warrior.discard_pile.find(unselected_filler) < 0:
+		_fail("WARRIOR_MECH: hidden blade momentum banished an unselected discard card")
+
+
+func _test_relentless_selection(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
+	var template := load("res://resources/cards/relentless.tres") as CardData
+	var filler_template := load("res://resources/cards/battle_slam.tres") as CardData
+	if template == null or filler_template == null:
+		_fail("WARRIOR_MECH: relentless selection resources missing")
+		return
+	_reset_card_zones(warrior)
+	_reset_enemy(enemy)
+	var relentless := template.duplicate(true) as CardData
+	var unselected := filler_template.duplicate() as CardData
+	var selected: Array[CardData] = []
+	for _index in range(3):
+		selected.append(filler_template.duplicate() as CardData)
+	warrior.discard_pile.assign([unselected, selected[0], selected[1], selected[2], relentless])
+	warrior.current_ap = 0
+	var choice_context := {
+		"controller": controller,
+		"user": warrior,
+		"card": relentless,
+		"play_mode": CardEnums.CardPlayMode.MOMENTUM,
+	}
+	if not relentless.requires_ordered_discard_choice(choice_context):
+		_fail("WARRIOR_MECH: relentless momentum did not request discard-pile choices")
+	if relentless.get_ordered_discard_choice_min_count(choice_context) != 3 \
+			or relentless.get_ordered_discard_choice_max_count(choice_context) != 3:
+		_fail("WARRIOR_MECH: relentless momentum selection count is not exactly three")
+	var condition := relentless.momentum_conditions[0] as BanishDiscardCondition
+	var invalid_context := choice_context.duplicate()
+	invalid_context["ordered_discard_cards"] = [selected[0], selected[1], selected[2], unselected]
+	if condition == null or condition.can_pay(invalid_context):
+		_fail("WARRIOR_MECH: relentless accepted too many selected discard cards")
+	invalid_context["ordered_discard_cards"] = [selected[0], selected[0], selected[1]]
+	if condition != null and condition.can_pay(invalid_context):
+		_fail("WARRIOR_MECH: relentless accepted duplicate selected discard cards")
+	if controller.play_card(warrior, relentless, [enemy], {}, CardEnums.CardPlayMode.MOMENTUM):
+		_fail("WARRIOR_MECH: relentless paid a player choice automatically")
+	if not controller.play_card(
+		warrior,
+		relentless,
+		[enemy],
+		{"ordered_discard_cards": selected},
+		CardEnums.CardPlayMode.MOMENTUM
+	):
+		_fail("WARRIOR_MECH: relentless momentum play failed with valid selections")
+	if warrior.discard_pile.find(unselected) < 0:
+		_fail("WARRIOR_MECH: relentless banished an unselected discard card")
+	for selected_card in selected:
+		if warrior.discard_pile.find(selected_card) >= 0:
+			_fail("WARRIOR_MECH: relentless left a selected card in discard")
 
 
 func _test_battle_cry(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
@@ -105,6 +174,7 @@ func _test_battle_cry(controller: BattleController, warrior: BattleUnitState, en
 		_fail("WARRIOR_MECH: battle cry resources missing")
 		return
 	_reset_card_zones(warrior)
+	_ensure_spare_weapon(warrior)
 	enemy.statuses.clear()
 	warrior.hand.append(card)
 	warrior.draw_pile.assign([filler.duplicate() as CardData, filler.duplicate() as CardData])
@@ -154,6 +224,7 @@ func _test_attack_defense_dance(controller: BattleController, warrior: BattleUni
 		_fail("WARRIOR_MECH: dance resource missing")
 		return
 	_reset_card_zones(warrior)
+	_ensure_spare_weapon(warrior)
 	warrior.clear_armor({"controller": controller})
 	_reset_enemy(enemy)
 	enemy.set_hex_cell(Vector2i(warrior.cell.x + 1, warrior.cell.y), controller.map_data)
@@ -217,6 +288,14 @@ func _reset_card_zones(unit: BattleUnitState) -> void:
 func _reset_enemy(enemy: BattleUnitState) -> void:
 	enemy.set_current_health(enemy.get_max_health())
 	enemy.statuses.clear()
+
+
+func _ensure_spare_weapon(warrior: BattleUnitState) -> void:
+	if warrior == null or warrior.character_state == null or not warrior.character_state.inventory.is_empty():
+		return
+	var spare := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
+	if spare != null and spare != warrior.character_state.weapon_equipment:
+		CharacterEquipmentModel.add_inventory_item(warrior.character_state, spare)
 
 
 func _find_warrior(controller: BattleController) -> BattleUnitState:
