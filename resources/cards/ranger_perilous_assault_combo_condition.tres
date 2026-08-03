@@ -1,7 +1,8 @@
-[gd_resource type="Resource" script_class="RangerStunComboCondition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="PayAPOrDiscardHandCondition" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/cards/conditions/ranger_stun_combo_condition.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/cards/conditions/pay_ap_or_discard_hand_condition.gd" id="1_condition"]
 
 [resource]
-script = ExtResource("1")
-stun_stacks = 1
+script = ExtResource("1_condition")
+ap_amount = 1
+discard_count = 1

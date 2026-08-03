@@ -7,3 +7,4 @@ script = ExtResource("1_effect")
 uses_strike = true
 shield_tag = "盾牌"
 stun_stacks = 2
+two_handed_damage_bonus = 2

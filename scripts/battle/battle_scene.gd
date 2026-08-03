@@ -530,6 +530,10 @@ func _select_discard_card(card: CardData) -> void:
 		_show_ordered_discard_choice(card, play_mode)
 		_refresh()
 		return
+	if _needs_inventory_weapon_choice(card, play_mode):
+		_show_inventory_weapon_choice(card, play_mode)
+		_refresh()
+		return
 
 	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card, "play_mode": play_mode}) and _needs_weapon_choice(controller.current_unit):
 		_show_weapon_choice(InputMode.CARD_TARGET, card, play_mode)
@@ -608,6 +612,10 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 		return
 	if _needs_ordered_discard_choice(card, play_mode):
 		_show_ordered_discard_choice(card, play_mode)
+		_refresh()
+		return
+	if _needs_inventory_weapon_choice(card, play_mode):
+		_show_inventory_weapon_choice(card, play_mode)
 		_refresh()
 		return
 
@@ -908,6 +916,14 @@ func _needs_ordered_discard_choice(card: CardData, play_mode: int, extra_context
 	context["equipment_slot"] = pending_equipment_slot
 	context["play_mode"] = play_mode
 	return card.requires_ordered_discard_choice(context)
+
+
+func _needs_inventory_weapon_choice(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
+	if card == null or extra_context.has("selected_inventory_weapon"):
+		return false
+	return card.requires_inventory_weapon_choice(
+		_build_card_choice_context(card, play_mode, extra_context)
+	)
 
 
 func _play_direct_card(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
@@ -1525,6 +1541,10 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 		_show_ordered_discard_choice(card, play_mode, extra_context)
 		_refresh()
 		return
+	if _needs_inventory_weapon_choice(card, play_mode, extra_context):
+		_show_inventory_weapon_choice(card, play_mode, extra_context)
+		_refresh()
+		return
 
 	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card, "play_mode": play_mode}) and _needs_weapon_choice(controller.current_unit):
 		_show_weapon_choice(InputMode.CARD_TARGET, card, play_mode, extra_context)
@@ -1916,6 +1936,59 @@ func _show_weapon_choice(next_mode: int, card: CardData = null, play_mode: int =
 		_weapon_choice_list.add_child(button)
 
 	_weapon_choice_popup.popup_centered()
+
+
+func _show_inventory_weapon_choice(
+	card: CardData,
+	play_mode: int,
+	extra_context: Dictionary = {}
+) -> void:
+	if controller.current_unit == null or card == null:
+		return
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var options := card.get_inventory_weapon_choices(context)
+	if options.is_empty():
+		_append_log("背包中没有可供此牌切换的武器。")
+		return
+	if options.size() == 1:
+		_on_inventory_weapon_choice_pressed(options[0], card, play_mode, extra_context)
+		return
+
+	_clear_children(_weapon_choice_list)
+	var title := Label.new()
+	title.text = card.get_inventory_weapon_choice_prompt(context)
+	_weapon_choice_list.add_child(title)
+	for equipment in options:
+		if equipment == null:
+			continue
+		var button := Button.new()
+		button.text = "%s | 基础伤害 %d | 范围 %d" % [
+			equipment.item_name,
+			equipment.base_damage,
+			equipment.attack_range,
+		]
+		button.pressed.connect(_on_inventory_weapon_choice_pressed.bind(
+			equipment,
+			card,
+			play_mode,
+			extra_context
+		))
+		_weapon_choice_list.add_child(button)
+	_weapon_choice_popup.popup_centered()
+
+
+func _on_inventory_weapon_choice_pressed(
+	equipment: EquipmentData,
+	card: CardData,
+	play_mode: int,
+	extra_context: Dictionary
+) -> void:
+	if _actions_locked() or equipment == null or card == null:
+		return
+	var context := extra_context.duplicate()
+	context["selected_inventory_weapon"] = equipment
+	_weapon_choice_popup.hide()
+	_continue_card_with_extra_context(card, play_mode, context)
 
 
 func _on_weapon_choice_pressed(slot: String) -> void:

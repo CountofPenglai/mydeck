@@ -1,21 +1,24 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
 [ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
 [ext_resource type="Resource" path="res://resources/cards/defensive_stance_effect.tres" id="3_effect"]
+[ext_resource type="Resource" path="res://resources/cards/defensive_stance_momentum_condition.tres" id="4_momentum"]
 
 [resource]
 script = ExtResource("1_card_data")
 card_name = "防御架势"
-description = "你获得 1 层抵挡。你下次抵挡成功时，自动尝试切换武器；没有可切换武器时仍消耗该触发。"
+description = "你选择背包中的 1 件武器并切换至该武器，然后获得 1 层抵挡。\n\n余势：支付 2 AP；若上一轮失去过抵挡则改为无消耗。你选择背包中的 1 件武器并切换至该武器，然后对该武器范围内距离最近的 1 名敌人进行 1 次武器打击。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1
 card_type = 1
 target_type = 4
-ap_cost = 2
+ap_cost = 1
 play_timing = 0
 range_modifier = 0
 override_range = false
 card_range = 2
 effect = ExtResource("3_effect")
+has_momentum = true
+momentum_conditions = [ExtResource("4_momentum")]

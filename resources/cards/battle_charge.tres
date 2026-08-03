@@ -7,14 +7,14 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "冲锋"
-description = "你沿选定的六边直线方向移动，最多移动相当于 2 AP 的移动距离；计算每 AP 移动距离时，你的敏捷 +3。你对途经的每名敌人各进行 1 次获得 -2 伤害加值的武器打击。"
+description = "你指定 1 名位于“相当于 2 AP 的移动距离 +3”范围内且路径未被阻挡的敌人，沿六边直线移动至该目标前方的相邻格，然后对其进行 1 次武器打击。若你实际移动超过 5 格，本次打击获得 +3 伤害加值。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1
 card_type = 0
 card_tags = 1
 damage_type = 3
-target_type = 3
+target_type = 1
 ap_cost = 2
 play_timing = 0
 range_modifier = 0

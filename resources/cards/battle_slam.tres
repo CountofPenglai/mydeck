@@ -7,7 +7,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "猛击"
-description = "你对 1 名敌人进行 1 次武器打击。若你装备了带“盾牌”子类别的装备且目标在打击后仍存活，给予其 2 层眩晕。"
+description = "你对 1 名敌人进行 1 次武器打击。若本次使用的武器具有“双手”类别，本次打击获得 +2 伤害加值。若你装备了带“盾牌”子类别的装备且目标在打击后仍存活，给予其 2 层眩晕。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1

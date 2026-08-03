@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1")
 card_name = "险步突袭"
-description = "你选择近战或远程组件进行 1 次武器打击。\n\n连击：获得眩晕 1。你以 0 AP 进行该武器打击。"
+description = "你选择近战或远程组件进行 1 次武器打击。\n\n连击：支付 1 AP 或弃置 1 张牌。你以 0 AP 进行该武器打击。"
 artwork = ExtResource("2")
 rarity = 4
 card_class = 3
@@ -14,7 +14,7 @@ card_type = 0
 card_tags = 1
 damage_type = 3
 target_type = 1
-ap_cost = 1
+ap_cost = 2
 effect = ExtResource("3")
 has_combo = true
 combo_conditions = [ExtResource("4")]

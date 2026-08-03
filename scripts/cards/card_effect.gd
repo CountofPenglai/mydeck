@@ -40,6 +40,10 @@ func get_target_type_for_mode(_context: Dictionary = {}, _play_mode: int = CardE
 	return default_target_type
 
 
+func modify_effective_range(_user, _equipment_slot: String, current_range: int) -> int:
+	return current_range
+
+
 func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = null) -> bool:
 	var user: BattleUnitState = context.get("user") as BattleUnitState
 	return user != null and target != null and target.faction != user.faction
@@ -140,6 +144,18 @@ func get_zone_owner_damage_reduction(_owner: BattleUnitState, _zone_card: CardDa
 
 func requires_weapon_choice(_context: Dictionary = {}) -> bool:
 	return uses_strike
+
+
+func requires_inventory_weapon_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_inventory_weapon_choices(_context: Dictionary = {}) -> Array[EquipmentData]:
+	return []
+
+
+func get_inventory_weapon_choice_prompt(_context: Dictionary = {}) -> String:
+	return "选择要切换的武器"
 
 
 func requires_draw_pile_choice(_context: Dictionary = {}) -> bool:

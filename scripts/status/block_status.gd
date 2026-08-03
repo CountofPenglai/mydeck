@@ -13,6 +13,7 @@ func on_before_damage(unit: BattleUnitState, damage_context: DamageContext) -> v
 
 	damage_context.prevent(self)
 	stacks = maxi(0, stacks - 1)
+	unit.record_block_lost()
 
 	var controller = damage_context.controller
 	if controller != null and controller.has_method("_emit_log"):
@@ -29,4 +30,5 @@ func on_turn_start(unit: BattleUnitState, _context: Dictionary = {}) -> void:
 		var controller = _context.get("controller")
 		if controller != null and controller.has_method("_emit_log"):
 			controller._emit_log("%s 失去所有抵挡。" % unit.get_display_name())
+		unit.record_block_lost()
 	stacks = 0

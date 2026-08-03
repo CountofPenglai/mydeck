@@ -40,6 +40,7 @@ var active_card_damage_bonuses: Dictionary = {}
 var pending_next_attack_damage_bonus: int = 0
 var active_attack_lifesteal_cards: Dictionary = {}
 var turn_serial: int = 0
+var block_lost_rounds: Dictionary = {}
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
 var druid_spent_mana: int = 0
@@ -75,6 +76,7 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	pending_next_attack_damage_bonus = 0
 	active_attack_lifesteal_cards.clear()
 	turn_serial = 0
+	block_lost_rounds.clear()
 	curse_wave = 0
 	curse_runtime_states.clear()
 	distortion_state.reset_for_battle(character_state)
@@ -104,6 +106,7 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	pending_next_attack_damage_bonus = 0
 	active_attack_lifesteal_cards.clear()
 	turn_serial = 0
+	block_lost_rounds.clear()
 	curse_wave = 0
 	curse_runtime_states.clear()
 	distortion_state.reset_for_battle()
@@ -138,6 +141,21 @@ func start_turn(config: BattleConfig) -> void:
 	distortion_state.start_turn()
 	ranger_state.start_turn(turn_serial)
 	warlock_state.start_turn()
+
+
+func record_block_lost(round_index: int = -1) -> void:
+	var resolved_round := round_index
+	if resolved_round < 0 and battle_controller != null:
+		resolved_round = battle_controller.battle_round
+	if resolved_round >= 0:
+		block_lost_rounds[resolved_round] = true
+
+
+func lost_block_in_previous_round(current_round: int = -1) -> bool:
+	var resolved_round := current_round
+	if resolved_round < 0 and battle_controller != null:
+		resolved_round = battle_controller.battle_round
+	return resolved_round > 0 and block_lost_rounds.has(resolved_round - 1)
 
 
 func get_display_name() -> String:

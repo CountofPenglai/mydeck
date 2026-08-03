@@ -155,6 +155,18 @@ func requires_weapon_choice(context: Dictionary = {}) -> bool:
 	return effect.requires_weapon_choice(context)
 
 
+func requires_inventory_weapon_choice(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_inventory_weapon_choice(context)
+
+
+func get_inventory_weapon_choices(context: Dictionary = {}) -> Array[EquipmentData]:
+	return effect.get_inventory_weapon_choices(context) if effect != null else []
+
+
+func get_inventory_weapon_choice_prompt(context: Dictionary = {}) -> String:
+	return effect.get_inventory_weapon_choice_prompt(context) if effect != null else "选择要切换的武器"
+
+
 func requires_draw_pile_choice(context: Dictionary = {}) -> bool:
 	if effect == null:
 		return false
@@ -413,22 +425,24 @@ func get_play_timing_label() -> String:
 
 func get_effective_range(user = null, equipment_slot: String = "") -> int:
 	var orientation := _resolve_druid_orientation(user, {})
+	var result := 0
 	if orientation == CardEnums.DruidOrientation.INVERTED:
 		if inverted_override_range:
-			return inverted_card_range
-		var inverted_base_range := 0
+			result = inverted_card_range
+		else:
+			var inverted_base_range := 0
+			if user != null and user.has_method("get_attack_range"):
+				inverted_base_range = user.get_attack_range(equipment_slot)
+			result = maxi(0, inverted_base_range + inverted_range_modifier)
+	elif override_range:
+		result = card_range
+	else:
+		var base_range := 0
 		if user != null and user.has_method("get_attack_range"):
-			inverted_base_range = user.get_attack_range(equipment_slot)
-		return maxi(0, inverted_base_range + inverted_range_modifier)
+			base_range = user.get_attack_range(equipment_slot)
+		result = maxi(0, base_range + range_modifier)
 
-	if override_range:
-		return card_range
-
-	var base_range := 0
-	if user != null and user.has_method("get_attack_range"):
-		base_range = user.get_attack_range(equipment_slot)
-
-	return maxi(0, base_range + range_modifier)
+	return effect.modify_effective_range(user, equipment_slot, result) if effect != null else result
 
 
 func get_ap_cost_for_context(context: Dictionary = {}) -> int:
