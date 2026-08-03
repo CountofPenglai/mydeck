@@ -26,7 +26,6 @@ equip_slot = 0
 equip_category = 1
 allowed_classes = PackedInt32Array(1)
 rarity = 1
-subcategories = PackedStringArray("大剑", "武器", "T1", "逆位")
 trigger_effects = [SubResource("Effect_back")]
 activated_effects = [SubResource("Effect_back")]
 
@@ -43,7 +42,6 @@ equip_slot = 0
 equip_category = 1
 allowed_classes = PackedInt32Array(1)
 rarity = 1
-subcategories = PackedStringArray("大剑", "武器", "T1", "双面")
 back_face = SubResource("LionRoar")
 face_switch_mode = 2
 trigger_effects = [SubResource("Effect_front")]

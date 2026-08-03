@@ -6,13 +6,15 @@
 
 [sub_resource type="Resource" id="Effect_mountain"]
 script = ExtResource("2_effect")
+startup_damage_bonus = 2
+startup_range_bonus = 1
 
 [resource]
 script = ExtResource("1_equipment")
 base_damage = 5
-attack_range = 3
+attack_range = 2
 equip_category = 1
-trigger_effects = Array[Resource]([SubResource("Effect_mountain")])
+activated_effects = Array[Resource]([SubResource("Effect_mountain")])
 item_name = "砍山刀"
-description = "装备者回合开始时，若至少有 1 点势，则自动支付 1 点势；否则自动尝试切换为背包中的第一件可用武器。背包中没有可用武器时，继续使用本装备。"
+description = "启动（限一次）：本回合内，本武器获得 +2 伤害加值与 +1 范围。本武器成功切入时刷新此动作；本武器切入背包时，移除其全部非永久加成。"
 icon = ExtResource("3_icon")

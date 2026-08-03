@@ -20,8 +20,6 @@ static func format_equipment(equipment: EquipmentData) -> String:
 	if equipment == null:
 		return ""
 	var header := PackedStringArray([equipment.get_rarity_label(), equipment.get_equip_slot_label()])
-	if equipment.is_weapon():
-		header.append(equipment.get_equip_category_label())
 	var lines := PackedStringArray([" | ".join(header)])
 	var visited := {}
 	_append_equipment_face(lines, equipment, "正位" if equipment.back_face != null else "", visited)
@@ -36,8 +34,9 @@ static func format_equipment(equipment: EquipmentData) -> String:
 		bonuses.append("负荷上限 %+d" % equipment.curse_load_limit_bonus)
 	if not bonuses.is_empty():
 		lines.append("固定加值：%s" % " | ".join(bonuses))
-	if not equipment.subcategories.is_empty():
-		lines.append("标签：%s" % "、".join(equipment.subcategories))
+	var display_tags := equipment.get_display_tags()
+	if not display_tags.is_empty():
+		lines.append("标签：%s" % "、".join(display_tags))
 	return "\n".join(lines)
 
 

@@ -3108,6 +3108,7 @@ func _sort_cells_stably(cells: Array[Vector2i]) -> void:
 func _resolve_ranger_turn_end(unit: BattleUnitState) -> void:
 	if unit == null or not unit.is_ranger():
 		return
+	collect_surface_elements(unit, unit.cell, "回合结束", {"reason": "ranger_turn_end"})
 	if unit.ranger_state.stealth_active and unit.turn_serial >= unit.ranger_state.stealth_expires_turn_serial:
 		unit.leave_stealth()
 		_emit_log("%s 的潜行自然结束。" % unit.get_display_name())

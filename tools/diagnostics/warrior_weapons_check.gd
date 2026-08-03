@@ -13,6 +13,7 @@ func _ready() -> void:
 		return
 
 	_prepare(controller, warrior, enemy)
+	_test_unarmed_fallback()
 	_test_resources_and_pair_profile(warrior)
 	_test_next_card_damage_bonus(warrior)
 	_test_mountain_cleaver(controller, warrior)
@@ -25,6 +26,22 @@ func _ready() -> void:
 
 	print("WARRIOR_WEAPONS: completed")
 	get_tree().quit(_exit_code)
+
+
+func _test_unarmed_fallback() -> void:
+	var state := CharacterState.new()
+	state.character_data = CharacterData.new()
+	state.character_data.base_attack_range = 4
+	var profile := state.build_strike_profile_object("unarmed")
+	var options := state.get_attack_weapon_options()
+	if profile.primary_base_damage != 1 or profile.primary_range != 1:
+		_fail("WARRIOR_WEAPONS: unarmed strike profile is not 1 damage / 1 range")
+	if state.get_attack_range("unarmed") != 1:
+		_fail("WARRIOR_WEAPONS: unarmed attack range inherited the character template")
+	if options.size() != 1 \
+			or int(options[0].get("base_damage", 0)) != 1 \
+			or int(options[0].get("range", 0)) != 1:
+		_fail("WARRIOR_WEAPONS: unarmed weapon option is not 1 damage / 1 range")
 
 
 func _test_resources_and_pair_profile(warrior: BattleUnitState) -> void:
@@ -71,14 +88,36 @@ func _test_mountain_cleaver(controller: BattleController, warrior: BattleUnitSta
 	var ceremonial := load("res://resources/items/ceremonial_sword_shield.tres") as EquipmentData
 	_set_weapon(warrior, mountain)
 	_set_inventory(warrior, ceremonial)
-	var pool := warrior.get_class_resource(BattleController.WARRIOR_MOMENTUM_RESOURCE)
-	pool.current_value = 1
-	warrior.notify_equipment_turn_start({"controller": controller})
-	if pool.current_value != 0 or warrior.character_state.weapon_equipment != mountain:
-		_fail("WARRIOR_WEAPONS: mountain cleaver did not pay momentum")
-	warrior.notify_equipment_turn_start({"controller": controller})
-	if warrior.character_state.weapon_equipment != ceremonial:
-		_fail("WARRIOR_WEAPONS: mountain cleaver did not switch when unpaid")
+	warrior.turn_serial = 1
+	if mountain.attack_range != 2:
+		_fail("WARRIOR_WEAPONS: mountain cleaver base range is not 2")
+	var base_profile := warrior.build_strike_profile_object("weapon", {"controller": controller})
+	var base_range := warrior.get_attack_range("weapon", {"controller": controller})
+	var action := _first_action(warrior, controller)
+	if action.is_empty() or not _activate_action_direct(warrior, action, controller):
+		_fail("WARRIOR_WEAPONS: mountain cleaver startup failed")
+		return
+	var boosted_profile := warrior.build_strike_profile_object("weapon", {"controller": controller})
+	if boosted_profile.primary_damage_bonus != base_profile.primary_damage_bonus + 2 \
+			or warrior.get_attack_range("weapon", {"controller": controller}) != base_range + 1:
+		_fail("WARRIOR_WEAPONS: mountain cleaver startup bonus is incorrect")
+	if _activate_action_direct(warrior, _first_action(warrior, controller), controller):
+		_fail("WARRIOR_WEAPONS: mountain cleaver startup was used twice before switching")
+
+	controller.switch_equipment_from_inventory(warrior, ceremonial)
+	controller.switch_equipment_from_inventory(warrior, mountain)
+	var returned_profile := warrior.build_strike_profile_object("weapon", {"controller": controller})
+	if returned_profile.primary_damage_bonus != base_profile.primary_damage_bonus \
+			or warrior.get_attack_range("weapon", {"controller": controller}) != base_range:
+		_fail("WARRIOR_WEAPONS: mountain cleaver kept temporary bonuses in the backpack")
+	if not _activate_action_direct(warrior, _first_action(warrior, controller), controller):
+		_fail("WARRIOR_WEAPONS: mountain cleaver startup did not refresh after switching in")
+
+	warrior.turn_serial += 1
+	var next_turn_profile := warrior.build_strike_profile_object("weapon", {"controller": controller})
+	if next_turn_profile.primary_damage_bonus != base_profile.primary_damage_bonus \
+			or warrior.get_attack_range("weapon", {"controller": controller}) != base_range:
+		_fail("WARRIOR_WEAPONS: mountain cleaver startup bonus did not expire with the turn")
 
 
 func _test_ceremonial_pair(controller: BattleController, warrior: BattleUnitState) -> void:

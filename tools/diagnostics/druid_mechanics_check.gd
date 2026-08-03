@@ -57,10 +57,22 @@ func _ready() -> void:
 		_fail("DRUID_DIAG: selected hand card was not placed into mana zone")
 	if druid.get_available_mana() < 1:
 		_fail("DRUID_DIAG: available mana did not update")
+	_test_transformed_damage_reduction(druid)
 	_test_root_counter_damage(controller, druid)
 
 	print("DRUID_DIAG: completed")
 	get_tree().quit(_exit_code)
+
+
+func _test_transformed_damage_reduction(druid: BattleUnitState) -> void:
+	druid.set_druid_transformed(false)
+	var upright_reduction := druid.get_damage_reduction()
+	druid.set_druid_transformed(true)
+	if druid.get_damage_reduction() != upright_reduction + 1:
+		_fail("DRUID_DIAG: transformed druid did not gain exactly 1 damage reduction")
+	druid.set_druid_transformed(false)
+	if druid.get_damage_reduction() != upright_reduction:
+		_fail("DRUID_DIAG: druid retained transformed damage reduction after reverting")
 
 
 func _test_moonlight_targets(controller: BattleController, druid: BattleUnitState) -> void:

@@ -186,19 +186,32 @@ func _layout_status_groups() -> void:
 
 
 func set_equipment_actions(action_count: int, direct_label: String = "", direct_enabled: bool = true) -> void:
+	# EquipmentLabel is the sole text layer inside this button. Drawing Button.text
+	# as well makes both labels occupy the same rectangle.
+	equipment_button.text = ""
 	if action_count <= 0:
-		equipment_button.text = ""
+		equipment_label.text = _build_equipment_summary(bound_unit, bound_controller) if bound_unit != null else "未选择装备"
 		equipment_button.tooltip_text = "查看当前装备详情"
 		equipment_button.disabled = bound_unit == null
 		return
 	if action_count == 1:
-		equipment_button.text = direct_label
+		equipment_label.text = _format_equipment_action_summary(direct_label)
 		equipment_button.tooltip_text = "直接执行：%s" % direct_label
 		equipment_button.disabled = not direct_enabled
 		return
-	equipment_button.text = "展开  +%d" % action_count
+	equipment_label.text = "装备动作 %d 项\n点击展开" % action_count
 	equipment_button.tooltip_text = "展开 %d 个装备动作" % action_count
 	equipment_button.disabled = false
+
+
+func _format_equipment_action_summary(action_label: String) -> String:
+	var separator_index := action_label.find("：")
+	if separator_index < 0:
+		return action_label
+	return "%s\n%s" % [
+		action_label.left(separator_index + 1),
+		action_label.substr(separator_index + 1).strip_edges(),
+	]
 
 
 func get_bound_unit() -> BattleUnitState:

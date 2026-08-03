@@ -51,18 +51,32 @@ func _test_card_text() -> void:
 func _test_equipment_text() -> void:
 	var equipment := load("res://resources/items/ranger_dagger_crossbow.tres") as EquipmentData
 	var equipment_text := RulesTextFormatter.format_equipment(equipment)
+	_expect(equipment_text.contains("标签：单手"), "paired select-one weapon keeps one-hand rule tag")
 	_expect(equipment_text.contains("近战组件"), "paired melee component")
 	_expect(equipment_text.contains("远程组件"), "paired ranged component")
 	_expect(equipment_text.count("乌狼猎刀") == 1, "paired primary component appears once")
 	_expect(equipment_text.count("寻迹短弓") == 1, "paired secondary component appears once")
 	_expect(equipment_text.contains(equipment.paired_component.description), "paired component rules body")
-	var shield := load("res://resources/items/basic_shield.tres") as EquipmentData
+	var shield := EquipmentData.new()
+	shield.item_name = "诊断护甲"
+	shield.equip_slot = EquipmentData.EquipSlot.ARMOR
+	shield.damage_reduction = 1
 	var shield_text := RulesTextFormatter.format_equipment(shield)
 	_expect(shield_text.contains("伤害减免 +1"), "armor numeric bonus")
 	_expect(not shield_text.contains("单手") and not shield_text.contains("副手"), "non-weapon hides weapon category")
 	var druid_weapon := load("res://resources/items/druid_brute_bear.tres") as EquipmentData
 	var druid_text := RulesTextFormatter.format_equipment(druid_weapon)
 	_expect(druid_text.contains("正位效果") and druid_text.contains("逆位效果"), "dual equipment renders both effects")
+	_expect(druid_text.contains("标签：单手"), "druid weapon keeps its hand rule tag")
+	_expect(not druid_text.contains("druid_weapon") and not druid_text.contains("德鲁伊武器") and not druid_text.contains("T0"), "druid and tier metadata are not rendered as tags")
+	var sword_shield := load("res://resources/items/ceremonial_sword_shield.tres") as EquipmentData
+	var sword_shield_text := RulesTextFormatter.format_equipment(sword_shield)
+	_expect(sword_shield_text.contains("标签：单手、盾牌"), "sword-shield keeps hand and shield rule tags")
+	_expect(not sword_shield_text.contains("T0"), "equipment tier is not rendered as a tag")
+	var dual_wield := load("res://resources/items/clockwork_gear_pair.tres") as EquipmentData
+	var dual_wield_text := RulesTextFormatter.format_equipment(dual_wield)
+	_expect(dual_wield_text.contains("标签：单手、双持"), "dual-wield keeps hand and dual-wield rule tags")
+	_expect(not dual_wield_text.contains("T2"), "dual-wield tier is not rendered as a tag")
 
 
 func _test_enemy_text() -> void:
@@ -140,6 +154,8 @@ func _test_resource_corpus() -> void:
 					_check_rules_body(path, card.inverted_description, "inverted_description")
 			elif resource is ItemData:
 				_check_rules_body(path, (resource as ItemData).description, "description")
+				if resource is EquipmentData and (resource as EquipmentData).is_weapon():
+					_check_weapon_rule_tags(path, resource as EquipmentData)
 			elif resource is CurseDefinition:
 				var curse := resource as CurseDefinition
 				_check_rules_body(path, curse.industry_description, "industry_description")
@@ -155,6 +171,19 @@ func _is_expected_resource_for_root(root: String, resource: Resource) -> bool:
 	if root.ends_with("/curses"):
 		return resource is CurseDefinition
 	return false
+
+
+func _check_weapon_rule_tags(path: String, equipment: EquipmentData) -> void:
+	var allowed_display_tags := PackedStringArray(["单手", "双手", "双持", "盾牌"])
+	for tag in equipment.get_display_tags():
+		_expect(allowed_display_tags.has(tag), "%s renders non-rule weapon tag '%s'" % [path, tag])
+	var faces: Array[EquipmentData] = [equipment]
+	if equipment.back_face != null:
+		faces.append(equipment.back_face)
+	for face in faces:
+		for component in face.get_active_components():
+			for tag in component.subcategories:
+				_expect(tag in ["双持", "盾牌"], "%s stores non-rule weapon tag '%s'" % [path, tag])
 
 
 func _check_rules_body(path: String, body: String, field_name: String) -> void:

@@ -55,7 +55,7 @@ func _test_resources_and_faces(druid: BattleUnitState) -> void:
 	for resource_name in WEAPONS:
 		var weapon := load("res://resources/items/%s.tres" % resource_name) as EquipmentData
 		var expected: Array = WEAPONS[resource_name]
-		if weapon == null or weapon.back_face == null or not weapon.has_tag("druid_weapon"):
+		if weapon == null or not weapon.is_druid_form_linked_weapon():
 			_fail("DRUID_WEAPONS: invalid resource %s" % resource_name)
 			continue
 		if [weapon.base_damage, weapon.attack_range, weapon.back_face.base_damage, weapon.back_face.attack_range] != expected:

@@ -45,6 +45,7 @@ class_name CharacterState
 @export var flat_damage_bonus: int = 0
 @export var damage_reduction: int = 0
 const UNARMED_BASE_DAMAGE := 1
+const UNARMED_ATTACK_RANGE := 1
 const INVENTORY_LIMIT := 20
 const MAX_HEALTH_PER_STRENGTH := 3
 const HEALTH_GROWTH_PER_STRENGTH_LEVEL := 1
@@ -261,14 +262,11 @@ func get_battle_token_radius() -> float:
 
 
 func get_attack_range(equipment_slot: String = "", face_index: int = -1) -> int:
-	if character_data == null:
-		return 0
-
 	var equipment := get_equipment_for_attack_slot(_resolve_primary_attack_slot(equipment_slot), face_index)
 	if equipment != null:
 		return equipment.attack_range
 
-	return character_data.base_attack_range
+	return UNARMED_ATTACK_RANGE
 
 
 func has_equipment_subcategory(subcategory: String) -> bool:
@@ -302,7 +300,7 @@ func get_attack_weapon_options(face_index: int = -1) -> Array:
 			"weapon": null,
 			"equipment": null,
 			"base_damage": UNARMED_BASE_DAMAGE,
-			"range": character_data.base_attack_range if character_data != null else 0,
+			"range": UNARMED_ATTACK_RANGE,
 			"range_type": EquipmentData.WeaponRangeType.MELEE,
 		})
 
@@ -316,7 +314,7 @@ func build_strike_profile_object(equipment_slot: String = "", context: Dictionar
 	var profile := StrikeProfile.new()
 	profile.primary_slot = primary_slot
 	profile.primary_base_damage = UNARMED_BASE_DAMAGE
-	profile.primary_range = character_data.base_attack_range if character_data != null else 0
+	profile.primary_range = UNARMED_ATTACK_RANGE
 	profile.primary_range_type = EquipmentData.WeaponRangeType.MELEE
 	profile.primary_damage_type = _resolve_damage_type(context, primary_equipment)
 	var damage_context := context.duplicate()

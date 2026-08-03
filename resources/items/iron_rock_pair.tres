@@ -21,7 +21,7 @@ equip_slot = 0
 equip_category = 2
 allowed_classes = PackedInt32Array(1)
 rarity = 1
-subcategories = PackedStringArray("双持", "成对组件")
+subcategories = PackedStringArray("双持")
 
 [resource]
 script = ExtResource("1_equipment")
@@ -36,6 +36,6 @@ equip_slot = 0
 equip_category = 0
 allowed_classes = PackedInt32Array(1)
 rarity = 1
-subcategories = PackedStringArray("双持", "武器", "T1")
+subcategories = PackedStringArray("双持")
 paired_component = SubResource("RockBreaker")
 trigger_effects = [SubResource("Effect_pair")]

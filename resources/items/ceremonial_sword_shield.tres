@@ -19,7 +19,7 @@ attack_range = 2
 equip_slot = 1
 equip_category = 2
 allowed_classes = PackedInt32Array(1)
-subcategories = PackedStringArray("盾牌", "成对组件")
+subcategories = PackedStringArray("盾牌")
 
 [resource]
 script = ExtResource("1_equipment")
@@ -34,7 +34,7 @@ equip_slot = 0
 equip_category = 0
 allowed_classes = PackedInt32Array(1)
 rarity = 0
-subcategories = PackedStringArray("剑", "盾牌", "武器", "T0")
+subcategories = PackedStringArray("盾牌")
 paired_component = SubResource("KnightShield")
 trigger_effects = [SubResource("Effect_ceremonial")]
 activated_effects = [SubResource("Effect_ceremonial")]

@@ -5,6 +5,7 @@ const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const MageCombatState = preload("res://scripts/mage/mage_combat_state.gd")
 const WarlockCombatState = preload("res://scripts/warlock/warlock_combat_state.gd")
+const DRUID_TRANSFORMED_DAMAGE_REDUCTION := 1
 
 enum Faction {
 	PLAYER,
@@ -249,6 +250,8 @@ func get_damage_reduction(context: Dictionary = {}) -> int:
 		result += character_state.get_damage_reduction(merged_context)
 	elif enemy_state != null:
 		result += enemy_state.get_damage_reduction()
+	if is_druid_transformed():
+		result += DRUID_TRANSFORMED_DAMAGE_REDUCTION
 	if battle_controller != null:
 		result += battle_controller.get_surface_damage_reduction(self, merged_context)
 	if enemy_state != null:
@@ -972,7 +975,7 @@ func get_active_weapon_face_index() -> int:
 	if character_state == null or character_state.weapon_equipment == null:
 		return 0
 	var root := character_state.weapon_equipment
-	if is_druid() and root.has_tag("druid_weapon") and root.has_back_face():
+	if is_druid() and root.is_druid_form_linked_weapon():
 		return 1 if druid_transformed else 0
 	return character_state.weapon_face
 
@@ -996,6 +999,9 @@ func get_battle_texture() -> Texture2D:
 	if character_state != null and character_state.character_data != null:
 		return character_state.character_data.battle_sprite
 	if enemy_state != null and enemy_state.enemy_data != null:
+		var chapter_one_art := ChapterOneEnemyCatalog.get_art_texture(enemy_state.enemy_data.archetype_id, "battle")
+		if chapter_one_art != null:
+			return chapter_one_art
 		return enemy_state.enemy_data.battle_sprite
 
 	return null

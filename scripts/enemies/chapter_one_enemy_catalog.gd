@@ -21,8 +21,19 @@ const MUTATION_CARDS := [
 	"res://resources/cards/monster_cards/irradiated_gland.tres",
 	"res://resources/cards/monster_cards/stampeding_feet.tres",
 ]
-const MONSTER_ATLAS := "res://assets/art/enemies/chapter_one_monsters.svg"
 const MONSTER_CARD_ART := "res://assets/art/cards/monster_card_basic.svg"
+const ENEMY_ART := {
+	&"hungry_fish": {"portrait": "res://assets/art/portraits/chapter_one/hungry_fish_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/hungry_fish_battle.png"},
+	&"harpoon_fish": {"portrait": "res://assets/art/portraits/chapter_one/harpoon_fish_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/harpoon_fish_battle.png"},
+	&"bandit_blade": {"portrait": "res://assets/art/portraits/chapter_one/bandit_blade_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/bandit_blade_battle.png"},
+	&"bandit_bow": {"portrait": "res://assets/art/portraits/chapter_one/bandit_bow_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/bandit_bow_battle.png"},
+	&"fish_priest": {"portrait": "res://assets/art/portraits/chapter_one/fish_priest_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/fish_priest_battle.png"},
+	&"unclean_one": {"portrait": "res://assets/art/portraits/chapter_one/unclean_one_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/unclean_one_battle.png"},
+	&"fish_champion": {"portrait": "res://assets/art/portraits/chapter_one/fish_champion_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/fish_champion_battle.png"},
+	&"kraken": {"portrait": "res://assets/art/portraits/chapter_one/kraken_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/kraken_battle.png"},
+	&"high_priest": {"portrait": "res://assets/art/portraits/chapter_one/high_priest_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/high_priest_battle.png"},
+	&"abyss_scale": {"portrait": "res://assets/art/portraits/chapter_one/abyss_scale_portrait.png", "battle": "res://assets/art/battle_units/chapter_one/abyss_scale_battle.png"},
+}
 
 const WEAK_ENCOUNTERS := [
 	{"id": "double_hungry", "enemies": [&"hungry_fish", &"hungry_fish"]},
@@ -67,14 +78,17 @@ static func create_enemy(archetype: StringName, seed: int = -1) -> EnemyState:
 	data.ai_profile = EnemyTacticalCardCatalog.create_profile(int(spec.get("ai_profile", EnemyAIProfile.Preset.BALANCED)))
 	data.behavior = TacticalEnemyBehavior.new()
 	data.behavior.behavior_label = "公开意图战术"
-	var texture := _make_atlas_texture(int(spec.art_index))
-	data.portrait = texture
-	data.battle_sprite = texture
+	data.portrait = _load_enemy_art(archetype, "portrait")
+	data.battle_sprite = _load_enemy_art(archetype, "battle")
 	var state := EnemyState.new()
 	state.enemy_data = data
 	state.generate_deck(seed)
 	state.current_health = state.get_max_health()
 	return state
+
+
+static func get_art_texture(archetype: StringName, art_kind: String) -> Texture2D:
+	return _load_enemy_art(archetype, art_kind)
 
 
 static func pick_encounter(tier: int, seed: int, last_id: String = "") -> Dictionary:
@@ -209,31 +223,26 @@ static func _make_weapon(spec: Dictionary) -> EquipmentData:
 	weapon.range_type = int(spec.get("range_type", EquipmentData.WeaponRangeType.MELEE))
 	weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
 	weapon.equip_category = EquipmentData.EquipCategory.TWO_HAND
-	weapon.subcategories = PackedStringArray(["怪物武器"])
 	return weapon
 
 
-static func _make_atlas_texture(index: int) -> Texture2D:
-	var atlas := load(MONSTER_ATLAS) as Texture2D
-	if atlas == null:
-		return null
-	var texture := AtlasTexture.new()
-	texture.atlas = atlas
-	texture.region = Rect2(index * 128, 0, 128, 128)
-	return texture
+static func _load_enemy_art(archetype: StringName, art_kind: String) -> Texture2D:
+	var entry := ENEMY_ART.get(archetype, {}) as Dictionary
+	var path := str(entry.get(art_kind, ""))
+	return load(path) as Texture2D if not path.is_empty() else null
 
 
 static func _get_spec(id: StringName) -> Dictionary:
 	var specs := {
-		&"hungry_fish": {"name": "饥饿鱼人", "base_health": 9, "strength": 1, "agility": 3, "intelligence": 1, "weapon": {"name": "裂口爪", "damage": 2, "range": 2}, "basic": 8, "art_index": 0, "trait": "首次受到致命伤害时，饥饿鱼人不会死亡，而是在原地变为逆位鱼人：清除全部护甲和状态，将生命上限改为 5、力量改为 0、敏捷改为 2、武器基础伤害改为 2、攻击范围改为 1，并将当前生命恢复至上限。逆位鱼人最终死亡时，若最近的冒险者位于其当前攻击范围内，向该冒险者施加 2 层眩晕；否则不触发。"},
-		&"harpoon_fish": {"name": "鱼叉鱼人", "base_health": 12, "strength": 1, "agility": 5, "intelligence": 1, "weapon": {"name": "潮锈鱼叉", "damage": 3, "range": 2}, "basic": 8, "art_index": 2, "trait": "鱼叉鱼人位于水元素格时，敏捷 +3。每个自身回合至多一次，完成非强制移动后，若起点和终点中恰有一处是水元素格，获得 2 AP。"},
-		&"bandit_blade": {"name": "流寇刀手", "base_health": 8, "strength": 2, "agility": 6, "intelligence": 1, "weapon": {"name": "流寇弯刀", "damage": 2, "range": 1}, "basic": 6, "class_profile": CardEnums.CardClass.WARRIOR, "class_cards": ["slam", "charge"], "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_BERSERK, "art_index": 3, "trait": ""},
-		&"bandit_bow": {"name": "流寇弩手", "base_health": 8, "strength": 1, "agility": 7, "intelligence": 1, "weapon": {"name": "流寇轻弩", "damage": 2, "range": 4, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 6, "class_profile": CardEnums.CardClass.RANGER, "class_cards": ["perilous_assault", "crossbow_tether"], "ai_profile": EnemyAIProfile.Preset.RANGED_CONTROL, "art_index": 3, "trait": ""},
-		&"fish_priest": {"name": "鱼人祭司", "base_health": 17, "strength": 1, "agility": 4, "intelligence": 3, "weapon": {"name": "引潮杖", "damage": 1, "range": 3, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 8, "class_profile": CardEnums.CardClass.DRUID, "class_cards": ["verdant_strike", "moonlight"], "ai_profile": EnemyAIProfile.Preset.RANGED_CONTROL, "art_index": 4, "trait": "鱼人祭司的回合开始时，向其所在格施加水元素。只要战场上存在存活的鱼人祭司或大湖主祭，所有位于水元素格的敌方单位获得 +1 伤害加值，并在各自回合开始时回复 2 生命；多个祭司不会叠加该效果。"},
-		&"unclean_one": {"name": "不洁者", "base_health": 13, "strength": 2, "agility": 3, "intelligence": 2, "weapon": {"name": "污化肢体", "damage": 1, "range": 1}, "basic": 8, "curse_cards": ["res://resources/cards/curse_industry_blood.tres"], "art_index": 5, "trait": "每当不洁者打出诅咒牌后，若污化少于 4 层，获得 1 层污化：本场战斗的生命上限提高 2，永久获得 +1 伤害加值，然后回复 2 生命。污化最多 4 层。"},
-		&"fish_champion": {"name": "鱼人冠军", "base_health": 13, "strength": 3, "agility": 3, "intelligence": 1, "weapon": {"name": "潮痕大剑", "damage": 3, "range": 2}, "reserve": {"name": "浪脊长枪", "damage": 1, "range": 3}, "basic": 5, "class_profile": CardEnums.CardClass.WARRIOR, "class_cards": ["slam", "charge", "defensive_stance"], "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_BERSERK, "art_index": 6, "trait": "回合开始时，若鱼人冠军当前使用潮痕大剑，获得 1 势，最多 5 势。锁定意图时若仍使用大剑，则下次行动开始先切换为浪脊长枪并消耗全部势；若存在锁定目标且消耗至少 1 势，向该目标移动至多等同于势的格数，并使下一次攻击获得每点势 +2 伤害加值。没有锁定目标时仍切换武器并清空势，但不移动且不获得伤害加值。"},
-		&"kraken": {"name": "克拉肯", "rank": EnemyEnums.EnemyRank.ELITE, "base_health": 39, "strength": 2, "agility": 1, "intelligence": 2, "weapon": {"name": "群腕", "damage": 1, "range": 2}, "basic": 8, "mutation": 2, "art_index": 7, "trait": "回合开始时，若克拉肯当前生命高于生命上限的 66%，将当前 AP 乘 3；否则若高于 33%，将当前 AP 乘 2；否则当前 AP 不变。"},
-		&"high_priest": {"name": "大湖主祭", "rank": EnemyEnums.EnemyRank.BOSS, "base_health": 54, "strength": 2, "agility": 4, "intelligence": 3, "weapon": {"name": "大湖权杖", "damage": 1, "range": 4, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 5, "mutation": 1, "class_profile": CardEnums.CardClass.DRUID, "class_cards": ["verdant_strike", "moonlight", "rooted_insight", "canopy_shape", "wild_shape"], "curse_cards": ["res://resources/cards/curse_industry_blood.tres", "res://resources/cards/curse_industry_universal_love.tres"], "art_index": 8, "trait": "大湖主祭的回合开始时，向其所在格施加水元素。只要战场上存在存活的鱼人祭司或大湖主祭，所有位于水元素格的敌方单位获得 +1 伤害加值，并在各自回合开始时回复 2 生命。每当除大湖主祭外的敌方单位最终死亡时，大湖主祭清除全部状态、全部咒波和全部敌人运行时状态，然后失去 5 生命。"},
-		&"abyss_scale": {"name": "渊鳞", "rank": EnemyEnums.EnemyRank.BOSS, "base_health": 68, "strength": 4, "agility": 10, "intelligence": 2, "weapon": {"name": "渊鳞长躯", "damage": 2, "range": 3}, "reserve": {"name": "深渊利齿", "damage": 3, "range": 1}, "basic": 6, "mutation": 4, "art_index": 9, "trait": "战斗开始时，为所有存活冒险者建立一个共享的 16 点共有护甲池。冒险者受到伤害时，抵挡、伤害减免和个人护甲先结算，共有护甲再吸收剩余伤害；忽略护甲的伤害不消耗该池。护甲池归零时，渊鳞进入第二阶段：切换为深渊利齿，并将战场所有地形改为深渊。渊鳞每个回合结束时先失去 3 生命；若仍存活且处于第二阶段，再获得 3 护甲。"},
+		&"hungry_fish": {"name": "饥饿鱼人", "base_health": 9, "strength": 2, "agility": 4, "intelligence": 2, "weapon": {"name": "裂口爪", "damage": 3, "range": 2}, "basic": 8, "art_index": 0, "trait": "首次受到致命伤害时，饥饿鱼人不会死亡，而是在原地变为逆位鱼人：清除全部护甲和状态，将生命上限改为 7、力量改为 0、敏捷改为 2、武器基础伤害改为 3、攻击范围改为 1，并将当前生命恢复至上限。逆位鱼人最终死亡时，若最近的冒险者位于其当前攻击范围内，向该冒险者施加 2 层眩晕；否则不触发。"},
+		&"harpoon_fish": {"name": "鱼叉鱼人", "base_health": 13, "strength": 2, "agility": 6, "intelligence": 2, "weapon": {"name": "潮锈鱼叉", "damage": 4, "range": 2}, "basic": 8, "art_index": 2, "trait": "鱼叉鱼人位于水元素格时，敏捷 +3。每个自身回合至多一次，完成非强制移动后，若起点和终点中恰有一处是水元素格，获得 2 AP。"},
+		&"bandit_blade": {"name": "流寇刀手", "base_health": 9, "strength": 3, "agility": 7, "intelligence": 2, "weapon": {"name": "流寇弯刀", "damage": 3, "range": 1}, "basic": 6, "class_profile": CardEnums.CardClass.WARRIOR, "class_cards": ["slam", "charge"], "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_BERSERK, "art_index": 3, "trait": ""},
+		&"bandit_bow": {"name": "流寇弩手", "base_health": 8, "strength": 2, "agility": 8, "intelligence": 2, "weapon": {"name": "流寇轻弩", "damage": 3, "range": 4, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 6, "class_profile": CardEnums.CardClass.RANGER, "class_cards": ["perilous_assault", "crossbow_tether"], "ai_profile": EnemyAIProfile.Preset.RANGED_CONTROL, "art_index": 3, "trait": ""},
+		&"fish_priest": {"name": "鱼人祭司", "base_health": 19, "strength": 2, "agility": 5, "intelligence": 4, "weapon": {"name": "引潮杖", "damage": 2, "range": 3, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 8, "class_profile": CardEnums.CardClass.DRUID, "class_cards": ["verdant_strike", "moonlight"], "ai_profile": EnemyAIProfile.Preset.RANGED_CONTROL, "art_index": 4, "trait": "鱼人祭司的回合开始时，向其所在格施加水元素。只要战场上存在存活的鱼人祭司或大湖主祭，所有位于水元素格的敌方单位获得 +1 伤害加值，并在各自回合开始时回复 2 生命；多个祭司不会叠加该效果。"},
+		&"unclean_one": {"name": "不洁者", "base_health": 15, "strength": 3, "agility": 4, "intelligence": 3, "weapon": {"name": "污化肢体", "damage": 2, "range": 1}, "basic": 8, "curse_cards": ["res://resources/cards/curse_industry_blood.tres"], "art_index": 5, "trait": "每当不洁者打出诅咒牌后，若污化少于 4 层，获得 1 层污化：本场战斗的生命上限提高 2，永久获得 +1 伤害加值，然后回复 2 生命。污化最多 4 层。"},
+		&"fish_champion": {"name": "鱼人冠军", "base_health": 16, "strength": 4, "agility": 4, "intelligence": 2, "weapon": {"name": "潮痕大剑", "damage": 4, "range": 2}, "reserve": {"name": "浪脊长枪", "damage": 2, "range": 3}, "basic": 5, "class_profile": CardEnums.CardClass.WARRIOR, "class_cards": ["slam", "charge", "defensive_stance"], "ai_profile": EnemyAIProfile.Preset.LOW_HEALTH_BERSERK, "art_index": 6, "trait": "回合开始时，若鱼人冠军当前使用潮痕大剑，获得 1 势，最多 5 势。锁定意图时若仍使用大剑，则下次行动开始先切换为浪脊长枪并消耗全部势；若存在锁定目标且消耗至少 1 势，向该目标移动至多等同于势的格数，并使下一次攻击获得每点势 +2 伤害加值。没有锁定目标时仍切换武器并清空势，但不移动且不获得伤害加值。"},
+		&"kraken": {"name": "克拉肯", "rank": EnemyEnums.EnemyRank.ELITE, "base_health": 48, "strength": 3, "agility": 2, "intelligence": 3, "weapon": {"name": "群腕", "damage": 2, "range": 2}, "basic": 8, "mutation": 2, "art_index": 7, "trait": "回合开始时，若克拉肯当前生命高于生命上限的 66%，将当前 AP 乘 3；否则若高于 33%，将当前 AP 乘 2；否则当前 AP 不变。"},
+		&"high_priest": {"name": "大湖主祭", "rank": EnemyEnums.EnemyRank.BOSS, "base_health": 66, "strength": 3, "agility": 5, "intelligence": 4, "weapon": {"name": "大湖权杖", "damage": 2, "range": 4, "damage_type": CardEnums.DamageType.INTELLIGENCE, "range_type": EquipmentData.WeaponRangeType.RANGED}, "basic": 5, "mutation": 1, "class_profile": CardEnums.CardClass.DRUID, "class_cards": ["verdant_strike", "moonlight", "rooted_insight", "canopy_shape", "wild_shape"], "curse_cards": ["res://resources/cards/curse_industry_blood.tres", "res://resources/cards/curse_industry_universal_love.tres"], "art_index": 8, "trait": "大湖主祭的回合开始时，向其所在格施加水元素。只要战场上存在存活的鱼人祭司或大湖主祭，所有位于水元素格的敌方单位获得 +1 伤害加值，并在各自回合开始时回复 2 生命。每当除大湖主祭外的敌方单位最终死亡时，大湖主祭清除全部状态、全部咒波和全部敌人运行时状态，然后失去 5 生命。"},
+		&"abyss_scale": {"name": "渊鳞", "rank": EnemyEnums.EnemyRank.BOSS, "base_health": 85, "strength": 5, "agility": 11, "intelligence": 3, "weapon": {"name": "渊鳞长躯", "damage": 3, "range": 3}, "reserve": {"name": "深渊利齿", "damage": 4, "range": 1}, "basic": 6, "mutation": 4, "art_index": 9, "trait": "战斗开始时，为所有存活冒险者建立一个共享的 16 点共有护甲池。冒险者受到伤害时，抵挡、伤害减免和个人护甲先结算，共有护甲再吸收剩余伤害；忽略护甲的伤害不消耗该池。护甲池归零时，渊鳞进入第二阶段：切换为深渊利齿，并将战场所有地形改为深渊。渊鳞每个回合结束时先失去 3 生命；若仍存活且处于第二阶段，再获得 3 护甲。"},
 	}
 	return (specs.get(id, {}) as Dictionary).duplicate(true)

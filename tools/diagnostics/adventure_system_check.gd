@@ -72,19 +72,38 @@ func _test_starter_deck_configuration() -> void:
 	for removed_path in REMOVED_TEST_CARD_PATHS:
 		if ResourceLoader.exists(removed_path):
 			_fail("ADVENTURE_DIAG: removed test card still exists: %s" % removed_path)
-	var expected_weapons := {
-		"res://resources/characters/battle_warrior_state.tres": "res://resources/items/mountain_cleaver.tres",
-		"res://resources/characters/battle_ranger_state.tres": "res://resources/items/ranger_dagger_crossbow.tres",
+	if FileAccess.file_exists("res://resources/items/basic_shield.tres"):
+		_fail("ADVENTURE_DIAG: removed test shield still exists")
+	var expected_loadouts := {
+		"res://resources/characters/battle_warrior_state.tres": {
+			"equipped": "res://resources/items/mountain_cleaver.tres",
+			"inventory": ["res://resources/items/ceremonial_sword_shield.tres"],
+		},
+		"res://resources/characters/battle_ranger_state.tres": {
+			"equipped": "res://resources/items/ranger_dagger_crossbow.tres",
+			"inventory": [],
+		},
 	}
-	for character_path in expected_weapons:
+	for character_path in expected_loadouts:
 		var loadout_character := load(character_path) as CharacterState
 		if loadout_character == null:
 			continue
+		var expected_loadout := expected_loadouts[character_path] as Dictionary
 		if loadout_character.weapon_equipment == null \
-				or loadout_character.weapon_equipment.resource_path != str(expected_weapons[character_path]):
-			_fail("ADVENTURE_DIAG: %s does not have only its starter weapon equipped" % character_path)
-		if not loadout_character.inventory.is_empty():
-			_fail("ADVENTURE_DIAG: %s starter inventory still contains test weapons" % character_path)
+				or loadout_character.weapon_equipment.resource_path != str(expected_loadout.get("equipped", "")):
+			_fail("ADVENTURE_DIAG: %s has the wrong equipped starter weapon" % character_path)
+		var actual_inventory_paths: Array[String] = []
+		for stack in loadout_character.inventory:
+			if stack != null and stack.count > 0 and stack.item_data != null:
+				actual_inventory_paths.append(stack.item_data.resource_path)
+		var expected_inventory_paths: Array = expected_loadout.get("inventory", []) as Array
+		if actual_inventory_paths.size() != expected_inventory_paths.size():
+			_fail("ADVENTURE_DIAG: %s has the wrong starter weapon count" % character_path)
+		for expected_path in expected_inventory_paths:
+			if not actual_inventory_paths.has(str(expected_path)):
+				_fail("ADVENTURE_DIAG: %s is missing starter weapon %s" % [character_path, expected_path])
+		if character_path.ends_with("battle_warrior_state.tres") and loadout_character.armor_equipment != null:
+			_fail("ADVENTURE_DIAG: warrior still equips the test shield")
 	var expected_attributes := {
 		"res://resources/characters/battle_warrior_state.tres": [7, 5, 3],
 		"res://resources/characters/battle_ranger_state.tres": [3, 7, 5],

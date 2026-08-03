@@ -9,6 +9,7 @@ var _exit_code := 0
 
 
 func _ready() -> void:
+	_test_global_balance_adjustments()
 	_test_card_catalog()
 	_test_enemy_catalog()
 	_test_encounter_catalog()
@@ -18,6 +19,34 @@ func _ready() -> void:
 	_test_tactical_turn()
 	print("CHAPTER_ONE_ENEMY_DIAG: completed")
 	get_tree().quit(_exit_code)
+
+
+func _test_global_balance_adjustments() -> void:
+	var fish := ChapterOneEnemyCatalog.create_enemy(&"hungry_fish", 101)
+	if fish == null or fish.get_max_health() != 15:
+		_fail("chapter one enemy health was not increased directly in its data")
+	elif fish.get_strength() != 2 or fish.get_agility() != 4 or fish.get_intelligence() != 2:
+		_fail("chapter one enemy base attributes were not increased directly")
+	elif fish.build_strike_profile_object().primary_base_damage != 3:
+		_fail("chapter one enemy weapon base damage was not increased directly")
+
+	var guard := ChapterTwoEnemyCatalog.create_enemy(&"gray_shield_guard", 102)
+	if guard == null or guard.get_max_health() != 33:
+		_fail("chapter two enemy health was not increased directly in its data")
+	elif guard.get_strength() != 4 or guard.get_agility() != 3 or guard.get_intelligence() != 2:
+		_fail("chapter two enemy base attributes were not increased directly")
+	elif guard.build_strike_profile_object().primary_base_damage != 3:
+		_fail("chapter two enemy weapon base damage was not increased directly")
+
+	var training_data := load("res://resources/enemies/sample_enemy_data.tres") as EnemyData
+	var training_state := EnemyState.new()
+	training_state.enemy_data = training_data
+	if training_data == null or training_state.get_max_health() != 30 \
+			or training_data.innate_base_damage != 5 \
+			or training_data.base_strength != 1 \
+			or training_data.base_agility != 4 \
+			or training_data.base_intelligence != 1:
+		_fail("training enemy data did not receive the direct balance adjustment")
 
 
 func _test_card_catalog() -> void:
@@ -46,6 +75,14 @@ func _test_enemy_catalog() -> void:
 			continue
 		if state.enemy_data.weapon_equipment == null:
 			_fail("archetype %s has no real weapon" % ARCHETYPES[index])
+		if state.enemy_data.portrait == null or state.enemy_data.battle_sprite == null:
+			_fail("archetype %s is missing bound portrait or battle art" % ARCHETYPES[index])
+		elif state.enemy_data.portrait.resource_path == state.enemy_data.battle_sprite.resource_path:
+			_fail("archetype %s still reuses a single atlas texture" % ARCHETYPES[index])
+		else:
+			for texture in [state.enemy_data.portrait, state.enemy_data.battle_sprite]:
+				if not FileAccess.file_exists(texture.resource_path + ".import"):
+					_fail("archetype %s art was not imported: %s" % [ARCHETYPES[index], texture.resource_path])
 		if state.deck.is_empty():
 			_fail("archetype %s generated an empty deck" % ARCHETYPES[index])
 		if state.current_health != state.get_max_health():
@@ -84,7 +121,7 @@ func _test_reverse_fish() -> void:
 	controller.setup(scenario)
 	var fish := controller.enemy_units[0]
 	controller.apply_damage(null, fish, 999, "diagnostic", {"fixed_damage": true})
-	if not fish.is_alive() or not bool(fish.enemy_state.runtime_state.get("reversed", false)) or fish.get_max_health() != 5:
+	if not fish.is_alive() or not bool(fish.enemy_state.runtime_state.get("reversed", false)) or fish.get_max_health() != 7:
 		_fail("hungry fish did not reverse on first lethal damage")
 
 
@@ -108,6 +145,11 @@ func _test_champion_weapon_switch() -> void:
 		return
 
 	var champion: BattleUnitState = controller.enemy_units[0]
+	for candidate in BattleHexGrid.neighbors(champion.cell):
+		if controller.map_data.is_valid_cell(candidate) \
+				and controller.targeting.is_unit_cell_clear(player, candidate, false):
+			player.set_hex_cell(candidate, controller.map_data)
+			break
 	controller.phase = BattleController.Phase.BATTLE
 	champion.enemy_state.runtime_state["momentum"] = 3
 	var behavior := champion.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
@@ -127,16 +169,16 @@ func _test_champion_weapon_switch() -> void:
 	var charge := load("res://resources/cards/battle_charge.tres") as CardData
 	var effect := charge.effect as ChargeCardEffect
 	var charge_context := {"controller": controller, "user": champion, "card": charge}
-	var charge_cells := effect.get_area_target_cells(charge_context)
-	if charge_cells.is_empty():
-		_fail("champion had no valid charge cell after switching to spear")
+	var charge_targets := effect.get_valid_targets(charge_context)
+	if not charge_targets.has(player):
+		_fail("champion had no valid charge target after switching to spear")
 		return
 	champion.hand.append(charge)
 	champion.current_ap = 10
 	controller.current_unit = champion
 	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
-	if not controller.play_card(champion, charge, [charge_cells[0]]):
-		_fail("champion could not resolve a cell-target charge after switching")
+	if not controller.play_card(champion, charge, [player]):
+		_fail("champion could not resolve a unit-target charge after switching")
 
 
 func _test_abyss_shared_armor() -> void:
@@ -163,13 +205,13 @@ func _test_abyss_shared_armor() -> void:
 	var first_player := controller.player_units[0]
 	var second_player := controller.player_units[1]
 	var first_health := first_player.get_current_health()
-	# The warrior's equipped shield reduces the requested 6 damage to 5 before armor absorption.
+	# The shared pool absorbs the full request after personal mitigation.
 	controller.apply_damage(boss, first_player, 6, "shared armor diagnostic", {"fixed_damage": true})
 	if first_player.get_current_health() != first_health:
 		_fail("shared armor did not absorb damage to the first player")
 	for player in controller.player_units:
 		var shared := player.get_status("abyss_shared_armor")
-		if shared == null or shared.stacks != 11:
+		if shared == null or shared.stacks != 10:
 			_fail("shared armor pool did not synchronize after partial damage: status=%d runtime=%d" % [
 				shared.stacks if shared != null else -1,
 				int(boss.enemy_state.runtime_state.get("abyss_shared_armor", -1)),
@@ -178,7 +220,7 @@ func _test_abyss_shared_armor() -> void:
 		_fail("abyss scale changed phase before shared armor was broken")
 	var second_health := second_player.get_current_health()
 	controller.apply_damage(boss, second_player, 20, "shared armor break diagnostic", {"fixed_damage": true})
-	if second_player.get_current_health() != second_health - 9:
+	if second_player.get_current_health() != second_health - 10:
 		_fail("shared armor overflow damage was not applied correctly: before=%d after=%d runtime=%d" % [
 			second_health,
 			second_player.get_current_health(),

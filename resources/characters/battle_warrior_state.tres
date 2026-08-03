@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/characters/character_state.gd" id="1_character_state"]
 [ext_resource type="Resource" path="res://resources/characters/sample_warrior_data.tres" id="2_character_data"]
 [ext_resource type="Resource" path="res://resources/items/mountain_cleaver.tres" id="4_main_hand"]
-[ext_resource type="Resource" path="res://resources/items/basic_shield.tres" id="5_off_hand"]
+[ext_resource type="Resource" path="res://resources/items/ceremonial_sword_shield_stack.tres" id="5_starter_weapon"]
 [ext_resource type="Resource" path="res://resources/cards/battle_slam_stack.tres" id="8_slam"]
 [ext_resource type="Resource" path="res://resources/cards/battle_charge_stack.tres" id="9_charge"]
 [ext_resource type="Resource" path="res://resources/cards/defensive_stance_stack.tres" id="10_defense"]
@@ -15,5 +15,5 @@ current_health = 54
 deck = [ExtResource("8_slam"), ExtResource("9_charge"), ExtResource("10_defense")]
 weapon_equipment = ExtResource("4_main_hand")
 weapon_face = 0
-armor_equipment = ExtResource("5_off_hand")
+inventory = [ExtResource("5_starter_weapon")]
 extra_ap_bonus = 0

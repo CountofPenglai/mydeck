@@ -16,18 +16,18 @@ const ARCHETYPES := [
 ]
 
 const EXPECTED_HEALTH := {
-	&"gray_shield_guard": 26,
-	&"holy_spearman": 22,
-	&"fortress_crossbow": 18,
-	&"field_priest": 20,
-	&"punishment_knight": 28,
-	&"standard_bearer": 23,
-	&"holy_bastion_commander": 40,
-	&"creation_shard": 20,
-	&"blood_construct": 20,
-	&"corrupt_heart_veil": 135,
-	&"gray_bastion_paladin": 60,
-	&"triumph_statue": 40,
+	&"gray_shield_guard": 33,
+	&"holy_spearman": 28,
+	&"fortress_crossbow": 23,
+	&"field_priest": 25,
+	&"punishment_knight": 35,
+	&"standard_bearer": 29,
+	&"holy_bastion_commander": 50,
+	&"creation_shard": 25,
+	&"blood_construct": 25,
+	&"corrupt_heart_veil": 169,
+	&"gray_bastion_paladin": 75,
+	&"triumph_statue": 50,
 }
 
 var _exit_code := 0
@@ -217,8 +217,8 @@ func _test_construct_shared_deck() -> void:
 		_fail("no spawn cell for flesh shared-deck test")
 		return
 	var spawn_state := ChapterTwoEnemyCatalog.create_enemy(&"flesh_spawn", 4433)
-	if spawn_state == null or spawn_state.get_max_health() != 1:
-		_fail("flesh spawn does not have fixed one health")
+	if spawn_state == null or spawn_state.get_max_health() != 2:
+		_fail("flesh spawn does not have fixed two health")
 		return
 	var spawn := controller.spawn_enemy_unit(spawn_state, spawn_cell, 0, owner)
 	if spawn == null:
@@ -240,7 +240,7 @@ func _test_paladin_merge() -> void:
 	ChapterTwoEnemyRules.on_battle_started(controller)
 	var paladin: BattleUnitState = controller.enemy_units[0]
 	var statue: BattleUnitState = controller.enemy_units[1]
-	controller.apply_damage(null, statue, 10, "diagnostic", {"fixed_damage": true})
+	controller.apply_damage(null, statue, 13, "diagnostic", {"fixed_damage": true})
 	var badges: PackedStringArray = paladin.enemy_state.runtime_state.get("badges", PackedStringArray())
 	if badges.has("cup"):
 		_fail("statue threshold did not extinguish cup badge")
@@ -249,7 +249,7 @@ func _test_paladin_merge() -> void:
 		_fail("paladin did not become military god remains")
 	if controller.enemy_units.has(statue):
 		_fail("statue remained after merge")
-	if paladin.get_max_health() != 90:
+	if paladin.get_max_health() != 112:
 		_fail("merge health did not include remaining statue health")
 
 
@@ -264,8 +264,8 @@ func _test_veil_gospel() -> void:
 		_fail("gospel did not transition veil to phase two")
 	if veil.get_strength() != 6 or veil.get_agility() != 3 or veil.get_intelligence() != 1:
 		_fail("veil phase two attributes were not applied")
-	if veil.get_max_health() != 135:
-		_fail("veil phase two maximum health is not fixed at 135")
+	if veil.get_max_health() != 169:
+		_fail("veil phase two maximum health is not fixed at 169")
 
 
 func _test_gospel_reward_and_load() -> void:

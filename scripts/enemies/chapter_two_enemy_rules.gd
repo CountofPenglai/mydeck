@@ -127,12 +127,12 @@ static func on_after_damage_taken(controller: BattleController, unit: BattleUnit
 	var paladin := _find_enemy(controller, &"gray_bastion_paladin")
 	if paladin == null:
 		return
-	var previous := int(unit.enemy_state.runtime_state.get("last_badge_health", 40))
+	var previous := int(unit.enemy_state.runtime_state.get("last_badge_health", 50))
 	var current := unit.get_current_health()
 	unit.enemy_state.runtime_state["last_badge_health"] = current
-	for threshold in [30, 20, 10, 0]:
+	for threshold in [38, 25, 13, 0]:
 		if previous > threshold and current <= threshold:
-			var badge: String = str({30: "cup", 20: "shield", 10: "wing", 0: "sword"}[threshold])
+			var badge: String = str({38: "cup", 25: "shield", 13: "wing", 0: "sword"}[threshold])
 			_remove_badge(paladin, badge)
 			controller._emit_log("凯旋圣像的%s圣徽熄灭。" % _badge_label(badge))
 
@@ -285,9 +285,9 @@ static func resolve_paladin_merge(controller: BattleController, paladin: BattleU
 	var state := ChapterTwoEnemyCatalog.create_enemy(&"military_god_remains", controller.rng.randi())
 	if state == null:
 		return
-	state.runtime_state["max_health_override"] = 60 + statue_health
+	state.runtime_state["max_health_override"] = 75 + statue_health
 	state.runtime_state["badges"] = badges.duplicate()
-	state.current_health = 60 + statue_health
+	state.current_health = 75 + statue_health
 	paladin.enemy_state = state
 	paladin.statuses.clear()
 	paladin.clear_armor({"controller": controller, "reason": "paladin_merge"})
@@ -333,8 +333,8 @@ static func resolve_gospel(controller: BattleController, unit: BattleUnitState, 
 	unit.enemy_state.runtime_state["strength_override"] = 6
 	unit.enemy_state.runtime_state["agility_override"] = 3
 	unit.enemy_state.runtime_state["intelligence_override"] = 1
-	unit.enemy_state.runtime_state["max_health_override"] = 135
-	unit.enemy_state.runtime_state["base_damage_override"] = 4
+	unit.enemy_state.runtime_state["max_health_override"] = 169
+	unit.enemy_state.runtime_state["base_damage_override"] = 5
 	unit.enemy_state.runtime_state["range_override"] = 2
 	unit.current_ap = 0
 	controller._emit_log("腐心帷幕开启福音，转入第二阶段。")

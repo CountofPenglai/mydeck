@@ -127,6 +127,23 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 		_fail("BATTLE_HUD_LAYOUT_CHECK: EquipmentRegion missing at %s" % target_size)
 	elif _contains_scroll_container(equipment_region):
 		_fail("BATTLE_HUD_LAYOUT_CHECK: equipment region contains scrolling at %s" % target_size)
+	else:
+		var equipment_button := bottom_hud.get_node_or_null("%EquipmentButton") as Button
+		var equipment_label := bottom_hud.get_node_or_null("%EquipmentLabel") as Label
+		bottom_hud.call("set_equipment_actions", 1, "启动：本回合伤害加值 +2、范围 +1", true)
+		if equipment_button == null or equipment_label == null:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment action text nodes are missing at %s" % target_size)
+		elif not equipment_button.text.is_empty():
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment button text overlaps its summary label at %s" % target_size)
+		elif equipment_label.text != "启动：\n本回合伤害加值 +2、范围 +1":
+			_fail("BATTLE_HUD_LAYOUT_CHECK: single equipment action is not split into brief lines at %s" % target_size)
+		elif equipment_label.autowrap_mode == TextServer.AUTOWRAP_OFF:
+			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment action summary cannot wrap at %s" % target_size)
+		bottom_hud.call("set_equipment_actions", 3)
+		if equipment_button != null and not equipment_button.text.is_empty():
+			_fail("BATTLE_HUD_LAYOUT_CHECK: multi-action equipment button draws overlapping text at %s" % target_size)
+		elif equipment_label != null and equipment_label.text != "装备动作 3 项\n点击展开":
+			_fail("BATTLE_HUD_LAYOUT_CHECK: multi-action equipment summary is not split into lines at %s" % target_size)
 	for region_limit in [
 		{"name": "EquipmentRegion", "max_width": 140.0},
 		{"name": "VitalsRegion", "max_width": 300.0},

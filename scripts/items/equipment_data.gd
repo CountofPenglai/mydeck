@@ -50,6 +50,7 @@ enum PairedAttackMode {
 @export_group("Double Face")
 @export var back_face: EquipmentData
 @export_enum("无", "手动", "触发") var face_switch_mode: int = FaceSwitchMode.NONE
+@export var druid_form_linked: bool = false
 
 @export_group("Paired Equipment")
 @export var paired_component: EquipmentData
@@ -63,8 +64,26 @@ enum PairedAttackMode {
 func has_tag(tag: String) -> bool:
 	if tag.is_empty():
 		return false
-
+	if is_weapon():
+		if tag == "单手":
+			return equip_category == EquipCategory.ONE_HAND
+		if tag == "双手":
+			return equip_category == EquipCategory.TWO_HAND
 	return subcategories.has(tag)
+
+
+func get_display_tags() -> PackedStringArray:
+	if not is_weapon():
+		return subcategories.duplicate()
+	var tags := PackedStringArray()
+	if equip_category == EquipCategory.ONE_HAND:
+		tags.append("单手")
+	elif equip_category == EquipCategory.TWO_HAND:
+		tags.append("双手")
+	for rule_tag in ["双持", "盾牌"]:
+		if subcategories.has(rule_tag):
+			tags.append(rule_tag)
+	return tags
 
 
 func is_available_to_class(card_class: int) -> bool:
@@ -97,6 +116,10 @@ func is_two_handed() -> bool:
 
 func has_back_face() -> bool:
 	return back_face != null
+
+
+func is_druid_form_linked_weapon() -> bool:
+	return is_weapon() and druid_form_linked and back_face != null
 
 
 func get_face(face_index: int) -> EquipmentData:

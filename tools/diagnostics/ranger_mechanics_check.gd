@@ -59,6 +59,7 @@ func _ready() -> void:
 		_fail("RANGER_DIAG: sample map base elements were not loaded")
 	_test_combo_rollover(controller, ranger)
 	_test_combo_bonus_cap(controller, ranger)
+	_test_turn_end_collection(controller, ranger)
 	_test_element_inventory(controller, ranger)
 	_test_concealment(controller, ranger)
 	print("RANGER_DIAG: completed")
@@ -123,6 +124,22 @@ func _test_combo_bonus_cap(controller: BattleController, ranger: BattleUnitState
 	var status := ranger.get_status("ranger_turn_damage_bonus")
 	if status == null or status.stacks != 2:
 		_fail("RANGER_DIAG: combo 4 damage bonus stacked more than once in one turn")
+
+
+func _test_turn_end_collection(controller: BattleController, ranger: BattleUnitState) -> void:
+	ranger.ranger_state.element_inventory.clear()
+	controller.surface_state.add_persistent_source(
+		ranger.cell,
+		BattleSurfaceState.Element.FIRE,
+		"diagnostic:ranger_turn_end",
+		"diagnostic"
+	)
+	controller._resolve_ranger_turn_end(ranger)
+	if int(ranger.ranger_state.element_inventory.get(BattleSurfaceState.Element.FIRE, 0)) != 1:
+		_fail("RANGER_DIAG: ranger did not collect the element underfoot at turn end")
+	controller._resolve_ranger_turn_end(ranger)
+	if int(ranger.ranger_state.element_inventory.get(BattleSurfaceState.Element.FIRE, 0)) != 1:
+		_fail("RANGER_DIAG: turn-end collection ignored the per-source collection limit")
 
 
 func _test_element_inventory(controller: BattleController, ranger: BattleUnitState) -> void:

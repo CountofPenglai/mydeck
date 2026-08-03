@@ -261,7 +261,10 @@ func _deserialize_character(data: Dictionary) -> CharacterState:
 	for stack_data in data.get("inventory", []):
 		if not (stack_data is Dictionary):
 			continue
-		var item := load(str(stack_data.get("item", ""))) as ItemData
+		var item_path := str(stack_data.get("item", ""))
+		if item_path.is_empty() or not ResourceLoader.exists(item_path):
+			continue
+		var item := load(item_path) as ItemData
 		if item == null:
 			continue
 		var stack := InventoryStack.new()
@@ -309,7 +312,9 @@ func _deserialize_character(data: Dictionary) -> CharacterState:
 
 
 func _load_equipment(path: String) -> EquipmentData:
-	return load(path) as EquipmentData if not path.is_empty() else null
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return null
+	return load(path) as EquipmentData
 
 
 func _resource_path(resource: Resource) -> String:

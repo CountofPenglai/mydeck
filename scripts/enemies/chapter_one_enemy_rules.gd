@@ -119,10 +119,10 @@ static func try_handle_lethal(controller: BattleController, source: BattleUnitSt
 		return false
 	if _id(target) == &"hungry_fish" and not bool(target.enemy_state.runtime_state.get("reversed", false)):
 		target.enemy_state.runtime_state["reversed"] = true
-		target.enemy_state.runtime_state["max_health_override"] = 5
+		target.enemy_state.runtime_state["max_health_override"] = 7
 		target.enemy_state.runtime_state["strength_override"] = 0
 		target.enemy_state.runtime_state["agility_override"] = 2
-		target.enemy_state.runtime_state["base_damage_override"] = 2
+		target.enemy_state.runtime_state["base_damage_override"] = 3
 		target.enemy_state.runtime_state["range_override"] = 1
 		target.clear_armor({"controller": controller, "reason": "reverse_fish"})
 		target.statuses.clear()

@@ -22,7 +22,6 @@ equip_slot = 0
 equip_category = 2
 allowed_classes = PackedInt32Array(3)
 rarity = 2
-subcategories = PackedStringArray("远程", "武器", "模式组件")
 
 [resource]
 script = ExtResource("1_equipment")
@@ -38,7 +37,6 @@ equip_slot = 0
 equip_category = 0
 allowed_classes = PackedInt32Array(3)
 rarity = 2
-subcategories = PackedStringArray("近战", "武器", "模式成对", "T2")
 paired_component = SubResource("WindHunter")
 paired_attack_mode = 1
 passive_effects = [SubResource("Effect_wind")]

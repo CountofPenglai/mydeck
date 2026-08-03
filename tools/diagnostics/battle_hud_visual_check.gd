@@ -12,6 +12,20 @@ func _ready() -> void:
 	var controller := battle_scene.controller
 	for unit in controller.player_units:
 		unit.is_deployed = true
+	for unit in controller.enemy_units:
+		var battle_texture := unit.get_battle_texture()
+		if battle_texture == null:
+			push_error("BATTLE_HUD_VISUAL_CHECK: enemy battle texture is missing")
+			get_tree().quit(1)
+			return
+		print("BATTLE_HUD_ENEMY_ART: archetype=%s deployed=%s cell=%s radius=%s path=%s size=%s" % [
+			unit.enemy_state.enemy_data.archetype_id,
+			unit.is_deployed,
+			unit.cell,
+			unit.token_radius,
+			battle_texture.resource_path,
+			battle_texture.get_size(),
+		])
 	controller.phase = BattleController.Phase.BATTLE
 	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 	controller.turn_order.clear()

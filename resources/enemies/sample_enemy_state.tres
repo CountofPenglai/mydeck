@@ -6,4 +6,4 @@
 [resource]
 script = ExtResource("1_enemy_state")
 enemy_data = ExtResource("2_enemy_data")
-current_health = 24
+current_health = 30

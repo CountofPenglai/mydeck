@@ -155,7 +155,11 @@ func _test_stand_immovable(controller: BattleController, warrior: BattleUnitStat
 	warrior.discard_pile.clear()
 	warrior.card_runtime_states.clear()
 	_set_test_weapon_pair(warrior)
-	warrior.character_state.armor_equipment = load("res://resources/items/basic_shield.tres") as EquipmentData
+	var diagnostic_armor := EquipmentData.new()
+	diagnostic_armor.item_name = "诊断护甲"
+	diagnostic_armor.equip_slot = EquipmentData.EquipSlot.ARMOR
+	diagnostic_armor.damage_reduction = 1
+	warrior.character_state.armor_equipment = diagnostic_armor
 	warrior.clear_armor({"controller": controller})
 	warrior.set_current_health(warrior.get_max_health())
 	warrior.hand.append(card)

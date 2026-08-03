@@ -17,4 +17,3 @@ equip_slot = 0
 equip_category = 0
 allowed_classes = PackedInt32Array(3)
 rarity = 0
-subcategories = PackedStringArray("弓", "武器")
