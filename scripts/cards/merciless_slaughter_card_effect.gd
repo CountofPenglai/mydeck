@@ -65,7 +65,7 @@ func _resolve_followup(controller: BattleController, user: BattleUnitState, targ
 				execution_base_damage_multiplier,
 			])
 
-	controller.switch_weapon_from_inventory(user)
+	controller.switch_prepared_weapon(user)
 	var stun := StunStatus.new()
 	stun.stacks = self_stun_stacks
 	user.add_status(stun)

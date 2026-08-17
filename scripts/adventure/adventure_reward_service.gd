@@ -1,9 +1,12 @@
 extends RefCounted
 class_name AdventureRewardService
 
+const REWARD_CATALOG: AdventureRewardCatalog = preload("res://resources/adventure_reward_catalog.tres")
+
 var _card_pool: Array[CardData] = []
 var _equipment_pool: Array[EquipmentData] = []
 var _consumable_pool: Array[ConsumableData] = []
+var _catalog_initialized: bool = false
 
 
 func create_battle_reward(run_state: PartyRunState, room: AdventureRoomState, encounter_tier: int) -> Dictionary:
@@ -459,26 +462,24 @@ func _equipment_price(rarity: int) -> int:
 
 
 func _ensure_catalog() -> void:
-	if not _card_pool.is_empty() or not _equipment_pool.is_empty() or not _consumable_pool.is_empty():
+	if _catalog_initialized:
 		return
-	for file_name in DirAccess.get_files_at("res://resources/cards"):
-		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
-			continue
-		var resource := load("res://resources/cards/%s" % file_name)
-		if resource is CardData:
-			var card := resource as CardData
-			if card.can_appear_in_rewards():
-				_card_pool.append(card)
-	for file_name in DirAccess.get_files_at("res://resources/items"):
-		if not file_name.ends_with(".tres") or file_name.ends_with("_stack.tres"):
-			continue
-		var resource := load("res://resources/items/%s" % file_name)
-		if resource is EquipmentData:
-			var equipment := resource as EquipmentData
-			if not equipment.has_tag("事件"):
-				_equipment_pool.append(equipment)
-		elif resource is ConsumableData:
-			_consumable_pool.append(resource as ConsumableData)
+	_catalog_initialized = true
+	for card in REWARD_CATALOG.cards:
+		if card != null and card.can_appear_in_rewards():
+			_card_pool.append(card)
+	for equipment in REWARD_CATALOG.equipment:
+		if equipment != null and not equipment.has_tag("事件"):
+			_equipment_pool.append(equipment)
+	for consumable in REWARD_CATALOG.consumables:
+		if consumable != null:
+			_consumable_pool.append(consumable)
+	if _card_pool.is_empty():
+		push_error("AdventureRewardService: explicit reward catalog contains no eligible cards")
+	if _equipment_pool.is_empty():
+		push_error("AdventureRewardService: explicit reward catalog contains no eligible equipment")
+	if _consumable_pool.is_empty():
+		push_error("AdventureRewardService: explicit reward catalog contains no consumables")
 
 
 func _shuffle(values: Array, rng: RandomNumberGenerator) -> void:

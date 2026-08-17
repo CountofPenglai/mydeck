@@ -2,10 +2,11 @@ extends RefCounted
 class_name CharacterEquipmentModel
 
 const SLOT_WEAPON := "weapon"
+const SLOT_RESERVE_WEAPON := "reserve_weapon"
 const SLOT_ARMOR := "armor"
 const SLOT_ACCESSORY_1 := "accessory_1"
 const SLOT_ACCESSORY_2 := "accessory_2"
-const VALID_SLOTS := [SLOT_WEAPON, SLOT_ARMOR, SLOT_ACCESSORY_1, SLOT_ACCESSORY_2]
+const VALID_SLOTS := [SLOT_WEAPON, SLOT_RESERVE_WEAPON, SLOT_ARMOR, SLOT_ACCESSORY_1, SLOT_ACCESSORY_2]
 
 
 static func switch_equipment_from_inventory(state: CharacterState, preferred_equipment: EquipmentData = null) -> Dictionary:
@@ -33,6 +34,8 @@ static func equip_inventory_item_at(state: CharacterState, stack_index: int, slo
 		return _result(false, "背包物品不存在。")
 	if not VALID_SLOTS.has(slot):
 		return _result(false, "装备槽位无效。")
+	if slot == SLOT_RESERVE_WEAPON and not _is_warrior(state):
+		return _result(false, "只有战士可以装备备战武器。")
 
 	var source_stack := state.inventory[stack_index]
 	var equipment := source_stack.item_data as EquipmentData if source_stack != null else null
@@ -44,7 +47,7 @@ static func equip_inventory_item_at(state: CharacterState, stack_index: int, slo
 		return _result(false, "%s无法使用这件装备。" % state.get_character_name())
 
 	var previous := _get_slot_equipment(state, slot)
-	var previous_face := state.weapon_face if slot == SLOT_WEAPON else 0
+	var previous_face := _get_slot_face(state, slot)
 	var previous_id := str(state.equipment_instance_ids.get(slot, ""))
 	if previous != null and source_stack.count > 1 and not _can_add_inventory_item(state, previous, previous_id):
 		return _result(false, "背包已满，无法收起当前装备。")
@@ -62,7 +65,7 @@ static func equip_inventory_item_at(state: CharacterState, stack_index: int, slo
 		"old_equipment": previous,
 		"old_face": previous_face,
 		"new_equipment": equipment,
-		"new_face": state.weapon_face if slot == SLOT_WEAPON else 0,
+		"new_face": _get_slot_face(state, slot),
 		"old_instance_id": previous_id,
 		"new_instance_id": incoming_id,
 	}
@@ -71,6 +74,8 @@ static func equip_inventory_item_at(state: CharacterState, stack_index: int, slo
 static func unequip_slot_to_inventory(state: CharacterState, slot: String) -> Dictionary:
 	if state == null or not VALID_SLOTS.has(slot):
 		return _result(false, "装备槽位无效。")
+	if slot == SLOT_RESERVE_WEAPON and not _is_warrior(state):
+		return _result(false, "只有战士可以卸下备战武器。")
 	var equipment := _get_slot_equipment(state, slot)
 	if equipment == null:
 		return _result(false, "该槽位没有装备。")
@@ -87,6 +92,47 @@ static func unequip_slot_to_inventory(state: CharacterState, slot: String) -> Di
 		"slot": slot,
 		"old_equipment": equipment,
 		"old_instance_id": instance_id,
+	}
+
+
+static func swap_active_and_reserve_weapons(state: CharacterState) -> Dictionary:
+	if state == null:
+		return _result(false, "角色状态不存在。")
+	if not _is_warrior(state):
+		return _result(false, "只有战士可以切换备战武器。")
+	if state.reserve_weapon_equipment == null:
+		return _result(false, "备战武器槽位没有装备。")
+
+	var active_weapon := state.weapon_equipment
+	var active_face := state.weapon_face
+	var reserve_weapon := state.reserve_weapon_equipment
+	var reserve_face := state.reserve_weapon_face
+	var has_active_id := state.equipment_instance_ids.has(SLOT_WEAPON)
+	var has_reserve_id := state.equipment_instance_ids.has(SLOT_RESERVE_WEAPON)
+	var active_id := str(state.equipment_instance_ids.get(SLOT_WEAPON, ""))
+	var reserve_id := str(state.equipment_instance_ids.get(SLOT_RESERVE_WEAPON, ""))
+	state.weapon_equipment = reserve_weapon
+	state.weapon_face = reserve_face
+	state.reserve_weapon_equipment = active_weapon
+	state.reserve_weapon_face = active_face
+	if has_reserve_id:
+		state.equipment_instance_ids[SLOT_WEAPON] = reserve_id
+	else:
+		state.equipment_instance_ids.erase(SLOT_WEAPON)
+	if has_active_id:
+		state.equipment_instance_ids[SLOT_RESERVE_WEAPON] = active_id
+	else:
+		state.equipment_instance_ids.erase(SLOT_RESERVE_WEAPON)
+	return {
+		"success": true,
+		"message": "已交换当前武器和备战武器。",
+		"slot": SLOT_WEAPON,
+		"old_equipment": active_weapon,
+		"old_face": active_face,
+		"old_instance_id": active_id,
+		"new_equipment": reserve_weapon,
+		"new_face": reserve_face,
+		"new_instance_id": reserve_id,
 	}
 
 
@@ -240,6 +286,8 @@ static func _equipment_fits_slot(equipment: EquipmentData, slot: String) -> bool
 	match slot:
 		SLOT_WEAPON:
 			return equipment.is_weapon()
+		SLOT_RESERVE_WEAPON:
+			return equipment.is_weapon()
 		SLOT_ARMOR:
 			return equipment.is_armor()
 		SLOT_ACCESSORY_1, SLOT_ACCESSORY_2:
@@ -251,6 +299,8 @@ static func _get_slot_equipment(state: CharacterState, slot: String) -> Equipmen
 	match slot:
 		SLOT_WEAPON:
 			return state.weapon_equipment
+		SLOT_RESERVE_WEAPON:
+			return state.reserve_weapon_equipment
 		SLOT_ARMOR:
 			return state.armor_equipment
 		SLOT_ACCESSORY_1:
@@ -265,12 +315,30 @@ static func _set_slot_equipment(state: CharacterState, slot: String, equipment: 
 		SLOT_WEAPON:
 			state.weapon_equipment = equipment
 			state.weapon_face = 0
+		SLOT_RESERVE_WEAPON:
+			state.reserve_weapon_equipment = equipment
+			state.reserve_weapon_face = 0
 		SLOT_ARMOR:
 			state.armor_equipment = equipment
 		SLOT_ACCESSORY_1:
 			state.accessory_equipment_1 = equipment
 		SLOT_ACCESSORY_2:
 			state.accessory_equipment_2 = equipment
+
+
+static func _get_slot_face(state: CharacterState, slot: String) -> int:
+	match slot:
+		SLOT_WEAPON:
+			return state.weapon_face
+		SLOT_RESERVE_WEAPON:
+			return state.reserve_weapon_face
+	return 0
+
+
+static func _is_warrior(state: CharacterState) -> bool:
+	return state != null \
+		and state.character_data != null \
+		and state.character_data.character_class == CardEnums.CardClass.WARRIOR
 
 
 static func _new_runtime_item_id(state: CharacterState, stack: InventoryStack) -> String:

@@ -55,6 +55,8 @@ func bind_battle(scene: BattleScene, battle_controller: BattleController) -> voi
 	_connect_turn_order()
 	if not equipment_popup.is_connected("action_selected", _on_equipment_action_selected):
 		equipment_popup.connect("action_selected", _on_equipment_action_selected)
+	if not equipment_popup.is_connected("detail_selected", _on_equipment_detail_selected):
+		equipment_popup.connect("detail_selected", _on_equipment_detail_selected)
 	if not detail_panel.is_connected("lock_changed", _on_detail_lock_changed):
 		detail_panel.connect("lock_changed", _on_detail_lock_changed)
 	refresh_view()
@@ -297,6 +299,20 @@ func _refresh_equipment_actions(unit: BattleUnitState) -> void:
 func _on_equipment_pressed() -> void:
 	if _equipment_action_unit == null:
 		return
+	if _equipment_action_unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+		if bool(equipment_popup.call("is_open")):
+			equipment_popup.call("close")
+			return
+		equipment_popup.call(
+			"set_actions",
+			_equipment_action_unit,
+			_equipment_actions,
+			_can_activate_equipment_action,
+			_compact_mode,
+			true
+		)
+		equipment_popup.call("open_above", equipment_region)
+		return
 	if _equipment_actions.size() == 1:
 		var action := _equipment_actions[0]
 		_on_equipment_action_selected(
@@ -326,6 +342,13 @@ func _on_equipment_action_selected(unit: BattleUnitState, effect: EquipmentEffec
 	equipment_popup.call("close")
 	if battle_scene != null:
 		battle_scene._on_equipment_action_pressed(unit, effect, action_id)
+
+
+func _on_equipment_detail_selected(equipment: EquipmentData, unit: BattleUnitState) -> void:
+	if equipment == null:
+		return
+	detail_panel.call("preview_equipment", equipment, unit)
+	detail_panel.call("lock_current")
 
 
 func _on_class_action_pressed(action_id: StringName, unit: BattleUnitState) -> void:

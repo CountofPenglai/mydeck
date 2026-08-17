@@ -243,7 +243,9 @@ func _test_attack_defense_dance(controller: BattleController, warrior: BattleUni
 	_reset_card_zones(warrior)
 	warrior.clear_armor({"controller": controller})
 	_reset_enemy(enemy)
-	warrior.character_state.inventory.clear()
+	warrior.character_state.reserve_weapon_equipment = null
+	warrior.character_state.reserve_weapon_face = 0
+	warrior.character_state.equipment_instance_ids.erase(CharacterEquipmentModel.SLOT_RESERVE_WEAPON)
 	var fallback := template.duplicate() as CardData
 	warrior.hand.append(fallback)
 	warrior.current_ap = 10
@@ -291,11 +293,16 @@ func _reset_enemy(enemy: BattleUnitState) -> void:
 
 
 func _ensure_spare_weapon(warrior: BattleUnitState) -> void:
-	if warrior == null or warrior.character_state == null or not warrior.character_state.inventory.is_empty():
+	if warrior == null or warrior.character_state == null:
+		return
+	warrior.character_state.inventory.clear()
+	if warrior.character_state.reserve_weapon_equipment != null \
+			and warrior.character_state.reserve_weapon_equipment != warrior.character_state.weapon_equipment:
 		return
 	var spare := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
 	if spare != null and spare != warrior.character_state.weapon_equipment:
-		CharacterEquipmentModel.add_inventory_item(warrior.character_state, spare)
+		warrior.character_state.reserve_weapon_equipment = spare
+		warrior.character_state.reserve_weapon_face = 0
 
 
 func _find_warrior(controller: BattleController) -> BattleUnitState:

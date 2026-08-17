@@ -34,6 +34,7 @@ func _ready() -> void:
 		if map_scene.modal_title.text != hero.weapon_equipment.item_name \
 				or not _labels_contain(map_scene.modal_body, "基础伤害"):
 			_fail("INVENTORY_UI_DIAG: equipment detail view omitted combat fields")
+	await _test_warrior_reserve_inventory_ui(map_scene)
 	if not map_scene._camp_activity_description("ranger_dig").contains("第三次"):
 		_fail("INVENTORY_UI_DIAG: camp activity description is incomplete")
 	_test_repeatable_infusion_ui(map_scene)
@@ -90,6 +91,58 @@ func _test_repeatable_infusion_ui(map_scene: AdventureMapScene) -> void:
 	map_scene._hide_modal()
 
 
+func _test_warrior_reserve_inventory_ui(map_scene: AdventureMapScene) -> void:
+	var warrior: CharacterState
+	var ranger: CharacterState
+	for party_hero in map_scene.run_state.party:
+		if party_hero == null or party_hero.character_data == null:
+			continue
+		match party_hero.character_data.character_class:
+			CardEnums.CardClass.WARRIOR:
+				warrior = party_hero
+			CardEnums.CardClass.RANGER:
+				ranger = party_hero
+	if warrior == null or ranger == null:
+		_fail("INVENTORY_UI_DIAG: warrior/ranger inventory fixtures are missing")
+		return
+
+	var warrior_weapon := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
+	var ranger_weapon := load("res://resources/items/training_bow.tres") as EquipmentData
+	if warrior_weapon == null or ranger_weapon == null:
+		_fail("INVENTORY_UI_DIAG: reserve-slot weapon fixtures are missing")
+		return
+	_add_inventory_fixture(warrior, warrior_weapon, "inventory_ui_warrior_weapon")
+	map_scene._show_inventory(warrior.adventure_character_id)
+	await get_tree().process_frame
+	var warrior_row := _find_item_row(map_scene.modal_body, warrior_weapon.item_name)
+	if not _labels_contain(map_scene.modal_body, "备战武器"):
+		_fail("INVENTORY_UI_DIAG: warrior reserve weapon row missing")
+	if warrior_row == null \
+			or _find_button_exact(warrior_row, "装备为当前") == null \
+			or _find_button_exact(warrior_row, "装备为备战") == null:
+		_fail("INVENTORY_UI_DIAG: warrior backpack weapon does not expose both equip destinations")
+
+	_add_inventory_fixture(ranger, ranger_weapon, "inventory_ui_ranger_weapon")
+	map_scene._show_inventory(ranger.adventure_character_id)
+	await get_tree().process_frame
+	var ranger_row := _find_item_row(map_scene.modal_body, ranger_weapon.item_name)
+	if _labels_contain(map_scene.modal_body, "备战武器"):
+		_fail("INVENTORY_UI_DIAG: non-warrior can see reserve weapon row")
+	if ranger_row == null or _find_button_exact(ranger_row, "装备") == null:
+		_fail("INVENTORY_UI_DIAG: non-warrior lost the single equip command")
+	elif _find_button_exact(ranger_row, "装备为当前") != null \
+			or _find_button_exact(ranger_row, "装备为备战") != null:
+		_fail("INVENTORY_UI_DIAG: non-warrior can access reserve weapon commands")
+
+
+func _add_inventory_fixture(hero: CharacterState, equipment: EquipmentData, stack_id: String) -> void:
+	var stack := InventoryStack.new()
+	stack.item_data = equipment
+	stack.count = 1
+	stack.stack_id = stack_id
+	hero.inventory.append(stack)
+
+
 func _fail(message: String) -> void:
 	exit_code = 1
 	push_error(message)
@@ -101,6 +154,26 @@ func _find_button(root: Node, fragment: String) -> Button:
 		return root as Button
 	for child in root.get_children():
 		var result := _find_button(child, fragment)
+		if result != null:
+			return result
+	return null
+
+
+func _find_button_exact(root: Node, button_text: String) -> Button:
+	if root is Button and (root as Button).text == button_text:
+		return root as Button
+	for child in root.get_children():
+		var result := _find_button_exact(child, button_text)
+		if result != null:
+			return result
+	return null
+
+
+func _find_item_row(root: Node, item_name: String) -> Control:
+	if root is Label and (root as Label).text.contains(item_name):
+		return root.get_parent() as Control
+	for child in root.get_children():
+		var result := _find_item_row(child, item_name)
 		if result != null:
 			return result
 	return null

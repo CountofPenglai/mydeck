@@ -87,7 +87,7 @@ func _test_mountain_cleaver(controller: BattleController, warrior: BattleUnitSta
 	var mountain := load("res://resources/items/mountain_cleaver.tres") as EquipmentData
 	var ceremonial := load("res://resources/items/ceremonial_sword_shield.tres") as EquipmentData
 	_set_weapon(warrior, mountain)
-	_set_inventory(warrior, ceremonial)
+	_set_reserve_weapon(warrior, ceremonial)
 	warrior.turn_serial = 1
 	if mountain.attack_range != 2:
 		_fail("WARRIOR_WEAPONS: mountain cleaver base range is not 2")
@@ -104,8 +104,8 @@ func _test_mountain_cleaver(controller: BattleController, warrior: BattleUnitSta
 	if _activate_action_direct(warrior, _first_action(warrior, controller), controller):
 		_fail("WARRIOR_WEAPONS: mountain cleaver startup was used twice before switching")
 
-	controller.switch_equipment_from_inventory(warrior, ceremonial)
-	controller.switch_equipment_from_inventory(warrior, mountain)
+	controller.switch_weapon_from_inventory(warrior)
+	controller.switch_weapon_from_inventory(warrior)
 	var returned_profile := warrior.build_strike_profile_object("weapon", {"controller": controller})
 	if returned_profile.primary_damage_bonus != base_profile.primary_damage_bonus \
 			or warrior.get_attack_range("weapon", {"controller": controller}) != base_range:
@@ -216,7 +216,7 @@ func _test_ember_iron_greataxe(controller: BattleController, warrior: BattleUnit
 	var runtime := warrior.get_equipment_runtime_state(ember)
 	if runtime.get_counter("embers") != 3:
 		_fail("WARRIOR_WEAPONS: ember count did not include every discard source")
-	_set_inventory(warrior, training)
+	_set_reserve_weapon(warrior, training)
 	_reset_enemy(enemy)
 	warrior.clear_armor({"controller": controller})
 	var before := enemy.get_current_health()
@@ -255,7 +255,7 @@ func _test_clockwork_pair(controller: BattleController, warrior: BattleUnitState
 		card.ap_cost = 2
 		if warrior.get_card_ap_cost(card) != 1:
 			_fail("WARRIOR_WEAPONS: clockwork AP discount incorrect")
-	_set_inventory(warrior, training)
+	_set_reserve_weapon(warrior, training)
 	var before_switch := pool.current_value
 	controller.switch_weapon_from_inventory(warrior)
 	if pool.current_value != mini(5, before_switch + 1):
@@ -281,12 +281,10 @@ func _set_weapon(owner: BattleUnitState, equipment: EquipmentData) -> void:
 	owner.equipment_runtime_states.clear()
 
 
-func _set_inventory(owner: BattleUnitState, equipment: EquipmentData) -> void:
+func _set_reserve_weapon(owner: BattleUnitState, equipment: EquipmentData) -> void:
 	owner.character_state.inventory.clear()
-	var stack := InventoryStack.new()
-	stack.item_data = equipment
-	stack.count = 1
-	owner.character_state.inventory.append(stack)
+	owner.character_state.reserve_weapon_equipment = equipment
+	owner.character_state.reserve_weapon_face = 0
 
 
 func _build_controller() -> BattleController:

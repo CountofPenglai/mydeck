@@ -635,6 +635,13 @@ func _refresh_inventory_modal() -> void:
 	equipment_heading.add_theme_font_size_override("font_size", 19)
 	modal_body.add_child(equipment_heading)
 	_add_equipment_slot_row(hero, "武器", CharacterEquipmentModel.SLOT_WEAPON, hero.weapon_equipment)
+	if _is_warrior(hero):
+		_add_equipment_slot_row(
+			hero,
+			tr("备战武器"),
+			CharacterEquipmentModel.SLOT_RESERVE_WEAPON,
+			hero.reserve_weapon_equipment
+		)
 	_add_equipment_slot_row(hero, "防具", CharacterEquipmentModel.SLOT_ARMOR, hero.armor_equipment)
 	_add_equipment_slot_row(hero, "饰品 1", CharacterEquipmentModel.SLOT_ACCESSORY_1, hero.accessory_equipment_1)
 	_add_equipment_slot_row(hero, "饰品 2", CharacterEquipmentModel.SLOT_ACCESSORY_2, hero.accessory_equipment_2)
@@ -733,6 +740,18 @@ func _add_inventory_item_row(hero: CharacterState, item_stack: InventoryStack) -
 		if equipment.is_accessory():
 			_add_equip_button(row, hero, item_stack, CharacterEquipmentModel.SLOT_ACCESSORY_1, "饰品 1", class_allowed)
 			_add_equip_button(row, hero, item_stack, CharacterEquipmentModel.SLOT_ACCESSORY_2, "饰品 2", class_allowed)
+		elif equipment.is_weapon() and _is_warrior(hero):
+			_add_equip_button(
+				row, hero, item_stack, CharacterEquipmentModel.SLOT_WEAPON, tr("装备为当前"), class_allowed
+			)
+			_add_equip_button(
+				row,
+				hero,
+				item_stack,
+				CharacterEquipmentModel.SLOT_RESERVE_WEAPON,
+				tr("装备为备战"),
+				class_allowed
+			)
 		else:
 			var slot := CharacterEquipmentModel.SLOT_WEAPON if equipment.is_weapon() else CharacterEquipmentModel.SLOT_ARMOR
 			_add_equip_button(row, hero, item_stack, slot, "装备", class_allowed)
@@ -810,13 +829,25 @@ func _inventory_item_summary(hero: CharacterState, item_stack: InventoryStack) -
 
 
 func _equip_inventory_item(hero_id: String, stack_id: String, slot: String) -> void:
-	session.equip_inventory_item(hero_id, stack_id, slot)
+	var result := session.equip_inventory_item(hero_id, stack_id, slot)
+	var message := str(result.get("message", ""))
+	if not message.is_empty():
+		_show_status(message)
 	_refresh_inventory_modal()
 
 
 func _unequip_item(hero_id: String, slot: String) -> void:
-	session.unequip_item(hero_id, slot)
+	var result := session.unequip_item(hero_id, slot)
+	var message := str(result.get("message", ""))
+	if not message.is_empty():
+		_show_status(message)
 	_refresh_inventory_modal()
+
+
+func _is_warrior(hero: CharacterState) -> bool:
+	return hero != null \
+		and hero.character_data != null \
+		and hero.character_data.character_class == CardEnums.CardClass.WARRIOR
 
 
 func _sort_inventory(hero_id: String) -> void:

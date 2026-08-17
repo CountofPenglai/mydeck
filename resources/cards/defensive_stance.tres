@@ -8,7 +8,7 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "防御架势"
-description = "你选择背包中的 1 件武器并切换至该武器，然后获得 1 层抵挡。\n\n余势：支付 2 AP；若上一轮失去过抵挡则改为无消耗。你选择背包中的 1 件武器并切换至该武器，然后对该武器范围内距离最近的 1 名敌人进行 1 次武器打击。"
+description = "交换当前武器与备战武器，然后获得 1 层抵挡。备战武器为空时不能打出本牌。\n\n余势：支付 2 AP；若上一轮失去过抵挡则改为无消耗。交换当前武器与备战武器，然后对新当前武器范围内距离最近的 1 名敌人进行 1 次武器打击。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 1

@@ -189,17 +189,20 @@ func set_equipment_actions(action_count: int, direct_label: String = "", direct_
 	# EquipmentLabel is the sole text layer inside this button. Drawing Button.text
 	# as well makes both labels occupy the same rectangle.
 	equipment_button.text = ""
+	var equipment_summary := _build_equipment_summary(bound_unit, bound_controller) if bound_unit != null else "未选择装备"
+	var preserve_warrior_summary := bound_unit != null \
+		and bound_unit.get_character_class() == CardEnums.CardClass.WARRIOR
 	if action_count <= 0:
-		equipment_label.text = _build_equipment_summary(bound_unit, bound_controller) if bound_unit != null else "未选择装备"
+		equipment_label.text = equipment_summary
 		equipment_button.tooltip_text = "查看当前装备详情"
 		equipment_button.disabled = bound_unit == null
 		return
 	if action_count == 1:
-		equipment_label.text = _format_equipment_action_summary(direct_label)
+		equipment_label.text = equipment_summary if preserve_warrior_summary else _format_equipment_action_summary(direct_label)
 		equipment_button.tooltip_text = "直接执行：%s" % direct_label
 		equipment_button.disabled = not direct_enabled
 		return
-	equipment_label.text = "装备动作 %d 项\n点击展开" % action_count
+	equipment_label.text = equipment_summary if preserve_warrior_summary else "装备动作 %d 项\n点击展开" % action_count
 	equipment_button.tooltip_text = "展开 %d 个装备动作" % action_count
 	equipment_button.disabled = false
 
@@ -381,6 +384,15 @@ func _build_status_summary(unit: BattleUnitState) -> String:
 func _build_equipment_summary(unit: BattleUnitState, controller: BattleController) -> String:
 	if unit.character_state == null:
 		return "天生武器"
+	if unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+		var current_weapon := unit.get_active_weapon_equipment()
+		var reserve_weapon := unit.character_state.reserve_weapon_equipment
+		if reserve_weapon != null:
+			reserve_weapon = reserve_weapon.get_face(unit.character_state.reserve_weapon_face)
+		return "%s\n%s" % [
+			tr("当前：%s") % (current_weapon.item_name if current_weapon != null else tr("徒手")),
+			tr("备战：%s") % (reserve_weapon.item_name if reserve_weapon != null else tr("无")),
+		]
 	var parts := PackedStringArray([unit.character_state.get_main_hand_label()])
 	var off_hand := unit.character_state.get_off_hand_label()
 	if not off_hand.is_empty() and off_hand != parts[0]:

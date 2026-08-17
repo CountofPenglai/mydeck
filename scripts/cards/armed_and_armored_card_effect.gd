@@ -24,7 +24,7 @@ func can_activate_from_enchant(context: Dictionary = {}) -> bool:
 	var controller: BattleController = context.get("controller") as BattleController
 	var user: BattleUnitState = context.get("user") as BattleUnitState
 	var card: CardData = context.get("card") as CardData
-	return controller != null and user != null and card != null and user.has_card_in_enchant(card) and controller.can_switch_weapon_from_inventory(user)
+	return controller != null and user != null and card != null and user.has_card_in_enchant(card) and controller.can_switch_prepared_weapon(user)
 
 
 func get_enchant_action_label(_context: Dictionary = {}) -> String:
@@ -44,4 +44,4 @@ func activate_from_enchant(context: Dictionary = {}) -> void:
 	}):
 		return
 	controller._emit_log("%s 主动弃置披坚执锐。" % user.get_display_name())
-	controller.switch_weapon_from_inventory(user)
+	controller.switch_prepared_weapon(user)

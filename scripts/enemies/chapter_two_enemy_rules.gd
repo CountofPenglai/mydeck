@@ -17,6 +17,7 @@ static func on_battle_started(controller: BattleController) -> void:
 	for unit in controller.enemy_units:
 		if unit == null or unit.enemy_state == null:
 			continue
+		ChapterTwoEnemyCatalog.apply_art_variant(unit.enemy_state, &"base")
 		match _id(unit):
 			&"corrupt_heart_veil":
 				unit.enemy_state.runtime_state["phase"] = 1
@@ -337,6 +338,7 @@ static func resolve_gospel(controller: BattleController, unit: BattleUnitState, 
 	unit.enemy_state.runtime_state["base_damage_override"] = 5
 	unit.enemy_state.runtime_state["range_override"] = 2
 	unit.current_ap = 0
+	ChapterTwoEnemyCatalog.apply_art_variant(unit.enemy_state, &"phase_two")
 	controller._emit_log("腐心帷幕开启福音，转入第二阶段。")
 
 
@@ -387,6 +389,7 @@ static func _invert_construct(controller: BattleController, unit: BattleUnitStat
 	unit.enemy_state.runtime_state["strength_override"] = 4
 	unit.enemy_state.runtime_state["agility_override"] = 1
 	unit.enemy_state.runtime_state["intelligence_override"] = 4
+	ChapterTwoEnemyCatalog.apply_art_variant(unit.enemy_state, &"inverted")
 	for index in range(count):
 		var template := MUTATION_CARDS[index % MUTATION_CARDS.size()] as CardData
 		if template != null:

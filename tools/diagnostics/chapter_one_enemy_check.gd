@@ -14,6 +14,7 @@ func _ready() -> void:
 	_test_enemy_catalog()
 	_test_encounter_catalog()
 	_test_reverse_fish()
+	_test_kraken_threshold_draw()
 	_test_champion_weapon_switch()
 	_test_abyss_shared_armor()
 	_test_tactical_turn()
@@ -123,6 +124,26 @@ func _test_reverse_fish() -> void:
 	controller.apply_damage(null, fish, 999, "diagnostic", {"fixed_damage": true})
 	if not fish.is_alive() or not bool(fish.enemy_state.runtime_state.get("reversed", false)) or fish.get_max_health() != 7:
 		_fail("hungry fish did not reverse on first lethal damage")
+
+
+func _test_kraken_threshold_draw() -> void:
+	for case in [[0.8, 2], [0.5, 1], [0.3, 0]]:
+		var scenario := (load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario).duplicate(true) as BattleScenario
+		scenario.scene_prototype = null
+		scenario.enemies.clear()
+		scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"kraken", 7000 + int(float(case[0]) * 100.0)))
+		var controller := BattleController.new()
+		controller.setup(scenario)
+		var kraken: BattleUnitState = controller.enemy_units[0]
+		var draw_template := load("res://resources/cards/monster_cards/approach_bite.tres") as CardData
+		for index in range(3):
+			kraken.draw_pile.append(draw_template)
+		kraken.enemy_state.current_health = maxi(1, int(ceil(float(kraken.get_max_health()) * float(case[0]))))
+		var hand_before := kraken.hand.size()
+		ChapterOneEnemyRules.on_turn_started(controller, kraken)
+		var drawn := kraken.hand.size() - hand_before
+		if drawn != int(case[1]):
+			_fail("kraken at %.0f%% health drew %d extra cards instead of %d" % [float(case[0]) * 100.0, drawn, int(case[1])])
 
 
 func _test_champion_weapon_switch() -> void:

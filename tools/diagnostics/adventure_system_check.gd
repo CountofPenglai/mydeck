@@ -16,6 +16,7 @@ var exit_code: int = 0
 
 func _ready() -> void:
 	_test_starter_deck_configuration()
+	_test_reward_catalog_resource()
 	_test_reward_card_filtering()
 	_test_equipment_reward_pool()
 	_test_map_generation()
@@ -77,10 +78,12 @@ func _test_starter_deck_configuration() -> void:
 	var expected_loadouts := {
 		"res://resources/characters/battle_warrior_state.tres": {
 			"equipped": "res://resources/items/mountain_cleaver.tres",
-			"inventory": ["res://resources/items/ceremonial_sword_shield.tres"],
+			"reserve": "res://resources/items/ceremonial_sword_shield.tres",
+			"inventory": [],
 		},
 		"res://resources/characters/battle_ranger_state.tres": {
 			"equipped": "res://resources/items/ranger_dagger_crossbow.tres",
+			"reserve": "",
 			"inventory": [],
 		},
 	}
@@ -92,6 +95,10 @@ func _test_starter_deck_configuration() -> void:
 		if loadout_character.weapon_equipment == null \
 				or loadout_character.weapon_equipment.resource_path != str(expected_loadout.get("equipped", "")):
 			_fail("ADVENTURE_DIAG: %s has the wrong equipped starter weapon" % character_path)
+		var reserve_weapon_path := loadout_character.reserve_weapon_equipment.resource_path \
+				if loadout_character.reserve_weapon_equipment != null else ""
+		if reserve_weapon_path != str(expected_loadout.get("reserve", "")):
+			_fail("ADVENTURE_DIAG: %s has the wrong reserve starter weapon" % character_path)
 		var actual_inventory_paths: Array[String] = []
 		for stack in loadout_character.inventory:
 			if stack != null and stack.count > 0 and stack.item_data != null:
@@ -122,6 +129,18 @@ func _test_starter_deck_configuration() -> void:
 		if hero.current_health != hero.get_max_health():
 			_fail("ADVENTURE_DIAG: starter health is not aligned to max health for %s" % character_path)
 	print("ADVENTURE_DIAG: starter deck configuration passed")
+
+
+func _test_reward_catalog_resource() -> void:
+	var catalog := load("res://resources/adventure_reward_catalog.tres")
+	if catalog == null:
+		_fail("ADVENTURE_DIAG: explicit reward catalog resource is missing")
+		return
+	for property_name in [&"cards", &"equipment", &"consumables"]:
+		var entries = catalog.get(property_name)
+		if not (entries is Array) or (entries as Array).is_empty():
+			_fail("ADVENTURE_DIAG: reward catalog has no %s entries" % property_name)
+	print("ADVENTURE_DIAG: explicit reward catalog passed")
 
 
 func _test_equipment_reward_pool() -> void:
@@ -296,6 +315,8 @@ func _test_save_round_trip() -> void:
 	run.party[0].strength_bonus += 1
 	run.party[0].agility_bonus += 1
 	run.party[0].intelligence_bonus += 1
+	run.party[0].reserve_weapon_face = 1
+	run.party[0].equipment_instance_ids[CharacterEquipmentModel.SLOT_RESERVE_WEAPON] = "diag_reserve_weapon"
 	run.equipment_reward_drawn_paths = PackedStringArray(["res://resources/items/lion_greatsword.tres"])
 	run.equipment_reward_offers = {
 		"diag": [{"path": "res://resources/items/lion_greatsword.tres", "reward_class": CardEnums.CardClass.WARRIOR}],
@@ -318,6 +339,13 @@ func _test_save_round_trip() -> void:
 		_fail("ADVENTURE_DIAG: scalar run state changed during round trip")
 	if loaded.party.size() != 3 or loaded.party[0].current_health != run.party[0].current_health:
 		_fail("ADVENTURE_DIAG: party state changed during round trip")
+		return
+	if loaded.party[0].reserve_weapon_equipment == null \
+			or loaded.party[0].reserve_weapon_equipment.resource_path != "res://resources/items/ceremonial_sword_shield.tres" \
+			or loaded.party[0].reserve_weapon_face != 1 \
+			or str(loaded.party[0].equipment_instance_ids.get(CharacterEquipmentModel.SLOT_RESERVE_WEAPON, "")) != "diag_reserve_weapon":
+		_fail("ADVENTURE_DIAG: reserve weapon state changed during save round trip")
+		return
 	if int(loaded.party[1].ranger_element_inventory.get(0, 0)) != 2:
 		_fail("ADVENTURE_DIAG: ranger inventory changed during round trip")
 	if loaded.party[0].distortion_progress != 5 \
@@ -341,7 +369,60 @@ func _test_save_round_trip() -> void:
 			JSON.stringify(loaded.equipment_class_miss_streaks),
 			JSON.stringify(run.equipment_class_miss_streaks),
 		])
-	var v3_payload := store._serialize_run(run)
+		return
+	var legacy_backpack_weapon := load("res://resources/items/lion_greatsword.tres") as EquipmentData
+	if legacy_backpack_weapon == null:
+		_fail("ADVENTURE_DIAG: legacy inventory fixture is missing")
+		return
+	var legacy_stack := InventoryStack.new()
+	legacy_stack.item_data = legacy_backpack_weapon
+	legacy_stack.count = 1
+	legacy_stack.stack_id = "diag_legacy_backpack_weapon"
+	run.party[0].inventory.append(legacy_stack)
+	var legacy_payload := store._serialize_run(run)
+	var legacy_hero_data := legacy_payload.get("party", [])[0] as Dictionary
+	legacy_hero_data.erase("reserve_weapon")
+	legacy_hero_data.erase("reserve_weapon_face")
+	var legacy_loaded := store._deserialize_run(legacy_payload)
+	if legacy_loaded == null or legacy_loaded.party.is_empty() \
+			or legacy_loaded.party[0].reserve_weapon_equipment != null \
+			or legacy_loaded.party[0].reserve_weapon_face != 0 \
+			or legacy_loaded.party[0].inventory.size() != 1 \
+			or legacy_loaded.party[0].inventory[0].item_data != legacy_backpack_weapon \
+			or legacy_loaded.party[0].inventory[0].stack_id != "diag_legacy_backpack_weapon":
+		_fail("ADVENTURE_DIAG: legacy save did not preserve an empty reserve slot and unchanged inventory")
+		return
+	var clamped_payload := store._serialize_run(run)
+	var clamped_hero_data := clamped_payload.get("party", [])[0] as Dictionary
+	clamped_hero_data["reserve_weapon_face"] = 99
+	var clamped_loaded := store._deserialize_run(clamped_payload)
+	if clamped_loaded == null or clamped_loaded.party.is_empty() or clamped_loaded.party[0].reserve_weapon_face != 1:
+		_fail("ADVENTURE_DIAG: loaded reserve weapon face was not clamped")
+		return
+	var v3_heroes: Array[CharacterState] = []
+	for v3_path in paths:
+		var v3_template := load(v3_path) as CharacterState
+		if v3_template == null:
+			_fail("ADVENTURE_DIAG: missing v3 migration hero template %s" % v3_path)
+			return
+		var v3_hero := v3_template.duplicate(true) as CharacterState
+		v3_hero.adventure_source_path = v3_path
+		v3_hero.ensure_initialized()
+		v3_heroes.append(v3_hero)
+	var v3_run := PartyRunState.new()
+	v3_run.initialize_adventure(424242, v3_heroes, definition)
+	var v3_payload := store._serialize_run(v3_run)
+	var v3_inventory_payloads: Array = []
+	for v3_hero_data_value in v3_payload.get("party", []):
+		if not (v3_hero_data_value is Dictionary):
+			continue
+		var v3_hero_data := v3_hero_data_value as Dictionary
+		v3_inventory_payloads.append((v3_hero_data.get("inventory", []) as Array).duplicate(true))
+		for v3_inventory_value in v3_hero_data.get("inventory", []):
+			if v3_inventory_value is Dictionary \
+					and str((v3_inventory_value as Dictionary).get("id", "")) == "diag_legacy_backpack_weapon":
+				_fail("ADVENTURE_DIAG: v3 fixture inherited the legacy inventory mutation")
+				return
 	v3_payload["version"] = 3
 	v3_payload.erase("equipment_reward_drawn_paths")
 	v3_payload.erase("equipment_reward_offers")
@@ -349,6 +430,8 @@ func _test_save_round_trip() -> void:
 	for hero_data_value in v3_payload.get("party", []):
 		if hero_data_value is Dictionary:
 			var hero_data := hero_data_value as Dictionary
+			hero_data.erase("reserve_weapon")
+			hero_data.erase("reserve_weapon_face")
 			hero_data.erase("selected_distortion_fields")
 			hero_data.erase("claimed_distortion_milestones")
 			hero_data.erase("distortion_grace_count")
@@ -357,10 +440,20 @@ func _test_save_round_trip() -> void:
 			hero_data.erase("intelligence_bonus")
 	var migrated := store._deserialize_run(v3_payload)
 	if migrated == null or migrated.save_version != PartyRunState.SAVE_VERSION \
+			or migrated.party.size() != v3_inventory_payloads.size() \
 			or not migrated.equipment_reward_drawn_paths.is_empty() \
 			or not migrated.equipment_reward_offers.is_empty() \
 			or not migrated.equipment_class_miss_streaks.is_empty():
 		_fail("ADVENTURE_DIAG: v3 save migration failed")
+		return
+	for index in range(migrated.party.size()):
+		var migrated_hero := migrated.party[index]
+		var migrated_inventory_payload := store._serialize_character(migrated_hero).get("inventory", []) as Array
+		if migrated_hero.reserve_weapon_equipment != null \
+			or migrated_hero.reserve_weapon_face != 0 \
+			or JSON.stringify(migrated_inventory_payload) != JSON.stringify(v3_inventory_payloads[index]):
+			_fail("ADVENTURE_DIAG: v3 reserve migration changed hero %d inventory or reserve state" % index)
+			return
 	print("ADVENTURE_DIAG: save round trip passed")
 
 

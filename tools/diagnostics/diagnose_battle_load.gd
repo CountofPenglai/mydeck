@@ -29,6 +29,7 @@ func _ready() -> void:
 		var controller := controller_value as BattleController
 		_deploy_players(controller)
 		_start_battle(controller)
+		_test_defeat_all_enemies(scene, controller)
 	else:
 		_fail("DIAG: battle scene has no BattleController controller property")
 
@@ -49,6 +50,22 @@ func _test_battle_menu(scene: Node) -> void:
 	scene.call("_close_battle_menu")
 	if menu.visible:
 		_fail("DIAG: battle menu did not close")
+	if scene.get_node_or_null("%DefeatAllEnemiesButton") == null:
+		_fail("DIAG: battle menu defeat-all button is missing")
+	if scene.get_node_or_null("%DefeatAllEnemiesConfirmation") == null:
+		_fail("DIAG: battle menu defeat-all confirmation is missing")
+
+
+func _test_defeat_all_enemies(scene: Node, controller: BattleController) -> void:
+	if not scene.has_method("_defeat_all_enemies_for_test"):
+		_fail("DIAG: battle scene has no defeat-all test action")
+		return
+	scene.call("_defeat_all_enemies_for_test")
+	for enemy in controller.enemy_units:
+		if enemy != null and enemy.is_alive():
+			_fail("DIAG: defeat-all test action left an enemy alive")
+	if controller.phase != BattleController.Phase.ENDED or not controller.battle_result_committed:
+		_fail("DIAG: defeat-all test action did not commit the battle result")
 
 
 func _deploy_players(controller: BattleController) -> void:

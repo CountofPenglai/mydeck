@@ -7,35 +7,9 @@ const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 
 
 func can_play(context: Dictionary = {}) -> bool:
-	return not get_inventory_weapon_choices(context).is_empty()
-
-
-func requires_inventory_weapon_choice(context: Dictionary = {}) -> bool:
-	if context.has("selected_inventory_weapon"):
-		return false
-	return not get_inventory_weapon_choices(context).is_empty()
-
-
-func get_inventory_weapon_choices(context: Dictionary = {}) -> Array[EquipmentData]:
-	var result: Array[EquipmentData] = []
+	var controller := context.get("controller") as BattleController
 	var user := context.get("user") as BattleUnitState
-	if user == null or user.character_state == null:
-		return result
-	for stack in user.character_state.inventory:
-		if stack == null or stack.count <= 0 or not (stack.item_data is EquipmentData):
-			continue
-		var equipment := stack.item_data as EquipmentData
-		if not equipment.is_weapon() or result.has(equipment):
-			continue
-		if user.character_state.character_data != null \
-				and not equipment.is_available_to_class(user.character_state.character_data.character_class):
-			continue
-		result.append(equipment)
-	return result
-
-
-func get_inventory_weapon_choice_prompt(_context: Dictionary = {}) -> String:
-	return "防御架势：选择要切换的武器"
+	return controller != null and controller.can_switch_prepared_weapon(user)
 
 
 func play(context: Dictionary = {}, _targets: Array = []) -> void:
@@ -44,13 +18,7 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 	var card := context.get("card") as CardData
 	if controller == null or user == null or card == null:
 		return
-	var selected := context.get("selected_inventory_weapon") as EquipmentData
-	var choices := get_inventory_weapon_choices(context)
-	if selected == null and choices.size() == 1:
-		selected = choices[0]
-	if selected == null or not choices.has(selected):
-		return
-	var switch_result := controller.switch_equipment_from_inventory(user, selected)
+	var switch_result := controller.switch_prepared_weapon(user)
 	if not bool(switch_result.get("success", false)):
 		return
 

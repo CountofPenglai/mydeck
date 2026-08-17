@@ -10,9 +10,11 @@ const ARCHETYPES := [
 	&"holy_bastion_commander",
 	&"creation_shard",
 	&"blood_construct",
+	&"flesh_spawn",
 	&"corrupt_heart_veil",
 	&"gray_bastion_paladin",
 	&"triumph_statue",
+	&"military_god_remains",
 ]
 
 const EXPECTED_HEALTH := {
@@ -25,12 +27,15 @@ const EXPECTED_HEALTH := {
 	&"holy_bastion_commander": 50,
 	&"creation_shard": 25,
 	&"blood_construct": 25,
+	&"flesh_spawn": 2,
 	&"corrupt_heart_veil": 169,
 	&"gray_bastion_paladin": 75,
 	&"triumph_statue": 50,
+	&"military_god_remains": 98,
 }
 
 var _exit_code := 0
+var _state_changed_count := 0
 
 
 func _ready() -> void:
@@ -60,8 +65,9 @@ func _test_catalog() -> void:
 			_fail("%s has no real weapon" % ARCHETYPES[index])
 		if state.get_max_health() != int(EXPECTED_HEALTH[ARCHETYPES[index]]):
 			_fail("%s health mismatch: %d" % [ARCHETYPES[index], state.get_max_health()])
-		if ARCHETYPES[index] != &"triumph_statue" and state.deck.is_empty():
+		if ARCHETYPES[index] not in [&"triumph_statue", &"flesh_spawn"] and state.deck.is_empty():
 			_fail("%s generated an empty deck" % ARCHETYPES[index])
+		_assert_art_contract(ARCHETYPES[index], state)
 		var expected_deck_size: int = int({
 			&"creation_shard": 8,
 			&"blood_construct": 8,
@@ -72,6 +78,56 @@ func _test_catalog() -> void:
 		for stack in state.deck:
 			if stack != null and stack.card_data != null and stack.card_data.reward_eligible:
 				_fail("%s has a reward-eligible enemy card" % ARCHETYPES[index])
+	_assert_variant_art(&"blood_construct", &"inverted")
+	_assert_variant_art(&"corrupt_heart_veil", &"phase_two")
+	_test_art_instance_isolation()
+
+
+func _assert_art_contract(archetype: StringName, state: EnemyState) -> void:
+	var portrait := ChapterTwoEnemyCatalog.get_art_texture(archetype, "portrait")
+	var battle := ChapterTwoEnemyCatalog.get_art_texture(archetype, "battle")
+	if portrait == null or battle == null:
+		_fail("%s is missing portrait or battle art" % archetype)
+		return
+	if portrait.resource_path == battle.resource_path:
+		_fail("%s reuses the same file for portrait and battle art" % archetype)
+	for texture in [portrait, battle]:
+		if "chapter_two_monsters.svg" in texture.resource_path:
+			_fail("%s still uses the legacy chapter-two atlas" % archetype)
+		if not texture.resource_path.ends_with(".png"):
+			_fail("%s art is not a PNG: %s" % [archetype, texture.resource_path])
+		if not FileAccess.file_exists(texture.resource_path + ".import"):
+			_fail("%s is not imported: %s" % [archetype, texture.resource_path])
+	if state.enemy_data.portrait != portrait or state.enemy_data.battle_sprite != battle:
+		_fail("%s creation did not bind catalog art" % archetype)
+
+
+func _assert_variant_art(archetype: StringName, variant: StringName) -> void:
+	for kind in ["portrait", "battle"]:
+		var base := ChapterTwoEnemyCatalog.get_art_texture(archetype, kind)
+		var alternate := ChapterTwoEnemyCatalog.get_art_texture(archetype, kind, variant)
+		if alternate == null:
+			_fail("%s is missing %s %s art" % [archetype, variant, kind])
+		elif base != null and alternate.resource_path == base.resource_path:
+			_fail("%s %s %s art falls back to base" % [archetype, variant, kind])
+
+
+func _test_art_instance_isolation() -> void:
+	var first := ChapterTwoEnemyCatalog.create_enemy(&"blood_construct", 22501)
+	var second := ChapterTwoEnemyCatalog.create_enemy(&"blood_construct", 22502)
+	if first == null or second == null or first.enemy_data == null or second.enemy_data == null:
+		_fail("could not create blood constructs for art isolation test")
+		return
+	if first.enemy_data == second.enemy_data:
+		_fail("blood construct instances share EnemyData")
+		return
+	var second_portrait_path := second.enemy_data.portrait.resource_path
+	var second_battle_path := second.enemy_data.battle_sprite.resource_path
+	if not ChapterTwoEnemyCatalog.apply_art_variant(first, &"inverted"):
+		_fail("could not apply isolated blood construct art variant")
+	elif second.enemy_data.portrait.resource_path != second_portrait_path \
+			or second.enemy_data.battle_sprite.resource_path != second_battle_path:
+		_fail("switching one enemy art variant changed another instance")
 
 
 func _test_encounters() -> void:
@@ -208,6 +264,21 @@ func _test_construct_shared_deck() -> void:
 		return
 	var owner: BattleUnitState = controller.enemy_units[0]
 	owner.ensure_initialized(controller.config, controller.rng)
+	var base_portrait_path := owner.enemy_state.enemy_data.portrait.resource_path
+	var base_battle_path := owner.enemy_state.enemy_data.battle_sprite.resource_path
+	owner.curse_wave = 2
+	controller.state_changed.connect(_on_state_changed)
+	var signals_before := _state_changed_count
+	if not ChapterTwoEnemyRules.execute_intent_step(controller, owner, {
+		"type": "chapter_two_special",
+		"action": "construct_invert",
+	}):
+		_fail("blood construct inversion intent was not handled")
+	if _state_changed_count <= signals_before:
+		_fail("blood construct inversion intent did not emit state_changed")
+	if owner.enemy_state.enemy_data.portrait.resource_path == base_portrait_path \
+			or owner.enemy_state.enemy_data.battle_sprite.resource_path == base_battle_path:
+		_fail("blood construct inversion did not switch both art textures")
 	var spawn_cell := BattleHexGrid.INVALID_CELL
 	for cell in controller.map_data.get_cells_in_range(owner.cell, 1):
 		if cell != owner.cell and controller.targeting.is_unit_cell_clear(null, cell, false):
@@ -259,13 +330,26 @@ func _test_veil_gospel() -> void:
 		return
 	var veil: BattleUnitState = controller.enemy_units[0]
 	ChapterTwoEnemyRules.on_battle_started(controller)
-	ChapterTwoEnemyRules.resolve_gospel(controller, veil, ChapterTwoEnemyCatalog.create_gospel_card())
+	var base_portrait_path := veil.enemy_state.enemy_data.portrait.resource_path
+	var base_battle_path := veil.enemy_state.enemy_data.battle_sprite.resource_path
+	controller.state_changed.connect(_on_state_changed)
+	var signals_before := _state_changed_count
+	if not ChapterTwoEnemyRules.execute_intent_step(controller, veil, {
+		"type": "chapter_two_special",
+		"action": "gospel",
+	}):
+		_fail("gospel intent was not handled")
+	if _state_changed_count <= signals_before:
+		_fail("gospel intent did not emit state_changed")
 	if int(veil.enemy_state.runtime_state.get("phase", 0)) != 2:
 		_fail("gospel did not transition veil to phase two")
 	if veil.get_strength() != 6 or veil.get_agility() != 3 or veil.get_intelligence() != 1:
 		_fail("veil phase two attributes were not applied")
 	if veil.get_max_health() != 169:
 		_fail("veil phase two maximum health is not fixed at 169")
+	if veil.enemy_state.enemy_data.portrait.resource_path == base_portrait_path \
+			or veil.enemy_state.enemy_data.battle_sprite.resource_path == base_battle_path:
+		_fail("veil gospel did not switch both phase-two art textures")
 
 
 func _test_gospel_reward_and_load() -> void:
@@ -354,3 +438,7 @@ func _place_adjacent(controller: BattleController, first: BattleUnitState, secon
 func _fail(message: String) -> void:
 	_exit_code = 1
 	push_error("CHAPTER_TWO_ENEMY_DIAG: " + message)
+
+
+func _on_state_changed() -> void:
+	_state_changed_count += 1

@@ -7,7 +7,28 @@ const REUSED_MONSTER_CARDS := [
 	"res://resources/cards/monster_cards/guard_hiss.tres",
 	"res://resources/cards/monster_cards/empty_eye.tres",
 ]
-const MONSTER_ATLAS := "res://assets/art/enemies/chapter_two_monsters.svg"
+const ENEMY_ART := {
+	&"gray_shield_guard": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/gray_shield_guard_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/gray_shield_guard_battle.png"}},
+	&"holy_spearman": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/holy_spearman_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/holy_spearman_battle.png"}},
+	&"fortress_crossbow": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/fortress_crossbow_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/fortress_crossbow_battle.png"}},
+	&"field_priest": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/field_priest_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/field_priest_battle.png"}},
+	&"punishment_knight": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/punishment_knight_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/punishment_knight_battle.png"}},
+	&"standard_bearer": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/standard_bearer_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/standard_bearer_battle.png"}},
+	&"holy_bastion_commander": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/holy_bastion_commander_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/holy_bastion_commander_battle.png"}},
+	&"creation_shard": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/creation_shard_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/creation_shard_battle.png"}},
+	&"blood_construct": {
+		&"base": {"portrait": "res://assets/art/portraits/chapter_two/blood_construct_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/blood_construct_battle.png"},
+		&"inverted": {"portrait": "res://assets/art/portraits/chapter_two/blood_construct_inverted_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/blood_construct_inverted_battle.png"},
+	},
+	&"flesh_spawn": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/flesh_spawn_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/flesh_spawn_battle.png"}},
+	&"corrupt_heart_veil": {
+		&"base": {"portrait": "res://assets/art/portraits/chapter_two/corrupt_heart_veil_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/corrupt_heart_veil_battle.png"},
+		&"phase_two": {"portrait": "res://assets/art/portraits/chapter_two/corrupt_heart_veil_phase_two_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/corrupt_heart_veil_phase_two_battle.png"},
+	},
+	&"gray_bastion_paladin": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/gray_bastion_paladin_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/gray_bastion_paladin_battle.png"}},
+	&"triumph_statue": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/triumph_statue_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/triumph_statue_battle.png"}},
+	&"military_god_remains": {&"base": {"portrait": "res://assets/art/portraits/chapter_two/military_god_remains_portrait.png", "battle": "res://assets/art/battle_units/chapter_two/military_god_remains_battle.png"}},
+}
 
 const WEAK_ENCOUNTERS := [
 	{"id": "shield_spear", "enemies": [&"gray_shield_guard", &"holy_spearman"]},
@@ -62,9 +83,8 @@ static func create_enemy(archetype: StringName, seed: int = -1) -> EnemyState:
 	data.ai_profile = EnemyTacticalCardCatalog.create_profile(int(spec.get("ai_profile", EnemyAIProfile.Preset.BALANCED)))
 	data.behavior = TacticalEnemyBehavior.new()
 	data.behavior.behavior_label = "第二章公开意图"
-	var texture := _make_atlas_texture(int(spec.art_index))
-	data.portrait = texture
-	data.battle_sprite = texture
+	data.portrait = get_art_texture(archetype, "portrait")
+	data.battle_sprite = get_art_texture(archetype, "battle")
 	var state := EnemyState.new()
 	state.enemy_data = data
 	if spec.has("fixed_max_health"):
@@ -72,6 +92,40 @@ static func create_enemy(archetype: StringName, seed: int = -1) -> EnemyState:
 	state.generate_deck(seed)
 	state.current_health = state.get_max_health()
 	return state
+
+
+static func get_art_texture(
+		archetype: StringName,
+		art_kind: String,
+		variant: StringName = &"base"
+) -> Texture2D:
+	if art_kind != "portrait" and art_kind != "battle":
+		return null
+	var variants := ENEMY_ART.get(archetype, {}) as Dictionary
+	if variants.is_empty():
+		return null
+	var selected := variants.get(variant, variants.get(&"base", {})) as Dictionary
+	var path := str(selected.get(art_kind, ""))
+	if path.is_empty():
+		return null
+	var resource := ResourceLoader.load(path)
+	return resource as Texture2D if resource is Texture2D else null
+
+
+static func apply_art_variant(state: EnemyState, variant: StringName) -> bool:
+	if state == null or state.enemy_data == null:
+		return false
+	var variants := ENEMY_ART.get(state.enemy_data.archetype_id, {}) as Dictionary
+	if not variants.has(variant):
+		return false
+	var portrait := get_art_texture(state.enemy_data.archetype_id, "portrait", variant)
+	var battle := get_art_texture(state.enemy_data.archetype_id, "battle", variant)
+	if portrait == null or battle == null:
+		return false
+	state.enemy_data.portrait = portrait
+	state.enemy_data.battle_sprite = battle
+	state.runtime_state["art_variant"] = variant
+	return true
 
 
 static func pick_encounter(tier: int, seed: int, last_id: String = "") -> Dictionary:
@@ -261,16 +315,6 @@ static func _make_weapon(spec: Dictionary) -> EquipmentData:
 	weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
 	weapon.equip_category = EquipmentData.EquipCategory.TWO_HAND
 	return weapon
-
-
-static func _make_atlas_texture(index: int) -> Texture2D:
-	var atlas := load(MONSTER_ATLAS) as Texture2D
-	if atlas == null:
-		return null
-	var texture := AtlasTexture.new()
-	texture.atlas = atlas
-	texture.region = Rect2(index * 128, 0, 128, 128)
-	return texture
 
 
 static func _get_spec(id: StringName) -> Dictionary:

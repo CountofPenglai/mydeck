@@ -1161,6 +1161,9 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		snapshot["inventory"] = _duplicate_resources(user.character_state.inventory)
 		snapshot["weapon_equipment"] = user.character_state.weapon_equipment
 		snapshot["weapon_face"] = user.character_state.weapon_face
+		snapshot["reserve_weapon_equipment"] = user.character_state.reserve_weapon_equipment
+		snapshot["reserve_weapon_face"] = user.character_state.reserve_weapon_face
+		snapshot["equipment_instance_ids"] = user.character_state.equipment_instance_ids.duplicate(true)
 		snapshot["armor_equipment"] = user.character_state.armor_equipment
 		snapshot["accessory_equipment_1"] = user.character_state.accessory_equipment_1
 		snapshot["accessory_equipment_2"] = user.character_state.accessory_equipment_2
@@ -1219,6 +1222,11 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 		user.character_state.inventory.assign(inventory_snapshot)
 		user.character_state.weapon_equipment = snapshot.get("weapon_equipment") as EquipmentData
 		user.character_state.weapon_face = int(snapshot.get("weapon_face", user.character_state.weapon_face))
+		user.character_state.reserve_weapon_equipment = snapshot.get("reserve_weapon_equipment") as EquipmentData
+		user.character_state.reserve_weapon_face = int(snapshot.get("reserve_weapon_face", user.character_state.reserve_weapon_face))
+		user.character_state.equipment_instance_ids = (
+			snapshot.get("equipment_instance_ids", user.character_state.equipment_instance_ids) as Dictionary
+		).duplicate(true)
 		user.character_state.armor_equipment = snapshot.get("armor_equipment") as EquipmentData
 		user.character_state.accessory_equipment_1 = snapshot.get("accessory_equipment_1") as EquipmentData
 		user.character_state.accessory_equipment_2 = snapshot.get("accessory_equipment_2") as EquipmentData
@@ -1923,26 +1931,92 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 		"unit": unit,
 		"preferred_equipment": preferred_equipment,
 	}
-	_emit_equipment_switch_started(before_context)
 	var preview := CharacterEquipmentModel.preview_equipment_switch(unit.character_state, preferred_equipment)
 	if not bool(preview.get("success", false)):
-		_emit_log("%s 没有可切换的背包武器。" % unit.get_display_name())
+		_emit_log("%s 没有可切换的背包装备。" % unit.get_display_name())
 		return result
 	var preview_old := preview.get("old_equipment") as EquipmentData
-	if preview_old != null:
-		unit.notify_equipment_before_switch_out(preview_old, int(preview.get("old_face", 0)), before_context)
+	var incoming_equipment := preview.get("equipment") as EquipmentData
+	return _resolve_equipment_switch(
+		unit,
+		preview_old,
+		int(preview.get("old_face", 0)),
+		before_context,
+		func() -> Dictionary:
+			return unit.character_state.switch_equipment_from_inventory(preferred_equipment),
+		"%s 没有可切换的背包装备。" % unit.get_display_name(),
+		"%s 切换装备：%s 装备到%s。" % [
+			unit.get_display_name(),
+			incoming_equipment.item_name,
+			_equipment_slot_label(str(preview.get("slot", ""))),
+		]
+	)
 
-	result = unit.character_state.switch_equipment_from_inventory(preferred_equipment)
+
+func can_switch_prepared_weapon(unit: BattleUnitState) -> bool:
+	return unit != null \
+		and unit.character_state != null \
+		and unit.get_character_class() == CardEnums.CardClass.WARRIOR \
+		and unit.character_state.reserve_weapon_equipment != null
+
+
+func switch_prepared_weapon(unit: BattleUnitState) -> Dictionary:
+	var result := {
+		"success": false,
+		"controller": self,
+		"unit": unit,
+		"slot": CharacterEquipmentModel.SLOT_WEAPON,
+	}
+	if not can_switch_prepared_weapon(unit):
+		if unit != null and unit.character_state != null \
+				and unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+			_emit_log("%s 的备战武器槽为空。" % unit.get_display_name())
+		return result
+
+	var before_context := {
+		"controller": self,
+		"unit": unit,
+	}
+	var old_equipment := unit.character_state.weapon_equipment
+	var old_face := unit.character_state.weapon_face
+	var incoming_equipment := unit.character_state.reserve_weapon_equipment
+	return _resolve_equipment_switch(
+		unit,
+		old_equipment,
+		old_face,
+		before_context,
+		func() -> Dictionary:
+			return CharacterEquipmentModel.swap_active_and_reserve_weapons(unit.character_state),
+		"%s 的备战武器切换失败。" % unit.get_display_name(),
+		"%s 切换备战武器：%s 成为当前武器。" % [
+			unit.get_display_name(),
+			incoming_equipment.item_name,
+		]
+	)
+
+
+func _resolve_equipment_switch(
+	unit: BattleUnitState,
+	old_equipment: EquipmentData,
+	old_face: int,
+	before_context: Dictionary,
+	apply_switch: Callable,
+	failure_message: String,
+	success_message: String
+) -> Dictionary:
+	_emit_equipment_switch_started(before_context)
+	if old_equipment != null:
+		unit.notify_equipment_before_switch_out(old_equipment, old_face, before_context)
+
+	var result: Dictionary = apply_switch.call()
 	result["controller"] = self
 	result["unit"] = unit
 	if not bool(result.get("success", false)):
-		_emit_log("%s 没有可切换的背包武器。" % unit.get_display_name())
+		_emit_log(failure_message)
 		return result
 
-	var old_equipment = result.get("old_equipment")
-	var new_equipment = result.get("new_equipment")
-	if str(result.get("slot", "")) == "weapon":
-		result["new_face"] = unit.get_active_weapon_face_index()
+	old_equipment = result.get("old_equipment") as EquipmentData
+	var new_equipment := result.get("new_equipment") as EquipmentData
 	var switch_context := {
 		"controller": self,
 		"switch_result": result,
@@ -1960,21 +2034,22 @@ func switch_equipment_from_inventory(unit: BattleUnitState, preferred_equipment:
 		"controller": self,
 		"action_id": get_current_action_id(),
 	})
-
-	_emit_log("%s 切换装备：%s 装备到%s。" % [
-		unit.get_display_name(),
-		new_equipment.item_name,
-		_equipment_slot_label(str(result.get("slot", ""))),
-	])
+	_emit_log(success_message)
 	state_changed.emit()
 	return result
 
 
 func can_switch_weapon_from_inventory(unit: BattleUnitState) -> bool:
+	# Legacy compatibility. Warrior gameplay code uses can_switch_prepared_weapon().
+	if unit != null and unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+		return can_switch_prepared_weapon(unit)
 	return _find_inventory_weapon(unit) != null
 
 
 func switch_weapon_from_inventory(unit: BattleUnitState) -> Dictionary:
+	# Legacy compatibility. Warrior gameplay code uses switch_prepared_weapon().
+	if unit != null and unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+		return switch_prepared_weapon(unit)
 	var weapon := _find_inventory_weapon(unit)
 	if weapon == null:
 		var result := {"success": false, "controller": self, "unit": unit, "slot": "weapon"}

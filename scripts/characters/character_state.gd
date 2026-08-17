@@ -14,6 +14,8 @@ class_name CharacterState
 @export_group("Equipment")
 @export var weapon_equipment: EquipmentData
 @export_range(0, 1, 1) var weapon_face: int = 0
+@export var reserve_weapon_equipment: EquipmentData
+@export_range(0, 1, 1) var reserve_weapon_face: int = 0
 @export var armor_equipment: EquipmentData
 @export var accessory_equipment_1: EquipmentData
 @export var accessory_equipment_2: EquipmentData
@@ -68,7 +70,7 @@ func ensure_adventure_instance_ids(character_index: int = 0) -> void:
 	if adventure_character_id.is_empty():
 		adventure_character_id = "hero_%02d" % character_index
 	var used_ids := {}
-	for slot in ["weapon", "armor", "accessory_1", "accessory_2"]:
+	for slot in ["weapon", "reserve_weapon", "armor", "accessory_1", "accessory_2"]:
 		var equipment_id := str(equipment_instance_ids.get(slot, ""))
 		if equipment_id.is_empty() or used_ids.has(equipment_id):
 			equipment_id = _unique_instance_id("%s_equipment_%s" % [adventure_character_id, slot], used_ids)

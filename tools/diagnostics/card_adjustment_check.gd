@@ -111,20 +111,62 @@ func _test_defensive_stance(controller: BattleController, warrior: BattleUnitSta
 	var second := _make_weapon("诊断武器乙", 4, 2, EquipmentData.EquipCategory.TWO_HAND)
 	warrior.character_state.weapon_equipment = first
 	warrior.character_state.inventory.clear()
-	CharacterEquipmentModel.add_inventory_item(warrior.character_state, second)
+	warrior.character_state.reserve_weapon_equipment = second
+	warrior.character_state.reserve_weapon_face = 0
+	var sentinel := InventoryStack.new()
+	sentinel.item_data = load("res://resources/items/healing_potion.tres") as ItemData
+	sentinel.count = 2
+	sentinel.stack_id = "defensive_stance_backpack_sentinel"
+	warrior.character_state.inventory.append(sentinel)
+	var backpack_before := _inventory_bytes(warrior.character_state)
 	_reset_zones(warrior)
 	var normal := card.duplicate(true) as CardData
 	warrior.hand.append(normal)
 	warrior.current_ap = 10
-	if not controller.play_card(
-		warrior,
-		normal,
-		[warrior],
-		{"selected_inventory_weapon": second}
-	):
+	var choice_context := {
+		"controller": controller,
+		"user": warrior,
+		"card": normal,
+		"play_mode": CardEnums.CardPlayMode.NORMAL,
+	}
+	if normal.requires_inventory_weapon_choice(choice_context) \
+			or not normal.get_inventory_weapon_choices(choice_context).is_empty():
+		_fail("CARD_ADJUST: defensive stance still requests an inventory weapon choice")
+	var switch_events := {
+		"started": 0,
+		"switched_out": 0,
+		"switched_in": 0,
+		"state_changed": 0,
+	}
+	controller.equipment_switch_started.connect(
+		func(_context: Dictionary) -> void: switch_events["started"] += 1,
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_out.connect(
+		func(_context: Dictionary) -> void: switch_events["switched_out"] += 1,
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_in.connect(
+		func(_context: Dictionary) -> void: switch_events["switched_in"] += 1,
+		CONNECT_ONE_SHOT
+	)
+	controller.state_changed.connect(
+		func() -> void: switch_events["state_changed"] += 1,
+		CONNECT_ONE_SHOT
+	)
+	if not controller.play_card(warrior, normal, [warrior]):
 		_fail("CARD_ADJUST: defensive stance normal play failed")
 	if warrior.character_state.weapon_equipment != second:
 		_fail("CARD_ADJUST: defensive stance ignored the selected weapon")
+	if _inventory_bytes(warrior.character_state) != backpack_before:
+		_fail("CARD_ADJUST: defensive stance mutated the backpack")
+	if switch_events != {
+		"started": 1,
+		"switched_out": 1,
+		"switched_in": 1,
+		"state_changed": 1,
+	}:
+		_fail("CARD_ADJUST: defensive stance did not pass once through the unified switch pipeline: %s" % switch_events)
 	if not warrior.has_status("block"):
 		_fail("CARD_ADJUST: defensive stance did not grant block")
 
@@ -140,13 +182,7 @@ func _test_defensive_stance(controller: BattleController, warrior: BattleUnitSta
 	_reset_enemy(enemy, Vector2i(3, 4), controller)
 	warrior.set_hex_cell(Vector2i(2, 4), controller.map_data)
 	var before := enemy.get_current_health()
-	if not controller.play_card(
-		warrior,
-		momentum,
-		[warrior],
-		{"selected_inventory_weapon": first},
-		CardEnums.CardPlayMode.MOMENTUM
-	):
+	if not controller.play_card(warrior, momentum, [warrior], {}, CardEnums.CardPlayMode.MOMENTUM):
 		_fail("CARD_ADJUST: free defensive stance momentum play failed")
 	elif enemy.get_current_health() >= before:
 		_fail("CARD_ADJUST: defensive stance momentum did not strike the nearest enemy")
@@ -235,6 +271,19 @@ func _make_weapon(name: String, damage: int, attack_range: int, category: int) -
 	weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
 	weapon.equip_category = category
 	return weapon
+
+
+func _inventory_bytes(state: CharacterState) -> PackedByteArray:
+	var payload: Array[Dictionary] = []
+	for stack in state.inventory:
+		payload.append({
+			"stack_object_id": stack.get_instance_id() if stack != null else 0,
+			"item_object_id": stack.item_data.get_instance_id() if stack != null and stack.item_data != null else 0,
+			"item_path": stack.item_data.resource_path if stack != null and stack.item_data != null else "",
+			"count": stack.count if stack != null else 0,
+			"stack_id": stack.stack_id if stack != null else "",
+		})
+	return var_to_bytes(payload)
 
 
 func _card(resource_name: String) -> CardData:

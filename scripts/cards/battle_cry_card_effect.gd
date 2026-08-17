@@ -16,7 +16,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var target := targets[0] as BattleUnitState
 	controller.enqueue_effect(Callable(self, "_mill"), [controller, user, context], effect_priority, "临阵怒喝：磨牌", context)
 	controller.enqueue_effect(Callable(self, "_stun"), [controller, target], effect_priority, "临阵怒喝：眩晕", context)
-	controller.enqueue_effect(Callable(controller, "switch_weapon_from_inventory"), [user], effect_priority, "临阵怒喝：切换武器", context)
+	controller.enqueue_effect(Callable(controller, "switch_prepared_weapon"), [user], effect_priority, "临阵怒喝：切换武器", context)
 
 
 func _mill(controller: BattleController, user: BattleUnitState, context: Dictionary) -> void:

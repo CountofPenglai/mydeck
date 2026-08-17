@@ -35,7 +35,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 func _switch_and_follow_up(controller: BattleController, user: BattleUnitState, target: BattleUnitState, card: CardData, context: Dictionary) -> void:
 	if controller == null or user == null or card == null:
 		return
-	var result := controller.switch_weapon_from_inventory(user)
+	var result := controller.switch_prepared_weapon(user)
 	var weapon := user.character_state.get_active_weapon_equipment() if user.character_state != null else null
 	var weapon_base_damage := weapon.base_damage if weapon != null else 1
 	var can_strike := bool(result.get("success", false)) and target != null and target.is_alive()

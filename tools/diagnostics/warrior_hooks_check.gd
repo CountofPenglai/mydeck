@@ -3,6 +3,77 @@ extends Node
 const BREACH_STATUS_SCRIPT := preload("res://scripts/status/breach_status.gd")
 const DIAGNOSTIC_DISCARD_STATUS_SCRIPT := preload("res://tools/diagnostics/diagnostic_discard_status.gd")
 
+
+class DiagnosticSwitchEquipmentEffect:
+	extends EquipmentEffect
+
+	var events: Array[String] = []
+	var record_before_out: bool = false
+	var record_switched_out: bool = false
+	var record_switched_in: bool = false
+
+	func on_before_switch_out(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> void:
+		if record_before_out:
+			events.append("before_out")
+
+	func on_switched_out(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> void:
+		if record_switched_out:
+			events.append("switched_out")
+
+	func on_switched_in(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> void:
+		if record_switched_in:
+			events.append("switched_in")
+
+
+class DiagnosticSwitchZoneEffect:
+	extends CardEffect
+
+	var events: Array[String] = []
+
+	func on_zone_owner_equipment_switched(
+		_owner: BattleUnitState,
+		_zone_card: CardData,
+		_switch_result: Dictionary,
+		_context: Dictionary = {}
+	) -> void:
+		events.append("zone_hook")
+
+
+class PreparedSwitchPaymentCondition:
+	extends CardPlayCondition
+
+	func can_pay(context: Dictionary = {}) -> bool:
+		var user := _get_user(context)
+		return user != null \
+			and user.character_state != null \
+			and user.character_state.reserve_weapon_equipment != null
+
+	func pay(context: Dictionary = {}) -> bool:
+		var user := _get_user(context)
+		if user == null or user.character_state == null:
+			return false
+		var result := CharacterEquipmentModel.swap_active_and_reserve_weapons(user.character_state)
+		return bool(result.get("success", false))
+
+
 var _exit_code: int = 0
 var _outer_limit_count: int = 0
 var _nested_limit_count: int = 0
@@ -28,12 +99,14 @@ func _ready() -> void:
 	_prepare(controller, warrior, ally, enemy)
 	_test_breach(controller, warrior, ally, enemy)
 	_test_armed_and_armored(controller, warrior)
+	_test_prepared_switch_pipeline(controller, warrior)
+	_test_empty_reserve_switch_is_atomic(controller, warrior)
 	_test_bloodied_battle(controller, warrior, enemy)
 	_test_stand_immovable(controller, warrior, enemy)
 	_test_rehearsal(controller, warrior, enemy)
 	_test_playability_guards(controller, warrior)
 	_test_payment_rollback(controller, warrior)
-	_test_full_inventory_weapon_switch()
+	_test_full_inventory_weapon_switch(controller)
 	_test_nested_action_limit(controller)
 
 	print("WARRIOR_HOOK: completed")
@@ -120,6 +193,149 @@ func _test_armed_and_armored(controller: BattleController, warrior: BattleUnitSt
 		_fail("WARRIOR_HOOK: enchant active did not discard itself first")
 	if warrior.get_armor_stacks() != armor_before:
 		_fail("WARRIOR_HOOK: enchant active incorrectly granted final armor")
+
+
+func _test_prepared_switch_pipeline(controller: BattleController, warrior: BattleUnitState) -> void:
+	var events: Array[String] = []
+	var old_weapon := EquipmentData.new()
+	old_weapon.item_name = "diagnostic active weapon"
+	old_weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
+	var old_effect := DiagnosticSwitchEquipmentEffect.new()
+	old_effect.events = events
+	old_effect.record_before_out = true
+	old_effect.record_switched_out = true
+	old_weapon.trigger_effects.assign([old_effect])
+	var new_weapon := EquipmentData.new()
+	new_weapon.item_name = "diagnostic reserve weapon"
+	new_weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
+	var new_effect := DiagnosticSwitchEquipmentEffect.new()
+	new_effect.events = events
+	new_effect.record_switched_in = true
+	new_weapon.trigger_effects.assign([new_effect])
+
+	warrior.enchant_zone.clear()
+	var zone_card := CardData.new()
+	zone_card.card_name = "diagnostic switch observer"
+	var zone_effect := DiagnosticSwitchZoneEffect.new()
+	zone_effect.events = events
+	zone_card.effect = zone_effect
+	warrior.enchant_zone.append(zone_card)
+	warrior.equipment_runtime_states.clear()
+	warrior.character_state.weapon_equipment = old_weapon
+	warrior.character_state.weapon_face = 1
+	warrior.character_state.reserve_weapon_equipment = new_weapon
+	warrior.character_state.reserve_weapon_face = 0
+	warrior.character_state.equipment_instance_ids = {
+		CharacterEquipmentModel.SLOT_WEAPON: "hook_active_id",
+		CharacterEquipmentModel.SLOT_RESERVE_WEAPON: "hook_reserve_id",
+	}
+	warrior.character_state.inventory.clear()
+	var sentinel := InventoryStack.new()
+	sentinel.item_data = load("res://resources/items/healing_potion.tres") as ItemData
+	sentinel.count = 2
+	sentinel.stack_id = "hook_backpack_sentinel"
+	warrior.character_state.inventory.append(sentinel)
+	var backpack_before := _inventory_bytes(warrior.character_state)
+
+	controller.equipment_switch_started.connect(
+		func(_context: Dictionary) -> void: events.append("started"),
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_out.connect(
+		func(_context: Dictionary) -> void: events.append("switched_out_signal"),
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_in.connect(
+		func(_context: Dictionary) -> void: events.append("switched_in_signal"),
+		CONNECT_ONE_SHOT
+	)
+	controller.state_changed.connect(
+		func() -> void: events.append("state_changed"),
+		CONNECT_ONE_SHOT
+	)
+	var result := controller.switch_weapon_from_inventory(warrior)
+	var expected_order: Array[String] = [
+		"started",
+		"before_out",
+		"switched_out",
+		"switched_in",
+		"switched_out_signal",
+		"switched_in_signal",
+		"zone_hook",
+		"state_changed",
+	]
+	if not bool(result.get("success", false)) \
+			or result.get("old_equipment") != old_weapon \
+			or int(result.get("old_face", -1)) != 1 \
+			or str(result.get("old_instance_id", "")) != "hook_active_id" \
+			or result.get("new_equipment") != new_weapon \
+			or int(result.get("new_face", -1)) != 0 \
+			or str(result.get("new_instance_id", "")) != "hook_reserve_id" \
+			or warrior.character_state.weapon_equipment != new_weapon \
+			or warrior.character_state.reserve_weapon_equipment != old_weapon \
+			or _inventory_bytes(warrior.character_state) != backpack_before:
+		_fail("WARRIOR_HOOK: prepared switch result or atomic slot/backpack state is incorrect")
+	if events != expected_order:
+		_fail("WARRIOR_HOOK: prepared switch order expected %s, got %s" % [expected_order, events])
+
+
+func _test_empty_reserve_switch_is_atomic(controller: BattleController, warrior: BattleUnitState) -> void:
+	var events: Array[String] = []
+	var active := EquipmentData.new()
+	active.item_name = "empty reserve active"
+	active.equip_slot = EquipmentData.EquipSlot.WEAPON
+	var active_effect := DiagnosticSwitchEquipmentEffect.new()
+	active_effect.events = events
+	active_effect.record_before_out = true
+	active_effect.record_switched_out = true
+	active.trigger_effects.assign([active_effect])
+	warrior.enchant_zone.clear()
+	warrior.equipment_runtime_states.clear()
+	warrior.character_state.weapon_equipment = active
+	warrior.character_state.weapon_face = 1
+	warrior.character_state.reserve_weapon_equipment = null
+	warrior.character_state.reserve_weapon_face = 1
+	warrior.character_state.equipment_instance_ids = {
+		CharacterEquipmentModel.SLOT_WEAPON: "empty_active_id",
+		"armor": "empty_armor_id",
+		"custom": {"all": [1, 2]},
+	}
+	warrior.character_state.inventory.clear()
+	var inventory_weapon := InventoryStack.new()
+	inventory_weapon.item_data = load("res://resources/items/heavy_greatsword.tres") as EquipmentData
+	inventory_weapon.count = 1
+	inventory_weapon.stack_id = "must_not_be_read"
+	warrior.character_state.inventory.append(inventory_weapon)
+	var backpack_before := _inventory_bytes(warrior.character_state)
+	var ids_before := warrior.character_state.equipment_instance_ids.duplicate(true)
+
+	controller.equipment_switch_started.connect(
+		func(_context: Dictionary) -> void: events.append("started"),
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_out.connect(
+		func(_context: Dictionary) -> void: events.append("switched_out_signal"),
+		CONNECT_ONE_SHOT
+	)
+	controller.equipment_switched_in.connect(
+		func(_context: Dictionary) -> void: events.append("switched_in_signal"),
+		CONNECT_ONE_SHOT
+	)
+	controller.state_changed.connect(
+		func() -> void: events.append("state_changed"),
+		CONNECT_ONE_SHOT
+	)
+	var result := controller.switch_weapon_from_inventory(warrior)
+	if bool(result.get("success", false)) \
+			or controller.can_switch_weapon_from_inventory(warrior) \
+			or warrior.character_state.weapon_equipment != active \
+			or warrior.character_state.weapon_face != 1 \
+			or warrior.character_state.reserve_weapon_equipment != null \
+			or warrior.character_state.reserve_weapon_face != 1 \
+			or warrior.character_state.equipment_instance_ids != ids_before \
+			or _inventory_bytes(warrior.character_state) != backpack_before \
+			or not events.is_empty():
+		_fail("WARRIOR_HOOK: empty reserve switch mutated state or emitted success hooks")
 
 
 func _test_bloodied_battle(controller: BattleController, warrior: BattleUnitState, enemy: BattleUnitState) -> void:
@@ -259,7 +475,8 @@ func _test_payment_rollback(controller: BattleController, warrior: BattleUnitSta
 	test_card.has_combo = true
 	var first_condition := DiscardHandCondition.new()
 	var second_condition := DiscardHandCondition.new()
-	test_card.combo_conditions.assign([first_condition, second_condition])
+	var switch_condition := PreparedSwitchPaymentCondition.new()
+	test_card.combo_conditions.assign([switch_condition, first_condition, second_condition])
 	var payment_card := (load("res://resources/cards/battle_slam.tres") as CardData).duplicate() as CardData
 	var discard_marker := {"count": 0}
 	var discard_listener: StatusEffect = DIAGNOSTIC_DISCARD_STATUS_SCRIPT.new()
@@ -269,18 +486,37 @@ func _test_payment_rollback(controller: BattleController, warrior: BattleUnitSta
 	warrior.hand.assign([test_card, payment_card])
 	warrior.discard_pile.clear()
 	warrior.current_ap = 5
+	var active := load("res://resources/items/training_sword.tres") as EquipmentData
+	var reserve := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
+	warrior.character_state.weapon_equipment = active
+	warrior.character_state.weapon_face = 1
+	warrior.character_state.reserve_weapon_equipment = reserve
+	warrior.character_state.reserve_weapon_face = 0
+	warrior.character_state.equipment_instance_ids = {
+		CharacterEquipmentModel.SLOT_WEAPON: "payment_active_id",
+		CharacterEquipmentModel.SLOT_RESERVE_WEAPON: "payment_reserve_id",
+		"armor": "payment_armor_id",
+		"custom": {"nested": ["a", "b"]},
+	}
+	var equipment_ids_before := warrior.character_state.equipment_instance_ids.duplicate(true)
 	if controller.play_card(warrior, test_card, [], {}, CardEnums.CardPlayMode.COMBO):
 		_fail("WARRIOR_HOOK: intentionally failing payment chain unexpectedly succeeded")
 	if warrior.current_ap != 5 or warrior.hand != [test_card, payment_card] or not warrior.discard_pile.is_empty():
 		_fail("WARRIOR_HOOK: failed special payment did not restore AP and card zones")
 	if int(discard_marker.get("count", 0)) != 0:
 		_fail("WARRIOR_HOOK: rolled-back payment still executed a discard hook")
+	if warrior.character_state.weapon_equipment != active \
+			or warrior.character_state.weapon_face != 1 \
+			or warrior.character_state.reserve_weapon_equipment != reserve \
+			or warrior.character_state.reserve_weapon_face != 0 \
+			or warrior.character_state.equipment_instance_ids != equipment_ids_before:
+		_fail("WARRIOR_HOOK: failed payment did not restore both weapon slots, faces, and full instance IDs")
 	if controller.resolution_runner.queue_scopes.size() != 1 \
 		or not (controller.resolution_runner.queue_scopes[0] as Array).is_empty():
 		_fail("WARRIOR_HOOK: failed payment left effects in the base queue")
 
 
-func _test_full_inventory_weapon_switch() -> void:
+func _test_full_inventory_weapon_switch(controller: BattleController) -> void:
 	var state := CharacterState.new()
 	var old_weapon := load("res://resources/items/training_sword.tres") as EquipmentData
 	var new_weapon := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
@@ -306,18 +542,90 @@ func _test_full_inventory_weapon_switch() -> void:
 	if not bool(switched.get("success", false)) or state.weapon_equipment != new_weapon or state.inventory.size() != CharacterState.INVENTORY_LIMIT:
 		_fail("WARRIOR_HOOK: switch should succeed when consuming the source stack frees one slot")
 
+	var mage_state := CharacterState.new()
+	mage_state.character_data = CharacterData.new()
+	mage_state.character_data.character_class = CardEnums.CardClass.MAGE
+	var generic_old := EquipmentData.new()
+	generic_old.item_name = "non-warrior old weapon"
+	generic_old.equip_slot = EquipmentData.EquipSlot.WEAPON
+	var generic_new := EquipmentData.new()
+	generic_new.item_name = "non-warrior inventory weapon"
+	generic_new.equip_slot = EquipmentData.EquipSlot.WEAPON
+	mage_state.weapon_equipment = generic_old
+	var mage_stack := InventoryStack.new()
+	mage_stack.item_data = generic_new
+	mage_stack.count = 1
+	mage_stack.stack_id = "non_warrior_inventory_weapon"
+	mage_state.inventory.append(mage_stack)
+	var mage := BattleUnitState.new()
+	mage.character_state = mage_state
+	var generic_result := controller.switch_weapon_from_inventory(mage)
+	if not bool(generic_result.get("success", false)) \
+			or mage_state.weapon_equipment != generic_new \
+			or mage_state.reserve_weapon_equipment != null \
+			or mage_state.inventory.size() != 1 \
+			or mage_state.inventory[0].item_data != generic_old:
+		_fail("WARRIOR_HOOK: non-warrior controller inventory switching no longer uses the generic path")
+
+	var warrior_state := CharacterState.new()
+	warrior_state.character_data = CharacterData.new()
+	warrior_state.character_data.character_class = CardEnums.CardClass.WARRIOR
+	warrior_state.weapon_equipment = generic_old
+	warrior_state.reserve_weapon_equipment = generic_new
+	var armor := EquipmentData.new()
+	armor.item_name = "warrior inventory armor"
+	armor.equip_slot = EquipmentData.EquipSlot.ARMOR
+	var armor_stack := InventoryStack.new()
+	armor_stack.item_data = armor
+	armor_stack.count = 1
+	armor_stack.stack_id = "warrior_inventory_armor"
+	warrior_state.inventory.append(armor_stack)
+	var warrior := BattleUnitState.new()
+	warrior.character_state = warrior_state
+	var armor_result := controller.switch_equipment_from_inventory(warrior, armor)
+	if not bool(armor_result.get("success", false)) \
+			or warrior_state.armor_equipment != armor \
+			or warrior_state.weapon_equipment != generic_old \
+			or warrior_state.reserve_weapon_equipment != generic_new:
+		_fail("WARRIOR_HOOK: prepared weapon delegation intercepted explicit non-weapon equipment")
+
+	var explicit_weapon := EquipmentData.new()
+	explicit_weapon.item_name = "explicit warrior inventory weapon"
+	explicit_weapon.equip_slot = EquipmentData.EquipSlot.WEAPON
+	var explicit_weapon_stack := InventoryStack.new()
+	explicit_weapon_stack.item_data = explicit_weapon
+	explicit_weapon_stack.count = 1
+	explicit_weapon_stack.stack_id = "explicit_warrior_inventory_weapon"
+	warrior_state.inventory.append(explicit_weapon_stack)
+	var explicit_weapon_result := controller.switch_equipment_from_inventory(warrior, explicit_weapon)
+	if not bool(explicit_weapon_result.get("success", false)) \
+			or warrior_state.weapon_equipment != explicit_weapon \
+			or warrior_state.reserve_weapon_equipment != generic_new:
+		_fail("WARRIOR_HOOK: generic equipment API ignored an explicit Warrior inventory weapon")
+
 
 func _set_test_weapon_pair(warrior: BattleUnitState) -> void:
 	var training := load("res://resources/items/training_sword.tres") as EquipmentData
 	var heavy := load("res://resources/items/heavy_greatsword.tres") as EquipmentData
 	warrior.character_state.weapon_equipment = training
 	warrior.character_state.weapon_face = 0
+	warrior.character_state.reserve_weapon_equipment = heavy
+	warrior.character_state.reserve_weapon_face = 0
 	warrior.character_state.inventory.clear()
-	var stack := InventoryStack.new()
-	stack.item_data = heavy
-	stack.count = 1
-	warrior.character_state.inventory.append(stack)
 	warrior.equipment_runtime_states.clear()
+
+
+func _inventory_bytes(state: CharacterState) -> PackedByteArray:
+	var payload: Array[Dictionary] = []
+	for stack in state.inventory:
+		payload.append({
+			"stack_object_id": stack.get_instance_id() if stack != null else 0,
+			"item_object_id": stack.item_data.get_instance_id() if stack != null and stack.item_data != null else 0,
+			"item_path": stack.item_data.resource_path if stack != null and stack.item_data != null else "",
+			"count": stack.count if stack != null else 0,
+			"stack_id": stack.stack_id if stack != null else "",
+		})
+	return var_to_bytes(payload)
 
 
 func _queue_outer_limit_effects(controller: BattleController) -> void:

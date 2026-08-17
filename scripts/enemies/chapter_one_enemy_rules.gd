@@ -39,6 +39,13 @@ static func on_turn_started(controller: BattleController, unit: BattleUnitState)
 			var slots := 3 if ratio > 0.66 else (2 if ratio > 0.33 else 1)
 			unit.current_ap *= slots
 			unit.enemy_state.runtime_state["kraken_slots"] = slots
+			var extra_draw := slots - 1
+			if extra_draw > 0:
+				unit.draw_cards(extra_draw, controller.rng, {
+					"controller": controller,
+					"reason": "kraken_health_threshold",
+					"extra_draw": true,
+				})
 
 
 static func on_turn_ended(controller: BattleController, unit: BattleUnitState) -> void:

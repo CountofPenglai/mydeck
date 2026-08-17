@@ -130,6 +130,13 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 	else:
 		var equipment_button := bottom_hud.get_node_or_null("%EquipmentButton") as Button
 		var equipment_label := bottom_hud.get_node_or_null("%EquipmentLabel") as Label
+		var presentation_controller = battle_scene.get("controller")
+		if presentation_controller is BattleController:
+			for presentation_unit in presentation_controller.player_units:
+				if presentation_unit != null \
+						and presentation_unit.get_character_class() != CardEnums.CardClass.WARRIOR:
+					bottom_hud.call("bind_unit", presentation_unit, presentation_controller, false)
+					break
 		bottom_hud.call("set_equipment_actions", 1, "启动：本回合伤害加值 +2、范围 +1", true)
 		if equipment_button == null or equipment_label == null:
 			_fail("BATTLE_HUD_LAYOUT_CHECK: equipment action text nodes are missing at %s" % target_size)
@@ -382,6 +389,8 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 						if child is TextureButton and not hand_frame.get_global_rect().encloses((child as Control).get_global_rect()):
 							_fail("BATTLE_HUD_LAYOUT_CHECK: hand card is clipped at %s" % target_size)
 							break
+	if state_controller is BattleController and bottom_hud != null:
+		await _test_warrior_equipment_summary(state_controller, hud_root, bottom_hud, target_size)
 
 	var map_view := battle_scene.get_node_or_null("%MapView") as Control
 	if map_view == null or not map_view.has_method("set_fit_safe_rect"):
@@ -454,6 +463,75 @@ func _check_size(packed: PackedScene, target_size: Vector2i) -> void:
 
 	host.queue_free()
 	await get_tree().process_frame
+
+
+func _test_warrior_equipment_summary(
+	controller: BattleController,
+	hud_root: Control,
+	bottom_hud: Control,
+	target_size: Vector2i
+) -> void:
+	var warrior: BattleUnitState
+	for unit in controller.player_units:
+		if unit != null and unit.get_character_class() == CardEnums.CardClass.WARRIOR:
+			warrior = unit
+			break
+	if warrior == null or warrior.character_state == null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior equipment fixture missing at %s" % target_size)
+		return
+
+	var active_weapon := load("res://resources/items/mountain_cleaver.tres") as EquipmentData
+	var reserve_weapon := load("res://resources/items/lion_greatsword.tres") as EquipmentData
+	if active_weapon == null or reserve_weapon == null:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior weapon resources missing at %s" % target_size)
+		return
+	warrior.character_state.weapon_equipment = active_weapon
+	warrior.character_state.weapon_face = 0
+	warrior.character_state.reserve_weapon_equipment = reserve_weapon
+	warrior.character_state.reserve_weapon_face = 1
+	warrior.equipment_runtime_states.clear()
+	var action_context := {"controller": controller, "unit": warrior, "phase": "battle"}
+	var current_actions := warrior.get_equipment_actions(action_context)
+
+	warrior.character_state.weapon_equipment = reserve_weapon
+	warrior.character_state.weapon_face = warrior.character_state.reserve_weapon_face
+	warrior.equipment_runtime_states.clear()
+	var reserve_actions := warrior.get_equipment_actions(action_context)
+	warrior.character_state.weapon_equipment = active_weapon
+	warrior.character_state.weapon_face = 0
+	warrior.equipment_runtime_states.clear()
+	if current_actions.is_empty() or reserve_actions.is_empty():
+		_fail("BATTLE_HUD_LAYOUT_CHECK: action-isolation fixtures have no activated actions at %s" % target_size)
+		return
+
+	controller.phase = BattleController.Phase.BATTLE
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+	controller.current_unit = warrior
+	hud_root.call("refresh_view")
+	await get_tree().process_frame
+	var equipment_label := bottom_hud.get_node_or_null("%EquipmentLabel") as Label
+	var expected_summary := "当前：%s\n备战：%s" % [active_weapon.item_name, reserve_weapon.get_face(1).item_name]
+	if equipment_label == null or equipment_label.text != expected_summary:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior current/reserve summary mismatch at %s" % target_size)
+	elif equipment_label.text.split("\n").size() != 2:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior equipment summary is not exactly two lines at %s" % target_size)
+	elif equipment_label.autowrap_mode == TextServer.AUTOWRAP_OFF:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior equipment summary cannot wrap at %s" % target_size)
+	var hud_actions: Array = hud_root.get("_equipment_actions")
+	if hud_actions.size() != current_actions.size():
+		_fail("BATTLE_HUD_LAYOUT_CHECK: HUD equipment actions do not match the current weapon at %s" % target_size)
+	elif hud_actions.size() >= current_actions.size() + reserve_actions.size():
+		_fail("BATTLE_HUD_LAYOUT_CHECK: reserve weapon activated actions leaked into HUD at %s" % target_size)
+	bottom_hud.get_node("%EquipmentButton").pressed.emit()
+	await get_tree().process_frame
+	var equipment_popup := hud_root.get_node_or_null("%EquipmentActionsPopup")
+	if equipment_popup == null \
+			or not bool(equipment_popup.call("is_open")) \
+			or int(equipment_popup.call("get_detail_entry_count")) != 2:
+		_fail("BATTLE_HUD_LAYOUT_CHECK: warrior current/reserve detail commands are missing at %s" % target_size)
+	elif int(equipment_popup.call("get_action_count")) != current_actions.size():
+		_fail("BATTLE_HUD_LAYOUT_CHECK: opening weapon details changed the current action list at %s" % target_size)
+	equipment_popup.call("close")
 
 
 func _contains_scroll_container(root: Node) -> bool:

@@ -16,5 +16,5 @@ attack_range = 2
 equip_category = 1
 activated_effects = Array[Resource]([SubResource("Effect_mountain")])
 item_name = "砍山刀"
-description = "启动（限一次）：本回合内，本武器获得 +2 伤害加值与 +1 范围。本武器成功切入时刷新此动作；本武器切入背包时，移除其全部非永久加成。"
+description = "启动（限一次）：本回合内，本武器获得 +2 伤害加值与 +1 范围。本武器成功切入当前武器槽时刷新此动作；本武器切入备战槽时，移除其全部非永久加成。"
 icon = ExtResource("3_icon")

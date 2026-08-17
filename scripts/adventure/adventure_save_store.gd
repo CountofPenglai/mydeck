@@ -198,6 +198,8 @@ func _serialize_character(hero: CharacterState) -> Dictionary:
 		"level": hero.level,
 		"weapon": _resource_path(hero.weapon_equipment),
 		"weapon_face": hero.weapon_face,
+		"reserve_weapon": _resource_path(hero.reserve_weapon_equipment),
+		"reserve_weapon_face": hero.reserve_weapon_face,
 		"armor": _resource_path(hero.armor_equipment),
 		"accessory_1": _resource_path(hero.accessory_equipment_1),
 		"accessory_2": _resource_path(hero.accessory_equipment_2),
@@ -236,6 +238,8 @@ func _deserialize_character(data: Dictionary) -> CharacterState:
 	hero.level = int(data.get("level", 1))
 	hero.weapon_equipment = _load_equipment(str(data.get("weapon", "")))
 	hero.weapon_face = int(data.get("weapon_face", 0))
+	hero.reserve_weapon_equipment = _load_equipment(str(data.get("reserve_weapon", "")))
+	hero.reserve_weapon_face = clampi(int(data.get("reserve_weapon_face", 0)), 0, 1)
 	hero.armor_equipment = _load_equipment(str(data.get("armor", "")))
 	hero.accessory_equipment_1 = _load_equipment(str(data.get("accessory_1", "")))
 	hero.accessory_equipment_2 = _load_equipment(str(data.get("accessory_2", "")))

@@ -82,6 +82,8 @@ var _battle_log_lines := PackedStringArray()
 @onready var resume_battle_button: Button = %ResumeBattleButton
 @onready var restart_battle_button: Button = %RestartBattleButton
 @onready var restart_confirmation: ConfirmationDialog = %RestartConfirmation
+@onready var defeat_all_enemies_button: Button = %DefeatAllEnemiesButton
+@onready var defeat_all_enemies_confirmation: ConfirmationDialog = %DefeatAllEnemiesConfirmation
 
 
 func _ready() -> void:
@@ -95,6 +97,8 @@ func _ready() -> void:
 	resume_battle_button.pressed.connect(_close_battle_menu)
 	restart_battle_button.pressed.connect(_request_battle_restart)
 	restart_confirmation.confirmed.connect(_restart_current_battle)
+	defeat_all_enemies_button.pressed.connect(_request_defeat_all_enemies)
+	defeat_all_enemies_confirmation.confirmed.connect(_defeat_all_enemies_for_test)
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
 	_create_discard_popup()
@@ -162,6 +166,27 @@ func _restart_current_battle() -> void:
 		if restarted:
 			return
 	get_tree().reload_current_scene()
+
+
+func _request_defeat_all_enemies() -> void:
+	defeat_all_enemies_confirmation.popup_centered(Vector2i(460, 190))
+
+
+func _defeat_all_enemies_for_test() -> void:
+	if controller == null or controller.phase == BattleController.Phase.ENDED:
+		return
+	_close_battle_menu()
+	for enemy in controller.enemy_units.duplicate():
+		if enemy == null:
+			continue
+		var attempts := 0
+		while enemy.is_alive() and attempts < 8:
+			attempts += 1
+			controller.apply_damage(null, enemy, enemy.get_max_health() + 999, "测试击败", {
+				"fixed_damage": true,
+				"test_action": true,
+			})
+	controller._check_battle_end()
 
 
 func _schedule_refresh() -> void:
