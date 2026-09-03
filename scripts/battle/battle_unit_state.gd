@@ -814,10 +814,14 @@ func modify_incoming_damage(damage_context: DamageContext) -> void:
 func modify_outgoing_damage(damage_context: DamageContext) -> void:
 	if damage_context == null:
 		return
+	for status in statuses.duplicate():
+		if status != null:
+			status.modify_outgoing_damage(self, damage_context)
 	for entry in _get_equipment_effect_entries():
 		var effect := entry.get("effect") as EquipmentEffect
 		if effect != null:
 			effect.modify_outgoing_damage(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, damage_context)
+	remove_expired_statuses()
 
 
 func is_flying() -> bool:

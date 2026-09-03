@@ -157,6 +157,7 @@ func _ready() -> void:
 	_test_basic_attack_object_ap_completion()
 	_test_zero_ap_action_skips_completion()
 	_test_equipment_action_ap_completion()
+	_test_stun_rules()
 	_test_turn_command_boundary()
 	_test_turn_start_death_recovery()
 
@@ -470,6 +471,91 @@ func _test_equipment_action_ap_completion() -> void:
 		_fail("FLOW_DIAG: successful equipment effect did not spend advertised AP")
 	_assert_ap_records(status, [3], "successful equipment activation")
 	_assert_runner_idle(controller, "equipment AP finalization")
+
+
+func _test_stun_rules() -> void:
+	var controller := BattleController.new()
+	controller.setup(null)
+	var source := _create_proxy_unit("stun source")
+	var target := _create_proxy_unit("stun target")
+
+	var incoming_stun := StunStatus.new()
+	incoming_stun.stacks = 1
+	target.add_status(incoming_stun)
+	var incoming_context := DamageContext.create(controller, source, target, 4, "stun incoming")
+	target.modify_incoming_damage(incoming_context)
+	if incoming_context.amount != 6:
+		_fail("FLOW_DIAG: 1 stun stack should add exactly 2 incoming damage, got %d" % incoming_context.amount)
+	incoming_stun.stacks = 5
+	incoming_context = DamageContext.create(controller, source, target, 4, "stun incoming")
+	target.modify_incoming_damage(incoming_context)
+	if incoming_context.amount != 6:
+		_fail("FLOW_DIAG: 5 stun stacks should still add exactly 2 incoming damage, got %d" % incoming_context.amount)
+
+	target.statuses.clear()
+	var outgoing_stun := StunStatus.new()
+	outgoing_stun.stacks = 5
+	source.add_status(outgoing_stun)
+	target.curse_proxy_health = 100
+	var dealt := controller.apply_damage(source, target, 5, "stun outgoing")
+	if dealt != 3:
+		_fail("FLOW_DIAG: stun should reduce non-fixed outgoing damage by 2, got %d" % dealt)
+	target.curse_proxy_health = 100
+	dealt = controller.apply_damage(source, target, 1, "stun outgoing clamp")
+	if dealt != 0:
+		_fail("FLOW_DIAG: stun outgoing penalty should clamp damage to 0, got %d" % dealt)
+	target.curse_proxy_health = 100
+	dealt = controller.apply_damage(source, target, 5, "stun fixed outgoing", {"fixed_damage": true})
+	if dealt != 5:
+		_fail("FLOW_DIAG: fixed damage should ignore stun outgoing penalty, got %d" % dealt)
+
+	var config := BattleConfig.new()
+	config.base_move_cells_per_ap = 5
+	if source.get_move_distance_per_ap(config) != 3:
+		_fail("FLOW_DIAG: stun should halve move distance per AP with ceiling")
+
+	source.current_ap = 7
+	outgoing_stun.on_turn_start(source, {"controller": controller})
+	if source.current_ap != 7 or outgoing_stun.stacks != 5:
+		_fail("FLOW_DIAG: stun should not consume AP or stacks at turn start")
+	controller.push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_stun_ap_diagnostic"),
+		[controller, source, 3, 4]
+	))
+	if source.current_ap != 8:
+		_fail("FLOW_DIAG: stun AP diagnostic should retain AP gained during resolution")
+	if outgoing_stun.stacks != 2:
+		_fail("FLOW_DIAG: completed 3 AP action should remove 3 stun stacks, got %d" % outgoing_stun.stacks)
+	controller.push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_stun_ap_diagnostic"),
+		[controller, source, 0, 0]
+	))
+	if outgoing_stun.stacks != 2:
+		_fail("FLOW_DIAG: 0 AP action should not remove stun stacks")
+	outgoing_stun.on_turn_end(source, {"controller": controller})
+	if outgoing_stun.stacks != 1:
+		_fail("FLOW_DIAG: turn end should remove exactly 1 stun stack")
+	_assert_runner_idle(controller, "stun action finalization")
+
+
+func _resolve_stun_ap_diagnostic(
+	controller: BattleController,
+	unit: BattleUnitState,
+	ap_spent: int,
+	ap_gained: int
+) -> void:
+	unit.current_ap -= ap_spent
+	controller._record_action_ap_spent(unit, ap_spent)
+	unit.current_ap += ap_gained
+
+
+func _create_proxy_unit(display_name: String) -> BattleUnitState:
+	var unit := BattleUnitState.new()
+	unit.is_curse_proxy = true
+	unit.curse_proxy_name = display_name
+	unit.curse_proxy_max_health = 100
+	unit.curse_proxy_health = 100
+	return unit
 
 
 func _create_started_controller() -> BattleController:

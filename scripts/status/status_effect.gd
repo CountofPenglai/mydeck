@@ -23,6 +23,10 @@ func modify_incoming_damage(_unit: BattleUnitState, _damage_context: DamageConte
 	pass
 
 
+func modify_outgoing_damage(_unit: BattleUnitState, _damage_context: DamageContext) -> void:
+	pass
+
+
 func get_damage_bonus(_unit: BattleUnitState, _context: Dictionary = {}) -> int:
 	return 0
 
