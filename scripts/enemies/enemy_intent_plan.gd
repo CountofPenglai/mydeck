@@ -1,42 +1,109 @@
 extends Resource
 class_name EnemyIntentPlan
 
+# Kept for the unprepared-plan UI and the legacy executor until it migrates to
+# execution groups. Prepared plans use `current_group_index` instead.
 const STAGE_PRIMARY_ONE := 0
 const STAGE_PRIMARY_TWO := 1
 const STAGE_FALLBACK := 2
 const STAGE_FINISHED := 3
+const MAX_AP_PER_SLOT := 2
+const MAX_ACTIONS_PER_GROUP := 8
 
 @export var round_locked: int = 0
 @export var primary_intents: PackedInt32Array = []
+@export var primary_ap_reductions: PackedInt32Array = []
 @export var fallback_intent: int = EnemyIntentCategory.Type.DEFEND
+@export var fallback_ap_reduction: int = 0
+@export var stolen_ap_total: int = 0
+
+# Compatibility state for the old executor. It remains meaningful only before
+# prepare_execution() has assigned a runtime group.
 @export var current_stage: int = STAGE_FINISHED
 @export var forced_steps: Array[Dictionary] = []
 @export var planned_manifest_card_ids: PackedInt64Array = []
 @export var planned_manifest_fields: PackedStringArray = []
 @export var expected_decay_life: int = 0
 
+var primary_allocations: PackedInt32Array = []
+var execution_groups: Array[EnemyIntentExecutionGroup] = []
+var current_group_index: int = 0
+var residual_ap: int = 0
+var execution_prepared: bool = false
+
 var stage_action_count: int = 0
 var stage_start_ap: int = -1
 var active_combo_tags: PackedStringArray = []
+var _execution_finished: bool = true
 
 
-func configure(primary_one: int, primary_two: int, fallback: int, locked_round: int) -> void:
-	round_locked = locked_round
-	primary_intents = PackedInt32Array([primary_one, primary_two])
-	fallback_intent = fallback
+func configure(primary_categories: Variant, fallback: int, locked_round: int, legacy_locked_round: int = -1) -> void:
+	# The optional fourth argument keeps existing callers operational while the
+	# planner/behavior migration is split into later tasks. New callers pass the
+	# typed PackedInt32Array form described by the public API.
+	if primary_categories is PackedInt32Array:
+		primary_intents = primary_categories.duplicate()
+		round_locked = locked_round
+		fallback_intent = fallback
+	else:
+		primary_intents = PackedInt32Array([int(primary_categories), fallback])
+		fallback_intent = locked_round
+		round_locked = legacy_locked_round
+	primary_ap_reductions.clear()
+	fallback_ap_reduction = 0
+	stolen_ap_total = 0
+	primary_allocations.clear()
+	execution_groups.clear()
+	current_group_index = 0
+	residual_ap = 0
+	execution_prepared = false
+	_execution_finished = false
 	current_stage = STAGE_PRIMARY_ONE
 	_reset_stage_runtime()
+
+
+func prepare_execution(total_ap: int) -> void:
+	primary_allocations.clear()
+	execution_groups.clear()
+	current_group_index = 0
+	execution_prepared = true
+	_execution_finished = false
+	current_stage = STAGE_PRIMARY_ONE
+	_reset_stage_runtime()
+
+	var pool := maxi(0, total_ap) - maxi(0, stolen_ap_total)
+	pool = maxi(0, pool)
+	for slot in range(primary_intents.size()):
+		var reduction := maxi(0, primary_ap_reductions[slot]) if slot < primary_ap_reductions.size() else 0
+		var slot_cap := clampi(MAX_AP_PER_SLOT - reduction, 0, MAX_AP_PER_SLOT)
+		var allocation := mini(slot_cap, pool)
+		primary_allocations.append(allocation)
+		pool -= allocation
+		_add_primary_slot_to_group(primary_intents[slot], slot, allocation)
+	residual_ap = pool
+
+	if execution_groups.is_empty():
+		_create_fallback_group()
 
 
 func clear() -> void:
 	round_locked = 0
 	primary_intents.clear()
+	primary_ap_reductions.clear()
 	fallback_intent = EnemyIntentCategory.Type.DEFEND
+	fallback_ap_reduction = 0
+	stolen_ap_total = 0
 	current_stage = STAGE_FINISHED
 	forced_steps.clear()
 	planned_manifest_card_ids.clear()
 	planned_manifest_fields.clear()
 	expected_decay_life = 0
+	primary_allocations.clear()
+	execution_groups.clear()
+	current_group_index = 0
+	residual_ap = 0
+	execution_prepared = false
+	_execution_finished = true
 	_reset_stage_runtime()
 
 
@@ -45,43 +112,120 @@ func is_empty() -> bool:
 
 
 func get_current_category() -> int:
-	if current_stage >= STAGE_PRIMARY_ONE and current_stage <= STAGE_PRIMARY_TWO \
-			and current_stage < primary_intents.size():
-		return primary_intents[current_stage]
-	if current_stage == STAGE_FALLBACK:
-		return fallback_intent
+	var group := get_current_group()
+	if group != null:
+		return group.category
+	if not execution_prepared and not _execution_finished:
+		if current_stage >= STAGE_PRIMARY_ONE and current_stage < primary_intents.size():
+			return primary_intents[current_stage]
+		if current_stage == STAGE_FALLBACK:
+			return fallback_intent
 	return -1
 
 
+func get_current_group() -> EnemyIntentExecutionGroup:
+	if not execution_prepared or current_group_index < 0 or current_group_index >= execution_groups.size():
+		return null
+	return execution_groups[current_group_index]
+
+
+func get_current_budget() -> int:
+	var group := get_current_group()
+	return group.remaining_ap if group != null else 0
+
+
+func consume_current_budget(ap_cost: int) -> int:
+	var group := get_current_group()
+	if group == null or current_group_reached_action_limit():
+		return 0
+	return group.consume(ap_cost)
+
+
+func current_group_reached_action_limit() -> bool:
+	var group := get_current_group()
+	return group == null or group.action_count >= MAX_ACTIONS_PER_GROUP
+
+
+func complete_current_group() -> void:
+	var group := get_current_group()
+	if group == null:
+		return
+	if group.is_fallback:
+		finish()
+		return
+	residual_ap += group.remaining_ap
+	group.remaining_ap = 0
+	current_group_index += 1
+	if current_group_index >= execution_groups.size():
+		_create_fallback_group()
+
+
+func _add_primary_slot_to_group(category: int, slot: int, allocation: int) -> void:
+	if not execution_groups.is_empty():
+		var previous: EnemyIntentExecutionGroup = execution_groups.back()
+		if not previous.is_fallback and previous.category == category and previous.last_slot == slot - 1:
+			previous.last_slot = slot
+			previous.allocated_ap += allocation
+			previous.remaining_ap += allocation
+			return
+	execution_groups.append(EnemyIntentExecutionGroup.create(category, slot, slot, allocation))
+
+
+func _create_fallback_group() -> void:
+	if not execution_groups.is_empty() and execution_groups.back().is_fallback:
+		current_group_index = execution_groups.size() - 1
+		return
+	var fallback_reduction := maxi(0, fallback_ap_reduction)
+	var fallback_cap := clampi(MAX_AP_PER_SLOT - fallback_reduction, 0, MAX_AP_PER_SLOT)
+	var fallback_budget := mini(fallback_cap, residual_ap)
+	residual_ap -= fallback_budget
+	execution_groups.append(EnemyIntentExecutionGroup.create(
+		fallback_intent,
+		primary_intents.size(),
+		primary_intents.size(),
+		fallback_budget,
+		true
+	))
+	current_group_index = execution_groups.size() - 1
+	current_stage = STAGE_FALLBACK
+
+
 func advance_stage() -> void:
-	if is_finished():
+	if execution_prepared or is_finished():
 		return
 	current_stage += 1
 	if current_stage > STAGE_FALLBACK:
-		current_stage = STAGE_FINISHED
-	_reset_stage_runtime()
-
-
-func finish() -> void:
-	current_stage = STAGE_FINISHED
-	_reset_stage_runtime()
+		finish()
+	else:
+		_reset_stage_runtime()
 
 
 func is_fallback_stage() -> bool:
-	return current_stage == STAGE_FALLBACK
+	var group := get_current_group()
+	if group != null:
+		return group.is_fallback
+	return not execution_prepared and not _execution_finished and current_stage == STAGE_FALLBACK
 
 
 func is_finished() -> bool:
-	return current_stage >= STAGE_FINISHED
+	return _execution_finished
+
+
+func finish() -> void:
+	_execution_finished = true
+	residual_ap = 0
+	current_stage = STAGE_FINISHED
+	current_group_index = execution_groups.size()
+	_reset_stage_runtime()
 
 
 func get_headline() -> String:
-	if primary_intents.size() < 2:
+	if primary_intents.is_empty():
 		return "观望"
-	return "%s → %s" % [
-		EnemyIntentCategory.get_label(primary_intents[0]),
-		EnemyIntentCategory.get_label(primary_intents[1]),
-	]
+	var labels := PackedStringArray()
+	for category in primary_intents:
+		labels.append(EnemyIntentCategory.get_label(category))
+	return " → ".join(labels)
 
 
 func get_summary() -> String:

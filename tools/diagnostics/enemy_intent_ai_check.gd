@@ -7,6 +7,11 @@ func _ready() -> void:
 	_test_multi_intent_rating_isolation()
 	_test_profile_presets()
 	_test_category_only_public_plan()
+	_test_intent_budget_allocation_and_returns()
+	_test_adjacent_intents_merge_only()
+	_test_intent_action_limit()
+	_test_intent_modifier_normalization()
+	_test_fallback_reduction_and_residual_discard()
 	_test_dynamic_action_selection()
 	_test_fallback_finishes_with_ap_remaining()
 	_test_chapter_catalog_tactical_metadata()
@@ -70,8 +75,10 @@ func _test_profile_presets() -> void:
 func _test_category_only_public_plan() -> void:
 	var plan := EnemyIntentPlan.new()
 	plan.configure(
-		EnemyIntentCategory.Type.UTILITY,
-		EnemyIntentCategory.Type.ATTACK,
+		PackedInt32Array([
+			EnemyIntentCategory.Type.UTILITY,
+			EnemyIntentCategory.Type.ATTACK,
+		]),
 		EnemyIntentCategory.Type.DEFEND,
 		3
 	)
@@ -80,22 +87,123 @@ func _test_category_only_public_plan() -> void:
 		EnemyIntentCategory.Type.ATTACK,
 	]):
 		_fail("public plan did not preserve its two primary intent categories")
-	if plan.get_current_category() != EnemyIntentCategory.Type.UTILITY or plan.is_fallback_stage():
-		_fail("public plan did not start at primary intent one")
-	plan.advance_stage()
-	if plan.get_current_category() != EnemyIntentCategory.Type.ATTACK:
-		_fail("public plan did not advance to primary intent two")
-	plan.advance_stage()
-	if plan.get_current_category() != EnemyIntentCategory.Type.DEFEND or not plan.is_fallback_stage():
-		_fail("public plan did not advance to its fallback intent")
-	plan.advance_stage()
-	if not plan.is_finished():
-		_fail("public plan did not finish after its fallback intent")
 	for property in plan.get_property_list():
 		if str(property.get("name", "")) == "steps":
 			_fail("public plan still exposes concrete action steps")
 	if plan.get_headline() != "功能 → 攻击" or not plan.get_summary().contains("备 防御"):
 		_fail("public plan category summary is incorrect")
+
+
+func _test_intent_budget_allocation_and_returns() -> void:
+	var plan := EnemyIntentPlan.new()
+	plan.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.UTILITY,
+		EnemyIntentCategory.Type.ATTACK,
+	]), EnemyIntentCategory.Type.DEFEND, 3)
+	plan.prepare_execution(5)
+	_assert_int_array(plan.primary_allocations, PackedInt32Array([2, 2]), "primary allocations")
+	if plan.residual_ap != 1 or plan.get_current_budget() != 2:
+		_fail("intent allocation did not reserve the residual AP")
+	plan.consume_current_budget(1)
+	plan.complete_current_group()
+	if plan.residual_ap != 2 or plan.get_current_budget() != 2:
+		_fail("unused primary AP did not return before fallback")
+	plan.consume_current_budget(2)
+	plan.complete_current_group()
+	if not plan.is_fallback_stage() or plan.get_current_budget() != 2:
+		_fail("fallback did not receive up to 2 residual AP")
+	plan.consume_current_budget(1)
+	plan.complete_current_group()
+	if not plan.is_finished() or plan.residual_ap != 0:
+		_fail("fallback remainder was returned instead of discarded")
+
+
+func _test_adjacent_intents_merge_only() -> void:
+	var adjacent := EnemyIntentPlan.new()
+	adjacent.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+	]), EnemyIntentCategory.Type.ATTACK, 1)
+	adjacent.prepare_execution(6)
+	if adjacent.execution_groups.size() != 2 \
+			or adjacent.execution_groups[0].allocated_ap != 4:
+		_fail("adjacent attack intents did not merge into a 4 AP group")
+
+	var separated := EnemyIntentPlan.new()
+	separated.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+		EnemyIntentCategory.Type.ATTACK,
+	]), EnemyIntentCategory.Type.ATTACK, 1)
+	separated.prepare_execution(6)
+	if separated.execution_groups.size() != 3:
+		_fail("non-adjacent attack intents merged")
+
+
+func _test_intent_action_limit() -> void:
+	var plan := EnemyIntentPlan.new()
+	plan.configure(
+		PackedInt32Array([EnemyIntentCategory.Type.UTILITY]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	plan.prepare_execution(2)
+	for _index in range(EnemyIntentPlan.MAX_ACTIONS_PER_GROUP):
+		plan.consume_current_budget(0)
+	if not plan.current_group_reached_action_limit():
+		_fail("intent group did not stop after 8 zero-cost actions")
+	var group := plan.get_current_group()
+	var remaining_before_ninth := plan.get_current_budget()
+	if plan.consume_current_budget(0) != 0 or group.action_count != EnemyIntentPlan.MAX_ACTIONS_PER_GROUP \
+			or plan.get_current_budget() != remaining_before_ninth:
+		_fail("ninth zero-cost action changed a capped intent group")
+	plan.complete_current_group()
+	if not plan.is_fallback_stage() or plan.get_current_budget() != 2:
+		_fail("capped primary did not return unused AP to fallback")
+
+
+func _test_intent_modifier_normalization() -> void:
+	var negative := EnemyIntentPlan.new()
+	negative.configure(PackedInt32Array([EnemyIntentCategory.Type.ATTACK]), EnemyIntentCategory.Type.DEFEND, 1)
+	negative.stolen_ap_total = -5
+	negative.primary_ap_reductions = PackedInt32Array([-1])
+	negative.fallback_ap_reduction = -1
+	negative.prepare_execution(3)
+	_assert_int_array(negative.primary_allocations, PackedInt32Array([2]), "negative modifier allocation")
+	if negative.residual_ap != 1 or negative.get_current_group().allocated_ap != 2:
+		_fail("negative theft or primary reduction minted AP")
+	negative.complete_current_group()
+	if negative.get_current_budget() != 2:
+		_fail("negative fallback reduction exceeded its 2 AP cap")
+
+	var reduced := EnemyIntentPlan.new()
+	reduced.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.UTILITY,
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+	]), EnemyIntentCategory.Type.CURSE, 1)
+	reduced.stolen_ap_total = 3
+	reduced.primary_ap_reductions = PackedInt32Array([1, 0, 2])
+	reduced.prepare_execution(8)
+	_assert_int_array(reduced.primary_allocations, PackedInt32Array([1, 2, 0]), "reduced ordered allocations")
+	if reduced.residual_ap != 2:
+		_fail("stolen AP and primary reductions did not leave the expected residual")
+
+
+func _test_fallback_reduction_and_residual_discard() -> void:
+	var plan := EnemyIntentPlan.new()
+	plan.configure(PackedInt32Array([EnemyIntentCategory.Type.UTILITY]), EnemyIntentCategory.Type.DEFEND, 1)
+	plan.fallback_ap_reduction = 1
+	plan.prepare_execution(6)
+	if plan.get_current_budget() != 2 or plan.residual_ap != 4:
+		_fail("fallback reduction changed primary allocation")
+	plan.complete_current_group()
+	if not plan.is_fallback_stage() or plan.get_current_budget() != 1 or plan.residual_ap != 5:
+		_fail("fallback reduction did not cap only the fallback group")
+	plan.complete_current_group()
+	if not plan.is_finished() or plan.residual_ap != 0:
+		_fail("fallback did not discard residual AP beyond its capped budget")
 
 
 func _test_dynamic_action_selection() -> void:
@@ -132,8 +240,10 @@ func _test_fallback_finishes_with_ap_remaining() -> void:
 	enemy.hand.clear()
 	enemy.current_ap = 4
 	enemy.enemy_state.intent_plan.configure(
-		EnemyIntentCategory.Type.UTILITY,
-		EnemyIntentCategory.Type.CURSE,
+		PackedInt32Array([
+			EnemyIntentCategory.Type.UTILITY,
+			EnemyIntentCategory.Type.CURSE,
+		]),
 		EnemyIntentCategory.Type.DEFEND,
 		1
 	)
@@ -220,8 +330,10 @@ func _test_public_intent_ui_text() -> void:
 		return
 	var enemy: BattleUnitState = controller.enemy_units[0]
 	enemy.enemy_state.intent_plan.configure(
-		EnemyIntentCategory.Type.UTILITY,
-		EnemyIntentCategory.Type.ATTACK,
+		PackedInt32Array([
+			EnemyIntentCategory.Type.UTILITY,
+			EnemyIntentCategory.Type.ATTACK,
+		]),
 		EnemyIntentCategory.Type.DEFEND,
 		1
 	)
@@ -333,3 +445,8 @@ func _test_multi_role_card_respects_intent_targeting() -> void:
 func _fail(message: String) -> void:
 	_exit_code = 1
 	push_error("ENEMY_INTENT_AI_DIAG: " + message)
+
+
+func _assert_int_array(actual: PackedInt32Array, expected: PackedInt32Array, label: String) -> void:
+	if actual != expected:
+		_fail("%s expected %s, got %s" % [label, str(expected), str(actual)])
