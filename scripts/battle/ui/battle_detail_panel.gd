@@ -164,18 +164,18 @@ func _build_enemy_intent(unit: BattleUnitState) -> String:
 	var lines := PackedStringArray([
 		"",
 		"意图",
-		"主要：%s" % plan.get_headline(),
-		"备用：%s" % EnemyIntentCategory.get_label(plan.fallback_intent),
+		"主要：",
 	])
+	if plan.primary_intents.is_empty():
+		lines.append("观望")
+	else:
+		for index in range(plan.primary_intents.size()):
+			lines.append("%d. %s" % [index + 1, plan.get_primary_slot_display(index)])
+	lines.append("备用：%s" % plan.get_fallback_display())
 	if not plan.is_finished():
 		var current_category := plan.get_current_category()
 		lines.append("当前：%s" % EnemyIntentCategory.get_label(current_category))
 		lines.append(EnemyIntentCategory.get_description(current_category))
-	if not plan.forced_steps.is_empty():
-		var special_labels := PackedStringArray()
-		for step in plan.forced_steps:
-			special_labels.append(str(step.get("label", "特殊行动")))
-		lines.append("特殊：%s" % " → ".join(special_labels))
 	if not plan.planned_manifest_fields.is_empty():
 		lines.append("显化：%s" % "、".join(plan.planned_manifest_fields))
 	if plan.expected_decay_life > 0:

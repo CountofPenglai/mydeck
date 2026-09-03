@@ -709,19 +709,52 @@ func _test_public_intent_ui_text() -> void:
 	var enemy: BattleUnitState = controller.enemy_units[0]
 	enemy.enemy_state.intent_plan.configure(
 		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.ATTACK,
 			EnemyIntentCategory.Type.UTILITY,
+		]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	var plan := enemy.enemy_state.intent_plan
+	plan.forced_steps = [{"label": "猛击"}]
+	if plan.reduce_public_intent_budget(0, false, 1, 6) != 1:
+		_fail("public intent UI setup could not reduce the first slot")
+	var projected_text := plan.get_execution_display()
+	if not projected_text.contains("攻击 1/2 AP") \
+			or projected_text.count("攻击") != 2 \
+			or not projected_text.contains("功能 2/2 AP") \
+			or not projected_text.contains("备 防御 2/2 AP"):
+		_fail("public intent UI does not list every projected slot budget in order")
+	var panel := BattleDetailPanel.new()
+	var intent_text: String = panel._build_enemy_intent(enemy)
+	panel.free()
+	if not intent_text.contains("1. 攻击 1/2 AP") \
+			or not intent_text.contains("2. 攻击 2/2 AP") \
+			or not intent_text.contains("3. 功能 2/2 AP") \
+			or not intent_text.contains("备用：防御 2/2 AP"):
+		_fail("detail panel does not show complete per-slot projected budgets")
+	if intent_text.contains("猛击"):
+		_fail("detail panel leaks a concrete intent action")
+
+	var merged := EnemyIntentPlan.new()
+	merged.configure(
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
 			EnemyIntentCategory.Type.ATTACK,
 		]),
 		EnemyIntentCategory.Type.DEFEND,
 		1
 	)
-	var panel := BattleDetailPanel.new()
-	var intent_text: String = panel._build_enemy_intent(enemy)
-	panel.free()
-	if not intent_text.contains("主要：功能 → 攻击") or not intent_text.contains("备用：防御"):
-		_fail("detail panel does not show the three public intent categories")
-	if intent_text.contains("1.") or intent_text.contains(" AP") or intent_text.contains("猛击"):
-		_fail("detail panel still leaks concrete intent actions")
+	merged.prepare_execution(6)
+	merged.consume_current_budget(1)
+	var merged_text := merged.get_execution_display()
+	if not merged_text.contains("合并 1-2") or not merged_text.contains("组 3/4 AP"):
+		_fail("prepared public intent UI does not show merged budget boundaries")
+	merged.complete_current_group()
+	var fallback_text := merged.get_fallback_display()
+	if not fallback_text.contains("剩余 2/2 AP") or fallback_text.contains("合并"):
+		_fail("fallback UI does not show an independent prepared allocation")
 
 
 func _test_intent_order_prefers_setup_combo() -> void:

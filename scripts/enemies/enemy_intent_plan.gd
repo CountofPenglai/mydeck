@@ -264,6 +264,69 @@ func get_headline() -> String:
 	return " → ".join(labels)
 
 
+func get_primary_slot_display(index: int) -> String:
+	if index < 0 or index >= primary_intents.size():
+		return ""
+	var label := EnemyIntentCategory.get_label(primary_intents[index])
+	var reduction := maxi(0, primary_ap_reductions[index]) \
+		if index < primary_ap_reductions.size() else 0
+	var slot_cap := clampi(MAX_AP_PER_SLOT - reduction, 0, MAX_AP_PER_SLOT)
+	if not execution_prepared:
+		return "%s %d/%d AP" % [label, slot_cap, MAX_AP_PER_SLOT]
+
+	var allocation := primary_allocations[index] if index < primary_allocations.size() else 0
+	var group := _find_primary_execution_group(index)
+	if group == null:
+		return "%s %d/%d AP（待执行）" % [label, allocation, slot_cap]
+	if group.first_slot != group.last_slot:
+		return "%s %d/%d AP（合并 %d-%d，组 %d/%d AP）" % [
+			label,
+			allocation,
+			slot_cap,
+			group.first_slot + 1,
+			group.last_slot + 1,
+			group.remaining_ap,
+			group.allocated_ap,
+		]
+	return "%s %d/%d AP（剩余 %d/%d AP）" % [
+		label,
+		allocation,
+		slot_cap,
+		group.remaining_ap,
+		group.allocated_ap,
+	]
+
+
+func get_fallback_display() -> String:
+	var label := EnemyIntentCategory.get_label(fallback_intent)
+	var fallback_cap := clampi(
+		MAX_AP_PER_SLOT - maxi(0, fallback_ap_reduction),
+		0,
+		MAX_AP_PER_SLOT
+	)
+	if not execution_prepared:
+		return "%s %d/%d AP" % [label, fallback_cap, MAX_AP_PER_SLOT]
+
+	var group := _find_fallback_execution_group()
+	if group == null:
+		return "%s 待分配（上限 %d/%d AP）" % [label, fallback_cap, MAX_AP_PER_SLOT]
+	return "%s %d/%d AP（剩余 %d/%d AP）" % [
+		label,
+		group.allocated_ap,
+		fallback_cap,
+		group.remaining_ap,
+		group.allocated_ap,
+	]
+
+
+func get_execution_display() -> String:
+	var primary_parts := PackedStringArray()
+	for index in range(primary_intents.size()):
+		primary_parts.append(get_primary_slot_display(index))
+	var primary_text := "观望" if primary_parts.is_empty() else " → ".join(primary_parts)
+	return "%s | 备 %s" % [primary_text, get_fallback_display()]
+
+
 func get_summary() -> String:
 	var parts := PackedStringArray(["备 %s" % EnemyIntentCategory.get_label(fallback_intent)])
 	if not planned_manifest_fields.is_empty():
@@ -271,6 +334,21 @@ func get_summary() -> String:
 	if expected_decay_life > 0:
 		parts.append("衰退 -%d生命" % expected_decay_life)
 	return " / ".join(parts)
+
+
+func _find_primary_execution_group(index: int) -> EnemyIntentExecutionGroup:
+	for group in execution_groups:
+		if group != null and not group.is_fallback \
+				and index >= group.first_slot and index <= group.last_slot:
+			return group
+	return null
+
+
+func _find_fallback_execution_group() -> EnemyIntentExecutionGroup:
+	for group in execution_groups:
+		if group != null and group.is_fallback:
+			return group
+	return null
 
 
 func _reset_stage_runtime() -> void:
