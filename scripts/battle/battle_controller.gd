@@ -716,6 +716,7 @@ func _resolve_direct_move_action(unit: BattleUnitState, cell: Vector2i) -> void:
 
 	_close_ranger_combo_window(unit)
 	unit.current_ap -= ap_cost
+	_record_action_ap_spent(unit, ap_cost)
 	unit.notify_move_ap_cost_paid({
 		"controller": self,
 		"cell": cell,
@@ -970,6 +971,10 @@ func _resolve_card_play_frame(frame: BattleCardFrame) -> void:
 			return
 		frame.user.hand.append(frame.card)
 
+	_record_action_ap_spent(
+		frame.user,
+		int(payment_snapshot.get("current_ap", frame.user.current_ap)) - frame.user.current_ap
+	)
 	frame.user.notify_card_ap_cost_paid(frame.card, {
 		"controller": self,
 		"card": frame.card,
@@ -1326,6 +1331,7 @@ func _resolve_basic_attack_action(attacker: BattleUnitState, target: BattleUnitS
 
 	_close_ranger_combo_window(attacker)
 	attacker.current_ap -= config.basic_attack_ap_cost
+	_record_action_ap_spent(attacker, config.basic_attack_ap_cost)
 	perform_strike(attacker, target, null, "普通攻击", equipment_slot)
 	state_changed.emit()
 	_check_battle_end()
@@ -1380,6 +1386,7 @@ func _resolve_basic_attack_object_action(
 		return
 	_close_ranger_combo_window(attacker)
 	attacker.current_ap -= config.basic_attack_ap_cost
+	_record_action_ap_spent(attacker, config.basic_attack_ap_cost)
 	perform_object_strike_with_modifier(
 		attacker,
 		target,
@@ -2102,7 +2109,10 @@ func can_activate_equipment_action(unit: BattleUnitState, effect: EquipmentEffec
 		if action.get("effect") != effect or str(action.get("action_id", "default")) != action_id:
 			continue
 		var cost := int(action.get("momentum_cost", 0))
-		return bool(action.get("enabled", false)) and unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) >= cost
+		var ap_cost := maxi(0, int(action.get("ap_cost", 0)))
+		return bool(action.get("enabled", false)) \
+			and unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) >= cost \
+			and unit.current_ap >= ap_cost
 	return false
 
 
@@ -2135,11 +2145,16 @@ func _resolve_equipment_action(unit: BattleUnitState, effect: EquipmentEffect, a
 		if action.get("effect") != effect or str(action.get("action_id", "default")) != action_id:
 			continue
 		var cost := int(action.get("momentum_cost", 0))
+		var ap_cost := maxi(0, int(action.get("ap_cost", 0)))
 		if not bool(action.get("enabled", false)):
+			return
+		if unit.current_ap < ap_cost:
 			return
 		if cost > 0 and not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, cost):
 			return
 		if effect.activate(unit, action.get("root") as EquipmentData, action.get("component") as EquipmentData, action.get("runtime") as EquipmentRuntimeState, context):
+			unit.current_ap -= ap_cost
+			_record_action_ap_spent(unit, ap_cost)
 			if not deployment_action:
 				_close_ranger_combo_window(unit)
 			_emit_log("%s 使用 %s。" % [unit.get_display_name(), str(action.get("label", "武器行动"))])
@@ -4159,6 +4174,28 @@ func _on_action_resolution_completed(action_id: int) -> void:
 	for key_value in stealth_cancelled_actions.keys().duplicate():
 		if str(key_value).begins_with(prefix):
 			stealth_cancelled_actions.erase(key_value)
+
+
+func _record_action_ap_spent(unit: BattleUnitState, amount: int) -> void:
+	if unit == null or amount <= 0:
+		return
+	resolution_runner.record_current_action_ap_spent(unit, amount)
+
+
+func _finalize_ap_action(frame: BattleActionFrame, action_id: int) -> void:
+	if frame == null:
+		return
+	for entry_value in frame.get_ap_spend_entries():
+		var entry := entry_value as Dictionary
+		var unit := entry.get("unit") as BattleUnitState
+		var amount := int(entry.get("amount", 0))
+		if unit == null or amount <= 0:
+			continue
+		unit.notify_ap_action_completed(amount, {
+			"controller": self,
+			"action_id": action_id,
+			"phase": "action_finalize",
+		})
 
 
 func get_current_action_id() -> int:

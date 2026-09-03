@@ -572,6 +572,16 @@ func notify_card_ap_cost_paid(card: CardData, context: Dictionary = {}) -> void:
 	notify_action_category_used(CardEnums.action_category_for_card(card.card_type), event_context)
 
 
+func notify_ap_action_completed(ap_spent: int, context: Dictionary = {}) -> void:
+	if ap_spent <= 0:
+		return
+	var event_context := _with_unit_context(context)
+	for status in statuses.duplicate():
+		if status != null:
+			status.on_ap_action_completed(self, ap_spent, event_context)
+	remove_expired_statuses()
+
+
 func notify_after_card_played(card: CardData, context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_after_card_played", [card], event_context)

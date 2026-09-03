@@ -39,6 +39,14 @@ func on_card_ap_cost_paid(_unit: BattleUnitState, _card: CardData, _context: Dic
 	pass
 
 
+func on_ap_action_completed(
+	_unit: BattleUnitState,
+	_ap_spent: int,
+	_context: Dictionary = {}
+) -> void:
+	pass
+
+
 func on_card_drawn(_unit: BattleUnitState, _card: CardData, _context: Dictionary = {}) -> void:
 	pass
 

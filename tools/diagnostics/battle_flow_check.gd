@@ -1,5 +1,138 @@
 extends Node
 
+
+class APCompletionDiagnosticStatus:
+	extends StatusEffect
+
+	var records: Array[Dictionary] = []
+	var order: Array[String] = []
+	var enqueue_completion_effect: bool = false
+	var completion_effect_action_id: int = 0
+	var completion_effect_scope_depth: int = 0
+
+	func _init() -> void:
+		status_id = "diagnostic_ap_completion"
+		display_name = "AP completion diagnostic"
+
+	func on_after_card_played(
+		_unit: BattleUnitState,
+		_card: CardData,
+		_context: Dictionary = {}
+	) -> void:
+		order.append("after_card_hook")
+
+	func on_ap_action_completed(
+		_unit: BattleUnitState,
+		ap_spent: int,
+		context: Dictionary = {}
+	) -> void:
+		records.append({
+			"ap_spent": ap_spent,
+			"action_id": int(context.get("action_id", 0)),
+			"phase": str(context.get("phase", "")),
+		})
+		order.append("ap_completed")
+		if not enqueue_completion_effect:
+			return
+		var controller := context.get("controller") as BattleController
+		if controller != null:
+			controller.enqueue_effect(
+				Callable(self, "_record_completion_effect"),
+				[controller],
+				0,
+				"AP completion diagnostic effect"
+			)
+
+	func _record_completion_effect(controller: BattleController) -> void:
+		order.append("completion_effect")
+		completion_effect_action_id = controller.get_current_action_id()
+		completion_effect_scope_depth = controller.resolution_runner.queue_scopes.size()
+
+
+class APGainCardEffect:
+	extends CardEffect
+
+	var extra_ap_condition: PayAPCondition
+	var ap_gain: int = 0
+	var order: Array[String] = []
+
+	func can_pay_play_cost(context: Dictionary = {}) -> bool:
+		return extra_ap_condition == null or extra_ap_condition.can_pay(context)
+
+	func pay_play_cost(context: Dictionary = {}) -> bool:
+		return extra_ap_condition == null or extra_ap_condition.pay(context)
+
+	func play(context: Dictionary = {}, _targets: Array = []) -> void:
+		order.append("card_effect")
+		var user := context.get("user") as BattleUnitState
+		if user != null:
+			user.current_ap += ap_gain
+
+
+class DefaultCostEquipmentEffect:
+	extends EquipmentEffect
+
+	func has_activated_action(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> bool:
+		return true
+
+	func get_action_label(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> String:
+		return "default AP cost"
+
+	func activate(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> bool:
+		return true
+
+
+class CustomCostEquipmentEffect:
+	extends EquipmentEffect
+
+	var advertised_ap_cost: int = 0
+	var omit_ap_cost: bool = false
+	var activation_succeeds: bool = true
+
+	func get_activated_actions(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> Array[Dictionary]:
+		var action := {
+			"action_id": "diagnostic",
+			"label": "custom AP cost",
+			"enabled": true,
+		}
+		if not omit_ap_cost:
+			action["ap_cost"] = advertised_ap_cost
+		return [action]
+
+	func activate(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		_context: Dictionary = {}
+	) -> bool:
+		return activation_succeeds
+
+
 var _exit_code: int = 0
 var _chain_count: int = 0
 var _chain_action_ids: Array[int] = []
@@ -18,6 +151,12 @@ func _ready() -> void:
 	_test_effect_queue_reentry(runner_controller)
 	_test_after_stage(runner_controller)
 	_test_action_order(runner_controller)
+	_test_card_ap_completion()
+	_test_movement_ap_completion()
+	_test_basic_attack_ap_completion()
+	_test_basic_attack_object_ap_completion()
+	_test_zero_ap_action_skips_completion()
+	_test_equipment_action_ap_completion()
 	_test_turn_command_boundary()
 	_test_turn_start_death_recovery()
 
@@ -152,6 +291,271 @@ func _queue_outer_and_inner(controller: BattleController) -> void:
 
 func _record_order(label: String) -> void:
 	_order.append(label)
+
+
+func _test_card_ap_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var unit := _prepare_player_turn(controller)
+	var status := APCompletionDiagnosticStatus.new()
+	status.enqueue_completion_effect = true
+	unit.statuses.clear()
+	unit.add_status(status)
+
+	var extra_cost := PayAPCondition.new()
+	extra_cost.amount = 3
+	var effect := APGainCardEffect.new()
+	effect.extra_ap_condition = extra_cost
+	effect.ap_gain = 4
+	effect.order = status.order
+	var card := CardData.new()
+	card.card_name = "AP ledger diagnostic"
+	card.ap_cost = 2
+	card.effect = effect
+	unit.hand.assign([card])
+	unit.current_ap = 10
+
+	if not controller.play_card(unit, card, []):
+		_fail("FLOW_DIAG: AP ledger card was rejected")
+		return
+	if unit.current_ap != 9:
+		_fail("FLOW_DIAG: AP gain card expected 9 AP after payment and effect, got %d" % unit.current_ap)
+	_assert_ap_records(status, [5], "base plus PayAPCondition")
+	if status.order != ["card_effect", "after_card_hook", "ap_completed", "completion_effect"]:
+		_fail("FLOW_DIAG: AP finalization order incorrect: %s" % str(status.order))
+	var action_id := int(status.records[0].get("action_id", 0)) if not status.records.is_empty() else 0
+	if action_id <= 0 or status.completion_effect_action_id != action_id:
+		_fail("FLOW_DIAG: finalization effect escaped its action id")
+	if status.completion_effect_scope_depth <= 1:
+		_fail("FLOW_DIAG: finalization effect ran after the action queue scope was popped")
+	_assert_runner_idle(controller, "card AP finalization")
+
+
+func _test_movement_ap_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var unit := _prepare_player_turn(controller)
+	var status := APCompletionDiagnosticStatus.new()
+	unit.statuses.clear()
+	unit.add_status(status)
+	unit.current_ap = 10
+	var destination := _find_reachable_destination(controller, unit)
+	if destination == BattleHexGrid.INVALID_CELL:
+		_fail("FLOW_DIAG: movement AP diagnostic found no reachable destination")
+		return
+	var ap_before := unit.current_ap
+	if not controller.move_unit_to_cell(unit, destination):
+		_fail("FLOW_DIAG: movement AP diagnostic action was rejected")
+		return
+	var spent := ap_before - unit.current_ap
+	if spent <= 0:
+		_fail("FLOW_DIAG: movement AP diagnostic did not spend AP")
+	_assert_ap_records(status, [spent], "movement")
+	_assert_runner_idle(controller, "movement AP finalization")
+
+
+func _test_basic_attack_ap_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var attacker := _prepare_player_turn(controller)
+	var target := controller.enemy_units[0] if not controller.enemy_units.is_empty() else null
+	if target == null or not _place_adjacent(controller, attacker, target):
+		_fail("FLOW_DIAG: unit attack AP diagnostic could not place targets")
+		return
+	var status := APCompletionDiagnosticStatus.new()
+	attacker.statuses.clear()
+	attacker.add_status(status)
+	attacker.current_ap = 10
+	if not controller.basic_attack(attacker, target):
+		_fail("FLOW_DIAG: unit attack AP diagnostic action was rejected")
+		return
+	_assert_ap_records(status, [controller.config.basic_attack_ap_cost], "unit basic attack")
+	_assert_runner_idle(controller, "unit attack AP finalization")
+
+
+func _test_basic_attack_object_ap_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var attacker := _prepare_player_turn(controller)
+	var target_cell := _find_empty_neighbor(controller, attacker.cell, [attacker])
+	if target_cell == BattleHexGrid.INVALID_CELL:
+		_fail("FLOW_DIAG: object attack AP diagnostic found no adjacent cell")
+		return
+	var target := controller.spawn_battle_object(
+		BattleObjectDefinition.Kind.EXPLOSIVE_BARREL,
+		target_cell
+	)
+	if target == null:
+		_fail("FLOW_DIAG: object attack AP diagnostic could not spawn target")
+		return
+	var status := APCompletionDiagnosticStatus.new()
+	attacker.statuses.clear()
+	attacker.add_status(status)
+	attacker.current_ap = 10
+	if not controller.basic_attack_object(attacker, target):
+		_fail("FLOW_DIAG: object attack AP diagnostic action was rejected")
+		return
+	_assert_ap_records(status, [controller.config.basic_attack_ap_cost], "object basic attack")
+	_assert_runner_idle(controller, "object attack AP finalization")
+
+
+func _test_zero_ap_action_skips_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var unit := _prepare_player_turn(controller)
+	var status := APCompletionDiagnosticStatus.new()
+	unit.statuses.clear()
+	unit.add_status(status)
+	var card := CardData.new()
+	card.card_name = "zero AP diagnostic"
+	card.ap_cost = 0
+	unit.hand.assign([card])
+	unit.current_ap = 4
+	if not controller.play_card(unit, card, []):
+		_fail("FLOW_DIAG: zero AP diagnostic action was rejected")
+		return
+	_assert_ap_records(status, [], "zero AP action")
+	_assert_runner_idle(controller, "zero AP finalization")
+
+
+func _test_equipment_action_ap_completion() -> void:
+	var controller := _create_started_controller()
+	if controller == null:
+		return
+	var unit := _prepare_player_turn(controller)
+	var status := APCompletionDiagnosticStatus.new()
+	unit.statuses.clear()
+	unit.add_status(status)
+
+	var default_effect := DefaultCostEquipmentEffect.new()
+	_equip_diagnostic_effect(unit, default_effect)
+	unit.current_ap = 4
+	if not controller.activate_equipment_action(unit, default_effect):
+		_fail("FLOW_DIAG: default-cost equipment action was rejected")
+	_assert_ap_records(status, [], "default equipment AP cost")
+	if unit.current_ap != 4:
+		_fail("FLOW_DIAG: default equipment AP cost changed AP")
+
+	var custom_effect := CustomCostEquipmentEffect.new()
+	custom_effect.omit_ap_cost = true
+	_equip_diagnostic_effect(unit, custom_effect)
+	if not controller.activate_equipment_action(unit, custom_effect, "diagnostic"):
+		_fail("FLOW_DIAG: missing-key equipment action was rejected")
+	_assert_ap_records(status, [], "missing equipment AP key")
+	if unit.current_ap != 4:
+		_fail("FLOW_DIAG: missing equipment AP key did not default to zero")
+
+	custom_effect.omit_ap_cost = false
+	custom_effect.advertised_ap_cost = 3
+	unit.current_ap = 2
+	if controller.can_activate_equipment_action(unit, custom_effect, "diagnostic"):
+		_fail("FLOW_DIAG: equipment action ignored insufficient AP")
+	custom_effect.activation_succeeds = false
+	unit.current_ap = 5
+	if not controller.activate_equipment_action(unit, custom_effect, "diagnostic"):
+		_fail("FLOW_DIAG: failing equipment effect was not queued")
+	if unit.current_ap != 5:
+		_fail("FLOW_DIAG: failed equipment effect spent AP")
+	_assert_ap_records(status, [], "failed equipment activation")
+
+	custom_effect.activation_succeeds = true
+	if not controller.activate_equipment_action(unit, custom_effect, "diagnostic"):
+		_fail("FLOW_DIAG: successful equipment action was rejected")
+	if unit.current_ap != 2:
+		_fail("FLOW_DIAG: successful equipment effect did not spend advertised AP")
+	_assert_ap_records(status, [3], "successful equipment activation")
+	_assert_runner_idle(controller, "equipment AP finalization")
+
+
+func _create_started_controller() -> BattleController:
+	var scenario := load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario
+	if scenario == null:
+		_fail("FLOW_DIAG: sample battle scenario missing for AP diagnostic")
+		return null
+	var controller := BattleController.new()
+	controller.setup(scenario)
+	_deploy_players(controller)
+	if not controller.start_battle():
+		_fail("FLOW_DIAG: AP diagnostic failed to start battle")
+		return null
+	return controller
+
+
+func _prepare_player_turn(controller: BattleController) -> BattleUnitState:
+	var unit := controller.player_units[0] as BattleUnitState
+	controller.current_unit = unit
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+	return unit
+
+
+func _find_reachable_destination(controller: BattleController, unit: BattleUnitState) -> Vector2i:
+	for cell in controller.get_reachable_cells(unit, 1):
+		if cell != unit.cell:
+			return cell
+	return BattleHexGrid.INVALID_CELL
+
+
+func _place_adjacent(
+	controller: BattleController,
+	first: BattleUnitState,
+	second: BattleUnitState
+) -> bool:
+	for cell in controller.map_data.get_all_cells():
+		if controller.get_battle_object_at_cell(cell) != null:
+			continue
+		var occupant := controller.get_unit_at_cell(cell)
+		if occupant != null and occupant != first and occupant != second:
+			continue
+		var neighbor := _find_empty_neighbor(controller, cell, [first, second])
+		if neighbor == BattleHexGrid.INVALID_CELL:
+			continue
+		first.set_hex_cell(cell, controller.map_data)
+		second.set_hex_cell(neighbor, controller.map_data)
+		return true
+	return false
+
+
+func _find_empty_neighbor(
+	controller: BattleController,
+	origin: Vector2i,
+	ignored_units: Array
+) -> Vector2i:
+	for cell in BattleHexGrid.neighbors(origin):
+		if not controller.map_data.is_valid_cell(cell) \
+				or controller.get_battle_object_at_cell(cell) != null:
+			continue
+		var occupant := controller.get_unit_at_cell(cell)
+		if occupant == null or ignored_units.has(occupant):
+			return cell
+	return BattleHexGrid.INVALID_CELL
+
+
+func _equip_diagnostic_effect(unit: BattleUnitState, effect: EquipmentEffect) -> void:
+	var equipment := EquipmentData.new()
+	equipment.item_name = "AP diagnostic equipment"
+	equipment.activated_effects.assign([effect])
+	unit.character_state.weapon_equipment = equipment
+	unit.character_state.weapon_face = 0
+	unit.equipment_runtime_states.clear()
+
+
+func _assert_ap_records(
+	status: APCompletionDiagnosticStatus,
+	expected: Array[int],
+	label: String
+) -> void:
+	var actual: Array[int] = []
+	for record in status.records:
+		actual.append(int(record.get("ap_spent", -1)))
+		if str(record.get("phase", "")) != "action_finalize":
+			_fail("FLOW_DIAG: %s used wrong AP completion phase" % label)
+	if actual != expected:
+		_fail("FLOW_DIAG: %s expected AP completions %s, got %s" % [label, str(expected), str(actual)])
 
 
 func _test_turn_command_boundary() -> void:

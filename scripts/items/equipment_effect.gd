@@ -217,6 +217,7 @@ func get_activated_actions(owner: BattleUnitState, root: EquipmentData, componen
 		"action_id": "default",
 		"label": get_action_label(owner, root, component, runtime, context),
 		"momentum_cost": get_action_momentum_cost(owner, root, component, runtime, context),
+		"ap_cost": get_action_ap_cost(owner, root, component, runtime, context),
 		"enabled": can_activate(owner, root, component, runtime, context),
 	}]
 
@@ -226,6 +227,10 @@ func get_action_label(_owner: BattleUnitState, _root: EquipmentData, _component:
 
 
 func get_action_momentum_cost(_owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, _runtime: EquipmentRuntimeState, _context: Dictionary = {}) -> int:
+	return 0
+
+
+func get_action_ap_cost(_owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, _runtime: EquipmentRuntimeState, _context: Dictionary = {}) -> int:
 	return 0
 
 

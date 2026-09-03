@@ -17,6 +17,7 @@ var current_action_effect_count: int = 0
 var effect_limit_reached: bool = false
 var next_action_id: int = 1
 var current_action_id: int = 0
+var current_action_frame: BattleActionFrame
 
 
 func setup(new_controller: BattleController) -> void:
@@ -35,10 +36,17 @@ func reset() -> void:
 	effect_limit_reached = false
 	next_action_id = 1
 	current_action_id = 0
+	current_action_frame = null
 
 
 func get_current_action_id() -> int:
 	return current_action_id
+
+
+func record_current_action_ap_spent(unit: BattleUnitState, amount: int) -> void:
+	if current_action_frame == null or amount <= 0:
+		return
+	current_action_frame.record_ap_spent(unit, amount)
 
 
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:
@@ -142,9 +150,11 @@ func _enqueue(callback: Callable, args: Array, priority: int, label: String, con
 
 
 func _resolve_action_frame(frame: BattleActionFrame) -> void:
+	current_action_frame = null
 	if frame == null or not frame.callback.is_valid():
 		return
 
+	current_action_frame = frame
 	_push_effect_queue_scope()
 	enqueue_effect(
 		frame.callback,
@@ -158,8 +168,11 @@ func _resolve_action_frame(frame: BattleActionFrame) -> void:
 		frame.after_callback.callv(frame.after_args)
 		_drain_current_effect_queue()
 	if controller != null:
+		controller._finalize_ap_action(frame, current_action_id)
+		_drain_current_effect_queue()
 		controller._on_action_resolution_completed(current_action_id)
 	_pop_effect_queue_scope()
+	current_action_frame = null
 
 
 func _drain_current_effect_queue() -> void:
