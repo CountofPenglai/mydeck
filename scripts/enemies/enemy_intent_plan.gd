@@ -250,6 +250,9 @@ func is_finished() -> bool:
 func finish() -> void:
 	_execution_finished = true
 	residual_ap = 0
+	for group in execution_groups:
+		if group != null:
+			group.remaining_ap = 0
 	current_stage = STAGE_FINISHED
 	current_group_index = execution_groups.size()
 	_reset_stage_runtime()
@@ -308,8 +311,21 @@ func get_fallback_display() -> String:
 		return "%s %d/%d AP" % [label, fallback_cap, MAX_AP_PER_SLOT]
 
 	var group := _find_fallback_execution_group()
+	if is_finished():
+		var finished_allocation := group.allocated_ap if group != null else 0
+		return "%s %d/%d AP（已结束，剩余 0/%d AP）" % [
+			label,
+			finished_allocation,
+			fallback_cap,
+			finished_allocation,
+		]
 	if group == null:
-		return "%s 待分配（上限 %d/%d AP）" % [label, fallback_cap, MAX_AP_PER_SLOT]
+		var reserved_allocation := mini(fallback_cap, residual_ap)
+		return "%s 暂定 %d/%d AP（待主意图结算）" % [
+			label,
+			reserved_allocation,
+			fallback_cap,
+		]
 	return "%s %d/%d AP（剩余 %d/%d AP）" % [
 		label,
 		group.allocated_ap,
@@ -325,6 +341,70 @@ func get_execution_display() -> String:
 		primary_parts.append(get_primary_slot_display(index))
 	var primary_text := "观望" if primary_parts.is_empty() else " → ".join(primary_parts)
 	return "%s | 备 %s" % [primary_text, get_fallback_display()]
+
+
+func get_compact_execution_display() -> String:
+	if is_finished():
+		return "意图已结束"
+	if not execution_prepared:
+		var projected_parts := PackedStringArray()
+		for index in range(primary_intents.size()):
+			var reduction := maxi(0, primary_ap_reductions[index]) \
+				if index < primary_ap_reductions.size() else 0
+			var cap := clampi(MAX_AP_PER_SLOT - reduction, 0, MAX_AP_PER_SLOT)
+			projected_parts.append("%s%d/%d" % [
+				EnemyIntentCategory.get_label(primary_intents[index]),
+				cap,
+				MAX_AP_PER_SLOT,
+			])
+		var projected_primary := "观望" \
+			if projected_parts.is_empty() else "→".join(projected_parts)
+		var projected_fallback_cap := clampi(
+			MAX_AP_PER_SLOT - maxi(0, fallback_ap_reduction),
+			0,
+			MAX_AP_PER_SLOT
+		)
+		return "%s | 备%s%d/%d" % [
+			projected_primary,
+			EnemyIntentCategory.get_label(fallback_intent),
+			projected_fallback_cap,
+			MAX_AP_PER_SLOT,
+		]
+
+	var prepared_parts := PackedStringArray()
+	for group in execution_groups:
+		if group == null or group.is_fallback:
+			continue
+		var slot_count := group.last_slot - group.first_slot + 1
+		var group_label := EnemyIntentCategory.get_label(group.category)
+		if slot_count > 1:
+			group_label += "×%d" % slot_count
+		prepared_parts.append("%s %d/%d" % [
+			group_label,
+			group.remaining_ap,
+			group.allocated_ap,
+		])
+	var prepared_primary := "观望" \
+		if prepared_parts.is_empty() else "→".join(prepared_parts)
+	var fallback_group := _find_fallback_execution_group()
+	if fallback_group != null:
+		return "%s | 备%s %d/%d" % [
+			prepared_primary,
+			EnemyIntentCategory.get_label(fallback_intent),
+			fallback_group.remaining_ap,
+			fallback_group.allocated_ap,
+		]
+	var fallback_cap := clampi(
+		MAX_AP_PER_SLOT - maxi(0, fallback_ap_reduction),
+		0,
+		MAX_AP_PER_SLOT
+	)
+	return "%s | 备%s~%d/%d" % [
+		prepared_primary,
+		EnemyIntentCategory.get_label(fallback_intent),
+		mini(fallback_cap, residual_ap),
+		fallback_cap,
+	]
 
 
 func get_summary() -> String:

@@ -721,18 +721,14 @@ func _test_public_intent_ui_text() -> void:
 	if plan.reduce_public_intent_budget(0, false, 1, 6) != 1:
 		_fail("public intent UI setup could not reduce the first slot")
 	var projected_text := plan.get_execution_display()
-	if not projected_text.contains("攻击 1/2 AP") \
-			or projected_text.count("攻击") != 2 \
-			or not projected_text.contains("功能 2/2 AP") \
-			or not projected_text.contains("备 防御 2/2 AP"):
+	if projected_text != "攻击 1/2 AP → 攻击 2/2 AP → 功能 2/2 AP | 备 防御 2/2 AP":
 		_fail("public intent UI does not list every projected slot budget in order")
 	var panel := BattleDetailPanel.new()
 	var intent_text: String = panel._build_enemy_intent(enemy)
 	panel.free()
-	if not intent_text.contains("1. 攻击 1/2 AP") \
-			or not intent_text.contains("2. 攻击 2/2 AP") \
-			or not intent_text.contains("3. 功能 2/2 AP") \
-			or not intent_text.contains("备用：防御 2/2 AP"):
+	if not intent_text.contains(
+		"主要：\n1. 攻击 1/2 AP\n2. 攻击 2/2 AP\n3. 功能 2/2 AP\n备用：防御 2/2 AP"
+	):
 		_fail("detail panel does not show complete per-slot projected budgets")
 	if intent_text.contains("猛击"):
 		_fail("detail panel leaks a concrete intent action")
@@ -751,10 +747,43 @@ func _test_public_intent_ui_text() -> void:
 	var merged_text := merged.get_execution_display()
 	if not merged_text.contains("合并 1-2") or not merged_text.contains("组 3/4 AP"):
 		_fail("prepared public intent UI does not show merged budget boundaries")
+	var pending_fallback_text := merged.get_fallback_display()
+	if not pending_fallback_text.contains("暂定 2/2 AP"):
+		_fail("prepared public intent UI does not show pending fallback allocation")
+	var merged_compact := merged.get_compact_execution_display()
+	if merged_compact != "攻击×2 3/4 | 备防御~2/2":
+		_fail("compact intent UI repeats verbose merged-slot details: %s" % merged_compact)
 	merged.complete_current_group()
 	var fallback_text := merged.get_fallback_display()
 	if not fallback_text.contains("剩余 2/2 AP") or fallback_text.contains("合并"):
 		_fail("fallback UI does not show an independent prepared allocation")
+	merged.consume_current_budget(1)
+	merged.complete_current_group()
+	var finished_fallback_text := merged.get_fallback_display()
+	if not finished_fallback_text.contains("已结束") \
+			or finished_fallback_text.contains("剩余 1/2 AP") \
+			or merged.get_compact_execution_display() != "意图已结束":
+		_fail("finished intent UI exposes discarded fallback AP")
+
+	var maximum_plan := EnemyIntentPlan.new()
+	maximum_plan.configure(
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.DEFEND,
+			EnemyIntentCategory.Type.UTILITY,
+			EnemyIntentCategory.Type.APPROACH,
+			EnemyIntentCategory.Type.ATTACK,
+		]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	maximum_plan.reduce_public_intent_budget(0, false, 1, 12)
+	var maximum_compact := maximum_plan.get_compact_execution_display()
+	if maximum_compact.length() > 72 \
+			or maximum_compact.contains(" AP") \
+			or not maximum_compact.begins_with("攻击1/2→攻击2/2→防御2/2"):
+		_fail("maximum-length map intent summary is not compact or ordered: %s" % maximum_compact)
 
 
 func _test_intent_order_prefers_setup_combo() -> void:

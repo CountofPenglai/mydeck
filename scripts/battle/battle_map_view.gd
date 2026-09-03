@@ -547,7 +547,7 @@ func _draw_enemy_intent_badge(unit: BattleUnitState, font: Font) -> void:
 	if unit.enemy_state == null or unit.enemy_state.intent_plan == null:
 		return
 	var plan := unit.enemy_state.intent_plan
-	var text := plan.get_execution_display()
+	var text := plan.get_compact_execution_display()
 	var font_size := 12
 	var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1.0, font_size)
 	var panel_size := text_size + Vector2(14.0, 7.0)
