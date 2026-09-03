@@ -25,7 +25,7 @@ signal battle_finished(result: BattleResult)
 const DRUID_PREPARE_TRANSFORM_ACTION := "druid_prepare_transform"
 const DRUID_PREPARE_UNTRANSFORM_ACTION := "druid_prepare_untransform"
 const WARRIOR_MOMENTUM_RESOURCE := "势"
-const MAX_ENEMY_DECISIONS_PER_TURN := 32
+const MAX_ENEMY_DECISIONS_PER_TURN := 64
 const CARD_EFFECT_CONTINUATION_PRIORITY := -100000
 
 enum Phase {

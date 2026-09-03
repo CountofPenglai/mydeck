@@ -11,6 +11,13 @@ func lock_intent(context: Dictionary = {}, enemy_state = null) -> void:
 	controller.state_changed.emit()
 
 
+func on_turn_start(context: Dictionary = {}, enemy_state = null) -> void:
+	var unit := enemy_state as BattleUnitState
+	if unit == null or unit.enemy_state == null or unit.enemy_state.intent_plan == null:
+		return
+	unit.enemy_state.intent_plan.prepare_execution(unit.current_ap)
+
+
 func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 	var controller := context.get("controller") as BattleController
 	var unit := enemy_state as BattleUnitState
@@ -23,52 +30,38 @@ func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 		controller.state_changed.emit()
 		if started:
 			return {"action_started": true}
-	if plan == null:
+	if plan == null or not plan.execution_prepared:
 		return {"action_started": false}
-	if unit.current_ap <= 0:
-		plan.finish()
+	if plan.is_finished():
 		return {"action_started": false}
-	var profile := unit.enemy_state.enemy_data.ai_profile
-	if profile == null:
-		profile = EnemyAIProfile.create_preset(EnemyAIProfile.Preset.BALANCED)
 	while not plan.is_finished():
-		if plan.stage_start_ap < 0:
-			plan.stage_start_ap = unit.current_ap
-		if plan.stage_action_count >= profile.max_actions_per_intent:
-			plan.advance_stage()
+		if plan.get_current_budget() <= 0 or plan.current_group_reached_action_limit():
+			plan.complete_current_group()
+			controller.state_changed.emit()
 			continue
-		var budget := _get_stage_ap_budget(unit, plan, profile)
 		var action := EnemyIntentPlanner.choose_action(
 			controller,
 			unit,
 			plan.get_current_category(),
-			budget,
-			plan.active_combo_tags
+			mini(unit.current_ap, plan.get_current_budget()),
+			plan.get_current_group().combo_tags
 		)
 		if action == null:
-			plan.advance_stage()
+			plan.complete_current_group()
+			controller.state_changed.emit()
 			continue
 		if not _execute_action(controller, unit, action):
-			plan.advance_stage()
+			plan.complete_current_group()
+			controller.state_changed.emit()
 			continue
-		plan.stage_action_count += 1
+		var group := plan.get_current_group()
+		plan.consume_current_budget(action.ap_cost)
 		for tag in action.provided_tags:
-			if not plan.active_combo_tags.has(tag):
-				plan.active_combo_tags.append(tag)
+			if group != null and not group.combo_tags.has(tag):
+				group.combo_tags.append(tag)
 		controller.state_changed.emit()
 		return {"action_started": true}
 	return {"action_started": false}
-
-
-func _get_stage_ap_budget(unit: BattleUnitState, plan: EnemyIntentPlan, profile: EnemyAIProfile) -> int:
-	if plan.current_stage != EnemyIntentPlan.STAGE_PRIMARY_ONE:
-		return unit.current_ap
-	var allowed_total := mini(
-		profile.primary_one_ap_budget,
-		maxi(0, plan.stage_start_ap - profile.reserve_ap_for_primary_two)
-	)
-	var spent := maxi(0, plan.stage_start_ap - unit.current_ap)
-	return mini(unit.current_ap, maxi(0, allowed_total - spent))
 
 
 func _execute_action(controller: BattleController, unit: BattleUnitState, action: EnemyIntentAction) -> bool:

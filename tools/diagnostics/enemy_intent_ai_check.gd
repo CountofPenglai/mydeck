@@ -16,7 +16,10 @@ func _ready() -> void:
 	_test_intent_modifier_normalization()
 	_test_fallback_reduction_and_residual_discard()
 	_test_dynamic_action_selection()
-	_test_fallback_finishes_with_ap_remaining()
+	_test_behavior_returns_unused_primary_ap_to_fallback()
+	_test_behavior_uses_merged_group_budget()
+	_test_behavior_finishes_capped_zero_ap_group()
+	_test_behavior_skips_zero_budget_public_slot()
 	_test_chapter_catalog_tactical_metadata()
 	_test_public_intent_ui_text()
 	_test_intent_order_prefers_setup_combo()
@@ -311,27 +314,161 @@ func _test_dynamic_action_selection() -> void:
 		_fail("dynamic planner ignored the current intent AP budget")
 
 
-func _test_fallback_finishes_with_ap_remaining() -> void:
+func _test_behavior_returns_unused_primary_ap_to_fallback() -> void:
 	var controller := _make_test_controller()
 	if controller == null:
 		return
 	var enemy: BattleUnitState = controller.enemy_units[0]
-	enemy.hand.clear()
+	_activate_enemy_turn(controller, enemy)
+	var fallback_card := _make_tactical_card("备用防御", 0)
+	enemy.enemy_state.enemy_data.deck_rule.tactical_entries = [
+		_make_entry(fallback_card, EnemyIntentCategory.Type.DEFEND, 10, 0, 1),
+	]
+	enemy.hand = [fallback_card]
 	enemy.current_ap = 4
 	enemy.enemy_state.intent_plan.configure(
-		PackedInt32Array([
-			EnemyIntentCategory.Type.UTILITY,
-			EnemyIntentCategory.Type.CURSE,
-		]),
+		PackedInt32Array([EnemyIntentCategory.Type.CURSE]),
 		EnemyIntentCategory.Type.DEFEND,
 		1
 	)
 	var behavior := enemy.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	behavior.on_turn_start({"controller": controller}, enemy)
 	var result := behavior.choose_action({"controller": controller}, enemy)
-	if bool(result.get("action_started", false)):
-		_fail("empty intent stages unexpectedly started an action")
-	if not enemy.enemy_state.intent_plan.is_finished() or enemy.current_ap != 4:
-		_fail("fallback completion did not end planning with AP remaining")
+	var plan := enemy.enemy_state.intent_plan
+	if not bool(result.get("action_started", false)) or not plan.execution_prepared \
+			or not plan.is_fallback_stage() or plan.get_current_budget() != 2:
+		_fail("behavior did not return an unusable primary budget to the 2 AP fallback")
+
+
+func _test_behavior_uses_merged_group_budget() -> void:
+	var merged_controller := _make_test_controller()
+	if merged_controller == null:
+		return
+	var merged_enemy: BattleUnitState = merged_controller.enemy_units[0]
+	_activate_enemy_turn(merged_controller, merged_enemy)
+	var merged_card := _make_tactical_card("三费连击", 3)
+	merged_enemy.enemy_state.enemy_data.deck_rule.tactical_entries = [
+		_make_entry(merged_card, EnemyIntentCategory.Type.ATTACK, 10, 3, 0),
+	]
+	merged_enemy.hand = [merged_card]
+	merged_enemy.current_ap = 4
+	merged_enemy.enemy_state.intent_plan.configure(
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.ATTACK,
+		]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	var behavior := merged_enemy.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	behavior.on_turn_start({"controller": merged_controller}, merged_enemy)
+	var merged_result := behavior.choose_action({"controller": merged_controller}, merged_enemy)
+	if not bool(merged_result.get("action_started", false)) \
+			or merged_enemy.enemy_state.intent_plan.get_current_budget() != 1:
+		_fail("merged attack group did not expose its full 4 AP budget")
+
+	var separated_controller := _make_test_controller()
+	if separated_controller == null:
+		return
+	var separated_enemy: BattleUnitState = separated_controller.enemy_units[0]
+	_activate_enemy_turn(separated_controller, separated_enemy)
+	var separated_card := _make_tactical_card("三费非合并", 3)
+	separated_enemy.enemy_state.enemy_data.deck_rule.tactical_entries = [
+		_make_entry(separated_card, EnemyIntentCategory.Type.ATTACK, 10, 3, 0),
+	]
+	separated_enemy.hand = [separated_card]
+	separated_enemy.current_ap = 4
+	separated_enemy.enemy_state.intent_plan.configure(
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.DEFEND,
+		]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	behavior = separated_enemy.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	behavior.on_turn_start({"controller": separated_controller}, separated_enemy)
+	var separated_result := behavior.choose_action({"controller": separated_controller}, separated_enemy)
+	if bool(separated_result.get("action_started", false)):
+		_fail("unmerged 2 AP attack group selected a synthetic 3 AP card")
+
+
+func _test_behavior_finishes_capped_zero_ap_group() -> void:
+	var controller := _make_test_controller()
+	if controller == null:
+		return
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	_activate_enemy_turn(controller, enemy)
+	var entries: Array[EnemyCardPoolEntry] = []
+	var cards: Array[CardData] = []
+	for index in range(EnemyIntentPlan.MAX_ACTIONS_PER_GROUP):
+		var card := _make_tactical_card("零费攻击%d" % index, 0)
+		cards.append(card)
+		entries.append(_make_entry(card, EnemyIntentCategory.Type.ATTACK, 10, 1, 0))
+	enemy.enemy_state.enemy_data.deck_rule.tactical_entries = entries
+	enemy.hand = cards
+	enemy.current_ap = 2
+	enemy.enemy_state.intent_plan.configure(
+		PackedInt32Array([EnemyIntentCategory.Type.ATTACK]),
+		EnemyIntentCategory.Type.DEFEND,
+		1
+	)
+	var behavior := enemy.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	behavior.on_turn_start({"controller": controller}, enemy)
+	for _index in range(EnemyIntentPlan.MAX_ACTIONS_PER_GROUP):
+		var result := behavior.choose_action({"controller": controller}, enemy)
+		if not bool(result.get("action_started", false)):
+			_fail("zero AP action %d did not start before the group cap" % (_index + 1))
+			return
+	var plan := enemy.enemy_state.intent_plan
+	if not plan.current_group_reached_action_limit():
+		_fail("zero AP actions did not reach the per-group cap")
+	var capped_result := behavior.choose_action({"controller": controller}, enemy)
+	if bool(capped_result.get("action_started", false)) or not plan.is_finished():
+		_fail("capped zero AP group did not finish on the next decision")
+
+
+func _test_behavior_skips_zero_budget_public_slot() -> void:
+	var controller := _make_test_controller()
+	if controller == null:
+		return
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	_activate_enemy_turn(controller, enemy)
+	enemy.hand.clear()
+	enemy.current_ap = 2
+	enemy.enemy_state.intent_plan.configure(
+		PackedInt32Array([
+			EnemyIntentCategory.Type.CURSE,
+			EnemyIntentCategory.Type.DEFEND,
+		]),
+		EnemyIntentCategory.Type.ATTACK,
+		1
+	)
+	enemy.enemy_state.intent_plan.primary_ap_reductions = PackedInt32Array([0, 2])
+	var behavior := enemy.enemy_state.enemy_data.behavior as TacticalEnemyBehavior
+	behavior.on_turn_start({"controller": controller}, enemy)
+	var result := behavior.choose_action({"controller": controller}, enemy)
+	var plan := enemy.enemy_state.intent_plan
+	if bool(result.get("action_started", false)) or not plan.is_finished() \
+			or plan.primary_intents != PackedInt32Array([
+				EnemyIntentCategory.Type.CURSE,
+				EnemyIntentCategory.Type.DEFEND,
+			]) or plan.primary_allocations != PackedInt32Array([2, 0]):
+		_fail("zero-budget public primary slot was not retained and skipped")
+
+
+func _make_tactical_card(card_name: String, ap_cost: int) -> CardData:
+	var card := CardData.new()
+	card.card_name = card_name
+	card.ap_cost = ap_cost
+	card.target_type = CardEnums.TargetType.NONE
+	return card
+
+
+func _activate_enemy_turn(controller: BattleController, enemy: BattleUnitState) -> void:
+	controller.phase = BattleController.Phase.BATTLE
+	controller.current_unit = enemy
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
 
 
 func _make_entry(card: CardData, category: int, score: int, damage: int, defense: int) -> EnemyCardPoolEntry:
