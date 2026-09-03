@@ -133,6 +133,32 @@ class CustomCostEquipmentEffect:
 		return activation_succeeds
 
 
+class OutgoingOrderDiagnosticEquipmentEffect:
+	extends EquipmentEffect
+
+	var observed_amount: int = -1
+
+	func modify_outgoing_damage(
+		_owner: BattleUnitState,
+		_root: EquipmentData,
+		_component: EquipmentData,
+		_runtime: EquipmentRuntimeState,
+		damage_context: DamageContext
+	) -> void:
+		observed_amount = damage_context.amount if damage_context != null else -1
+
+
+class TurnEndCleanupDiagnosticController:
+	extends BattleController
+
+	var inspected_unit: BattleUnitState
+	var status_present_before_advance: bool = true
+
+	func advance_turn() -> void:
+		status_present_before_advance = inspected_unit != null \
+			and inspected_unit.has_status("stun")
+
+
 var _exit_code: int = 0
 var _chain_count: int = 0
 var _chain_action_ids: Array[int] = []
@@ -508,6 +534,10 @@ func _test_stun_rules() -> void:
 	dealt = controller.apply_damage(source, target, 5, "stun fixed outgoing", {"fixed_damage": true})
 	if dealt != 5:
 		_fail("FLOW_DIAG: fixed damage should ignore stun outgoing penalty, got %d" % dealt)
+	target.curse_proxy_health = 100
+	dealt = controller.apply_damage(source, target, 5, "stun environmental outgoing", {"environmental": true})
+	if dealt != 5:
+		_fail("FLOW_DIAG: environmental damage should ignore stun outgoing penalty, got %d" % dealt)
 
 	var config := BattleConfig.new()
 	config.base_move_cells_per_ap = 5
@@ -518,35 +548,75 @@ func _test_stun_rules() -> void:
 	outgoing_stun.on_turn_start(source, {"controller": controller})
 	if source.current_ap != 7 or outgoing_stun.stacks != 5:
 		_fail("FLOW_DIAG: stun should not consume AP or stacks at turn start")
-	controller.push_action_frame(BattleActionFrame.create(
-		Callable(self, "_resolve_stun_ap_diagnostic"),
-		[controller, source, 3, 4]
-	))
-	if source.current_ap != 8:
-		_fail("FLOW_DIAG: stun AP diagnostic should retain AP gained during resolution")
-	if outgoing_stun.stacks != 2:
-		_fail("FLOW_DIAG: completed 3 AP action should remove 3 stun stacks, got %d" % outgoing_stun.stacks)
-	controller.push_action_frame(BattleActionFrame.create(
-		Callable(self, "_resolve_stun_ap_diagnostic"),
-		[controller, source, 0, 0]
-	))
-	if outgoing_stun.stacks != 2:
-		_fail("FLOW_DIAG: 0 AP action should not remove stun stacks")
 	outgoing_stun.on_turn_end(source, {"controller": controller})
-	if outgoing_stun.stacks != 1:
+	if outgoing_stun.stacks != 4:
 		_fail("FLOW_DIAG: turn end should remove exactly 1 stun stack")
-	_assert_runner_idle(controller, "stun action finalization")
 
+	var action_controller := _create_started_controller()
+	if action_controller == null:
+		return
+	var action_unit := _prepare_player_turn(action_controller)
+	var action_stun := StunStatus.new()
+	action_stun.stacks = 6
+	action_unit.statuses.clear()
+	action_unit.add_status(action_stun)
+	var extra_cost := PayAPCondition.new()
+	extra_cost.amount = 1
+	var ap_gain_effect := APGainCardEffect.new()
+	ap_gain_effect.extra_ap_condition = extra_cost
+	ap_gain_effect.ap_gain = 4
+	var ap_card := CardData.new()
+	ap_card.card_name = "stun real AP action"
+	ap_card.ap_cost = 2
+	ap_card.effect = ap_gain_effect
+	action_unit.hand.assign([ap_card])
+	action_unit.current_ap = 10
+	if not action_controller.play_card(action_unit, ap_card, []):
+		_fail("FLOW_DIAG: stunned AP gain card was rejected")
+	elif action_unit.current_ap != 11 or action_stun.stacks != 3:
+		_fail("FLOW_DIAG: real 3 AP action should keep gained AP and remove exactly 3 stun")
+	var zero_card := CardData.new()
+	zero_card.card_name = "stun zero AP action"
+	zero_card.ap_cost = 0
+	action_unit.hand.assign([zero_card])
+	if not action_controller.play_card(action_unit, zero_card, []):
+		_fail("FLOW_DIAG: stunned zero AP card was rejected")
+	elif action_stun.stacks != 3:
+		_fail("FLOW_DIAG: real 0 AP action should not remove stun stacks")
+	_assert_runner_idle(action_controller, "stun real action finalization")
 
-func _resolve_stun_ap_diagnostic(
-	controller: BattleController,
-	unit: BattleUnitState,
-	ap_spent: int,
-	ap_gained: int
-) -> void:
-	unit.current_ap -= ap_spent
-	controller._record_action_ap_spent(unit, ap_spent)
-	unit.current_ap += ap_gained
+	var order_controller := _create_started_controller()
+	if order_controller == null:
+		return
+	var order_unit := _prepare_player_turn(order_controller)
+	var order_stun := StunStatus.new()
+	order_stun.stacks = 1
+	order_unit.statuses.clear()
+	order_unit.add_status(order_stun)
+	var order_effect := OutgoingOrderDiagnosticEquipmentEffect.new()
+	_equip_diagnostic_effect(order_unit, order_effect)
+	var order_context := DamageContext.create(order_controller, order_unit, target, 5, "stun order")
+	order_unit.modify_outgoing_damage(order_context)
+	if order_effect.observed_amount != 3:
+		_fail("FLOW_DIAG: equipment should observe outgoing damage after stun, got %d" % order_effect.observed_amount)
+
+	var lifecycle_controller := TurnEndCleanupDiagnosticController.new()
+	lifecycle_controller.setup(null)
+	var lifecycle_unit := _create_proxy_unit("stun lifecycle")
+	lifecycle_unit.battle_controller = lifecycle_controller
+	var lifecycle_stun := StunStatus.new()
+	lifecycle_stun.stacks = 1
+	lifecycle_unit.add_status(lifecycle_stun)
+	lifecycle_controller.inspected_unit = lifecycle_unit
+	lifecycle_controller.units.assign([lifecycle_unit])
+	lifecycle_controller.turn_order.assign([lifecycle_unit])
+	lifecycle_controller.phase = BattleController.Phase.BATTLE
+	lifecycle_controller.current_unit = lifecycle_unit
+	lifecycle_controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+	lifecycle_controller.end_current_turn()
+	if lifecycle_controller.status_present_before_advance or lifecycle_unit.has_status("stun"):
+		_fail("FLOW_DIAG: expired stun should be removed before advancing from turn end")
+	_assert_runner_idle(lifecycle_controller, "stun turn-end cleanup")
 
 
 func _create_proxy_unit(display_name: String) -> BattleUnitState:

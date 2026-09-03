@@ -646,6 +646,8 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 
 
 func _finish_turn_end_action(unit: BattleUnitState) -> void:
+	if unit != null:
+		unit.remove_expired_statuses()
 	EnemyRuleDispatcher.on_turn_ended(self, unit)
 	if unit != null and unit.faction == BattleUnitState.Faction.ENEMY:
 		_lock_enemy_intent(unit)
