@@ -104,8 +104,11 @@ class CustomCostEquipmentEffect:
 	extends EquipmentEffect
 
 	var advertised_ap_cost: int = 0
+	var advertised_momentum_cost: int = 0
 	var omit_ap_cost: bool = false
 	var activation_succeeds: bool = true
+	var set_ap_during_activation: int = -1
+	var observed_activation_ap: int = -1
 
 	func get_activated_actions(
 		_owner: BattleUnitState,
@@ -118,18 +121,22 @@ class CustomCostEquipmentEffect:
 			"action_id": "diagnostic",
 			"label": "custom AP cost",
 			"enabled": true,
+			"momentum_cost": advertised_momentum_cost,
 		}
 		if not omit_ap_cost:
 			action["ap_cost"] = advertised_ap_cost
 		return [action]
 
 	func activate(
-		_owner: BattleUnitState,
+		owner: BattleUnitState,
 		_root: EquipmentData,
 		_component: EquipmentData,
 		_runtime: EquipmentRuntimeState,
 		_context: Dictionary = {}
 	) -> bool:
+		observed_activation_ap = owner.current_ap
+		if set_ap_during_activation >= 0:
+			owner.current_ap = set_ap_during_activation
 		return activation_succeeds
 
 
@@ -177,6 +184,7 @@ func _ready() -> void:
 	_test_effect_queue_reentry(runner_controller)
 	_test_after_stage(runner_controller)
 	_test_action_order(runner_controller)
+	_test_ap_frame_isolation(runner_controller)
 	_test_card_ap_completion()
 	_test_movement_ap_completion()
 	_test_basic_attack_ap_completion()
@@ -305,6 +313,85 @@ func _test_action_order(controller: BattleController) -> void:
 	if _order != ["outer_1", "outer_2", "inner_action"]:
 		_fail("FLOW_DIAG: action/effect order incorrect: %s" % str(_order))
 	_assert_runner_idle(controller, "action order")
+
+
+func _test_ap_frame_isolation(controller: BattleController) -> void:
+	controller.resolution_runner.reset()
+	var unit := _create_proxy_unit("AP frame isolation")
+	var status := APCompletionDiagnosticStatus.new()
+	unit.add_status(status)
+	controller._record_action_ap_spent(unit, 99)
+	controller.push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_outer_ap_diagnostic"),
+		[controller, unit, status.order],
+		0,
+		"outer AP diagnostic",
+		null,
+		Callable(self, "_resolve_outer_ap_after_diagnostic"),
+		[controller, status.order]
+	))
+	var recorded_amounts: Array[int] = []
+	var recorded_ids: Array[int] = []
+	for record in status.records:
+		recorded_amounts.append(int(record.get("ap_spent", 0)))
+		recorded_ids.append(int(record.get("action_id", 0)))
+	if recorded_amounts != [2, 3] \
+			or recorded_ids.size() != 2 \
+			or recorded_ids[0] <= 0 \
+			or recorded_ids[1] <= 0 \
+			or recorded_ids[0] == recorded_ids[1]:
+		_fail("FLOW_DIAG: queued AP frames did not retain isolated totals/action ids")
+	var expected_order := [
+		"outer_main",
+		"main_effect",
+		"main_trigger",
+		"outer_after",
+		"after_effect",
+		"after_trigger",
+		"ap_completed",
+		"inner_main",
+		"ap_completed",
+	]
+	if status.order != expected_order:
+		_fail("FLOW_DIAG: AP frame drain/finalization order incorrect: %s" % str(status.order))
+	_assert_runner_idle(controller, "queued AP frame isolation")
+
+
+func _resolve_outer_ap_diagnostic(
+	controller: BattleController,
+	unit: BattleUnitState,
+	order: Array[String]
+) -> void:
+	order.append("outer_main")
+	controller._record_action_ap_spent(unit, 2)
+	controller.enqueue_effect(Callable(self, "_append_ap_order"), [order, "main_effect"])
+	controller.enqueue_trigger(Callable(self, "_append_ap_order"), [order, "main_trigger"])
+	controller.push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_inner_ap_diagnostic"),
+		[controller, unit, order]
+	))
+
+
+func _resolve_outer_ap_after_diagnostic(
+	controller: BattleController,
+	order: Array[String]
+) -> void:
+	order.append("outer_after")
+	controller.enqueue_effect(Callable(self, "_append_ap_order"), [order, "after_effect"])
+	controller.enqueue_trigger(Callable(self, "_append_ap_order"), [order, "after_trigger"])
+
+
+func _resolve_inner_ap_diagnostic(
+	controller: BattleController,
+	unit: BattleUnitState,
+	order: Array[String]
+) -> void:
+	order.append("inner_main")
+	controller._record_action_ap_spent(unit, 3)
+
+
+func _append_ap_order(order: Array[String], label: String) -> void:
+	order.append(label)
 
 
 func _queue_outer_and_inner(controller: BattleController) -> void:
@@ -483,18 +570,32 @@ func _test_equipment_action_ap_completion() -> void:
 	if controller.can_activate_equipment_action(unit, custom_effect, "diagnostic"):
 		_fail("FLOW_DIAG: equipment action ignored insufficient AP")
 	custom_effect.activation_succeeds = false
+	custom_effect.advertised_momentum_cost = 2
+	custom_effect.set_ap_during_activation = 0
+	var momentum := unit.get_class_resource(BattleController.WARRIOR_MOMENTUM_RESOURCE)
+	if momentum == null:
+		_fail("FLOW_DIAG: equipment transaction diagnostic found no momentum pool")
+		return
+	momentum.current_value = 5
 	unit.current_ap = 5
 	if not controller.activate_equipment_action(unit, custom_effect, "diagnostic"):
 		_fail("FLOW_DIAG: failing equipment effect was not queued")
 	if unit.current_ap != 5:
 		_fail("FLOW_DIAG: failed equipment effect spent AP")
+	if unit.get_class_resource_value(BattleController.WARRIOR_MOMENTUM_RESOURCE) != 5:
+		_fail("FLOW_DIAG: failed equipment effect did not roll back momentum")
 	_assert_ap_records(status, [], "failed equipment activation")
 
 	custom_effect.activation_succeeds = true
+	custom_effect.set_ap_during_activation = 0
 	if not controller.activate_equipment_action(unit, custom_effect, "diagnostic"):
 		_fail("FLOW_DIAG: successful equipment action was rejected")
-	if unit.current_ap != 2:
-		_fail("FLOW_DIAG: successful equipment effect did not spend advertised AP")
+	if custom_effect.observed_activation_ap != 2:
+		_fail("FLOW_DIAG: equipment effect did not observe atomically reserved AP")
+	if unit.current_ap != 0:
+		_fail("FLOW_DIAG: successful AP-mutating equipment effect produced invalid AP")
+	if unit.get_class_resource_value(BattleController.WARRIOR_MOMENTUM_RESOURCE) != 3:
+		_fail("FLOW_DIAG: successful equipment action did not commit momentum cost")
 	_assert_ap_records(status, [3], "successful equipment activation")
 	_assert_runner_idle(controller, "equipment AP finalization")
 
@@ -849,6 +950,8 @@ func _assert_runner_idle(controller: BattleController, label: String) -> void:
 		_fail("FLOW_DIAG: controller remained locked after %s" % label)
 	if controller.get_current_action_id() != 0:
 		_fail("FLOW_DIAG: action id leaked after %s" % label)
+	if controller.resolution_runner.current_action_frame != null:
+		_fail("FLOW_DIAG: current action frame leaked after %s" % label)
 	if not controller.resolution_runner.action_queue.is_empty():
 		_fail("FLOW_DIAG: action queue not empty after %s" % label)
 	if controller.resolution_runner.queue_scopes.size() != 1 \

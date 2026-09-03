@@ -14,6 +14,7 @@ const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const MageInfusionState = preload("res://scripts/mage/mage_infusion_state.gd")
 const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
 const EnemyIntentInterferenceService = preload("res://scripts/enemies/enemy_intent_interference_service.gd")
+const EquipmentActionPayment = preload("res://scripts/items/equipment_action_payment.gd")
 
 signal log_message(message: String)
 signal state_changed
@@ -2110,7 +2111,7 @@ func can_activate_equipment_action(unit: BattleUnitState, effect: EquipmentEffec
 	for action in unit.get_equipment_actions(context):
 		if action.get("effect") != effect or str(action.get("action_id", "default")) != action_id:
 			continue
-		var cost := int(action.get("momentum_cost", 0))
+		var cost := maxi(0, int(action.get("momentum_cost", 0)))
 		var ap_cost := maxi(0, int(action.get("ap_cost", 0)))
 		return bool(action.get("enabled", false)) \
 			and unit.get_class_resource_value(WARRIOR_MOMENTUM_RESOURCE) >= cost \
@@ -2146,21 +2147,27 @@ func _resolve_equipment_action(unit: BattleUnitState, effect: EquipmentEffect, a
 	for action in unit.get_equipment_actions(context):
 		if action.get("effect") != effect or str(action.get("action_id", "default")) != action_id:
 			continue
-		var cost := int(action.get("momentum_cost", 0))
+		var cost := maxi(0, int(action.get("momentum_cost", 0)))
 		var ap_cost := maxi(0, int(action.get("ap_cost", 0)))
 		if not bool(action.get("enabled", false)):
 			return
-		if unit.current_ap < ap_cost:
-			return
-		if cost > 0 and not unit.consume_class_resource(WARRIOR_MOMENTUM_RESOURCE, cost):
+		var payment := EquipmentActionPayment.new()
+		if not payment.reserve(
+			unit,
+			ap_cost,
+			WARRIOR_MOMENTUM_RESOURCE,
+			cost
+		):
 			return
 		if effect.activate(unit, action.get("root") as EquipmentData, action.get("component") as EquipmentData, action.get("runtime") as EquipmentRuntimeState, context):
-			unit.current_ap -= ap_cost
+			payment.commit()
 			_record_action_ap_spent(unit, ap_cost)
 			if not deployment_action:
 				_close_ranger_combo_window(unit)
 			_emit_log("%s 使用 %s。" % [unit.get_display_name(), str(action.get("label", "武器行动"))])
 			state_changed.emit()
+		else:
+			payment.rollback()
 		return
 
 func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
