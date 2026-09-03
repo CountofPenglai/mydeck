@@ -6,6 +6,9 @@ var _exit_code := 0
 func _ready() -> void:
 	_test_multi_intent_rating_isolation()
 	_test_profile_presets()
+	_test_profile_driven_primary_intent_count()
+	_test_third_primary_accumulates_repeat_penalty()
+	_test_fallback_penalizes_each_primary_occurrence()
 	_test_category_only_public_plan()
 	_test_intent_budget_allocation_and_returns()
 	_test_adjacent_intents_merge_only()
@@ -64,12 +67,88 @@ func _test_profile_presets() -> void:
 	if balanced == null or ranged == null or guard == null or berserk == null:
 		_fail("an AI profile preset could not be created")
 		return
+	for profile in [balanced, ranged, guard, berserk]:
+		if profile.primary_intent_count != 2:
+			_fail("AI profile presets must default to two primary intents")
 	if ranged.get_intent_weight(EnemyIntentCategory.Type.RETREAT) <= balanced.get_intent_weight(EnemyIntentCategory.Type.RETREAT):
 		_fail("ranged profile does not prefer retreat over balanced profile")
 	if guard.get_low_health_modifier(EnemyIntentCategory.Type.DEFEND) <= berserk.get_low_health_modifier(EnemyIntentCategory.Type.DEFEND):
 		_fail("guard profile is not more defensive at low health")
 	if berserk.get_low_health_modifier(EnemyIntentCategory.Type.ATTACK) <= guard.get_low_health_modifier(EnemyIntentCategory.Type.ATTACK):
 		_fail("berserk profile is not more aggressive at low health")
+
+
+func _test_profile_driven_primary_intent_count() -> void:
+	var controller := _make_test_controller()
+	if controller == null:
+		return
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	var profile := enemy.enemy_state.enemy_data.ai_profile.duplicate() as EnemyAIProfile
+	profile.primary_intent_count = 3
+	enemy.enemy_state.enemy_data.ai_profile = profile
+	var plan := EnemyIntentPlanner.build_plan(controller, enemy, 2)
+	if plan.primary_intents.size() != 3:
+		_fail("profile primary intent count did not produce three primary intents")
+	var public_intents := plan.primary_intents.duplicate()
+	public_intents.append(plan.fallback_intent)
+	if public_intents.size() != 4:
+		_fail("three-primary plan did not expose exactly one fallback intent")
+	if plan.fallback_intent < 0 or plan.fallback_intent >= EnemyIntentCategory.COUNT:
+		_fail("three-primary plan did not retain exactly one valid fallback intent")
+
+
+func _test_third_primary_accumulates_repeat_penalty() -> void:
+	var controller := _make_test_controller()
+	if controller == null:
+		return
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	var player: BattleUnitState = controller.player_units[0]
+	_place_adjacent(controller, enemy, player)
+	enemy.hand.clear()
+	var profile := EnemyAIProfile.create_preset(EnemyAIProfile.Preset.BALANCED)
+	profile.primary_intent_count = 3
+	profile.low_health_ratio = 0.0
+	profile.low_health_modifiers = PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	profile.intent_weights = PackedFloat32Array([-100.0, 24.0, 14.0, -100.0, -100.0, -100.0, -100.0])
+	enemy.enemy_state.enemy_data.ai_profile = profile
+	var plan := EnemyIntentPlanner.build_plan(controller, enemy, 2)
+	_assert_int_array(
+		plan.primary_intents,
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.DEFEND,
+		]),
+		"third primary repeat penalty"
+	)
+
+
+func _test_fallback_penalizes_each_primary_occurrence() -> void:
+	var controller := _make_test_controller()
+	if controller == null:
+		return
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	var player: BattleUnitState = controller.player_units[0]
+	_place_adjacent(controller, enemy, player)
+	enemy.hand.clear()
+	var profile := EnemyAIProfile.create_preset(EnemyAIProfile.Preset.BALANCED)
+	profile.primary_intent_count = 3
+	profile.low_health_ratio = 0.0
+	profile.low_health_modifiers = PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	profile.intent_weights = PackedFloat32Array([-100.0, 24.0, 14.0, 20.0, -100.0, -100.0, -100.0])
+	enemy.enemy_state.enemy_data.ai_profile = profile
+	var plan := EnemyIntentPlanner.build_plan(controller, enemy, 2)
+	_assert_int_array(
+		plan.primary_intents,
+		PackedInt32Array([
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.ATTACK,
+			EnemyIntentCategory.Type.DEFEND,
+		]),
+		"fallback test primary categories"
+	)
+	if plan.fallback_intent != EnemyIntentCategory.Type.UTILITY:
+		_fail("fallback did not apply a -5 penalty for every selected primary occurrence")
 
 
 func _test_category_only_public_plan() -> void:

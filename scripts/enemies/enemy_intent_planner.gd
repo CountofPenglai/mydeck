@@ -10,8 +10,8 @@ static func build_plan(controller: BattleController, unit: BattleUnitState, roun
 	if controller == null or unit == null or unit.enemy_state == null:
 		return plan
 	var profile := _get_profile(unit)
-	var categories := _select_intents(controller, unit, profile)
-	plan.configure(categories[0], categories[1], categories[2], round_number)
+	var intents := _select_intents(controller, unit, profile)
+	plan.configure(intents.primary, intents.fallback, round_number)
 	if unit.enemy_state.enemy_data.archetype_id == &"fish_champion" and unit.enemy_state.active_weapon_index == 0:
 		var switch_target := controller.get_nearest_opponent(unit)
 		var projected_momentum := mini(5, int(unit.enemy_state.runtime_state.get("momentum", 0)) + 1)
@@ -34,33 +34,40 @@ static func _get_profile(unit: BattleUnitState) -> EnemyAIProfile:
 	return EnemyAIProfile.create_preset(EnemyAIProfile.Preset.BALANCED)
 
 
-static func _select_intents(controller: BattleController, unit: BattleUnitState, profile: EnemyAIProfile) -> PackedInt32Array:
+static func _select_intents(controller: BattleController, unit: BattleUnitState, profile: EnemyAIProfile) -> Dictionary:
 	var scored: Array[Dictionary] = []
 	for category in range(EnemyIntentCategory.COUNT):
 		scored.append({"category": category, "score": _score_intent(controller, unit, profile, category)})
-	var first_scores := scored.duplicate(true)
-	for entry in first_scores:
-		match int(entry.category):
-			EnemyIntentCategory.Type.APPROACH, EnemyIntentCategory.Type.DEFEND, EnemyIntentCategory.Type.UTILITY:
-				entry.score = float(entry.score) + 3.0
-			EnemyIntentCategory.Type.RETREAT:
-				entry.score = float(entry.score) + 2.0
-			_:
-				pass
-	_sort_intent_scores(first_scores)
-	var primary_one := int(first_scores[0].category)
-	var second_scores := scored.duplicate(true)
-	for entry in second_scores:
-		if int(entry.category) == primary_one:
-			entry.score = float(entry.score) - 3.0
-	_sort_intent_scores(second_scores)
-	var primary_two := int(second_scores[0].category)
+	var primary := PackedInt32Array()
+	var primary_count := clampi(profile.primary_intent_count, 1, 6)
+	for slot in range(primary_count):
+		var primary_scores := scored.duplicate(true)
+		for entry in primary_scores:
+			if slot == 0:
+				match int(entry.category):
+					EnemyIntentCategory.Type.APPROACH, EnemyIntentCategory.Type.DEFEND, EnemyIntentCategory.Type.UTILITY:
+						entry.score = float(entry.score) + 3.0
+					EnemyIntentCategory.Type.RETREAT:
+						entry.score = float(entry.score) + 2.0
+					_:
+						pass
+			else:
+				var occurrences := 0
+				for selected in primary:
+					if selected == int(entry.category):
+						occurrences += 1
+				entry.score = float(entry.score) - 3.0 * occurrences
+		_sort_intent_scores(primary_scores)
+		primary.append(int(primary_scores[0].category))
 	var fallback_scores := scored.duplicate(true)
 	for entry in fallback_scores:
-		if int(entry.category) in [primary_one, primary_two]:
-			entry.score = float(entry.score) - 5.0
+		var occurrences := 0
+		for selected in primary:
+			if selected == int(entry.category):
+				occurrences += 1
+		entry.score = float(entry.score) - 5.0 * occurrences
 	_sort_intent_scores(fallback_scores)
-	return PackedInt32Array([primary_one, primary_two, int(fallback_scores[0].category)])
+	return {"primary": primary, "fallback": int(fallback_scores[0].category)}
 
 
 static func _score_intent(controller: BattleController, unit: BattleUnitState, profile: EnemyAIProfile, category: int) -> float:

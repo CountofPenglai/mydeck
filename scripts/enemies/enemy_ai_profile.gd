@@ -13,11 +13,16 @@ enum Preset {
 @export var low_health_modifiers: PackedFloat32Array = []
 @export_range(0.05, 0.95, 0.05) var low_health_ratio: float = 0.35
 @export_range(0.05, 0.95, 0.05) var harvest_health_ratio: float = 0.3
-@export_range(0, 8, 1) var primary_one_ap_budget: int = 1
-@export_range(0, 8, 1) var reserve_ap_for_primary_two: int = 2
 @export_range(0, 12, 1) var preferred_range_min: int = 1
 @export_range(0, 12, 1) var preferred_range_max: int = 2
+
+# Deprecated execution-budget/action-limit exports retained only for existing
+# resources. Intent plan constants now determine runtime execution budgets.
+@export_range(0, 8, 1) var primary_one_ap_budget: int = 1
+@export_range(0, 8, 1) var reserve_ap_for_primary_two: int = 2
 @export_range(1, 8, 1) var max_actions_per_intent: int = 4
+
+@export_range(1, 6, 1) var primary_intent_count: int = 2
 @export_range(0.0, 5.0, 0.1) var random_score_jitter: float = 0.5
 
 
