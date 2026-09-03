@@ -1,6 +1,8 @@
 extends Node
 
 var _exit_code := 0
+var _state_changed_count := 0
+var _log_message_count := 0
 
 
 func _ready() -> void:
@@ -15,6 +17,8 @@ func _ready() -> void:
 	_test_intent_action_limit()
 	_test_intent_modifier_normalization()
 	_test_fallback_reduction_and_residual_discard()
+	_test_public_intent_budget_theft()
+	_test_ranger_intent_theft_integration()
 	_test_dynamic_action_selection()
 	_test_behavior_returns_unused_primary_ap_to_fallback()
 	_test_behavior_uses_merged_group_budget()
@@ -288,6 +292,142 @@ func _test_fallback_reduction_and_residual_discard() -> void:
 		_fail("fallback did not discard residual AP beyond its capped budget")
 
 
+func _test_public_intent_budget_theft() -> void:
+	var plan := EnemyIntentPlan.new()
+	plan.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+	]), EnemyIntentCategory.Type.UTILITY, 2)
+	var stolen: int = plan.reduce_public_intent_budget(0, false, 1, 4)
+	if stolen != 1 or plan.primary_ap_reductions[0] != 1 or plan.stolen_ap_total != 1:
+		_fail("primary intent theft was not recorded")
+	plan.prepare_execution(4)
+	_assert_int_array(plan.primary_allocations, PackedInt32Array([1, 2]), "theft-adjusted allocation")
+	if plan.residual_ap != 0:
+		_fail("stolen AP leaked into the residual pool")
+	if plan.reduce_public_intent_budget(0, false, 1, 4) != 0:
+		_fail("prepared plan accepted public intent interference")
+
+	var stacked := EnemyIntentPlan.new()
+	stacked.configure(PackedInt32Array([EnemyIntentCategory.Type.ATTACK]), EnemyIntentCategory.Type.DEFEND, 2)
+	if stacked.reduce_public_intent_budget(0, false, 1, 5) != 1 \
+			or stacked.reduce_public_intent_budget(0, false, 2, 5) != 1 \
+			or stacked.reduce_public_intent_budget(0, false, 1, 5) != 0:
+		_fail("stacked primary theft did not stop at the 2 AP slot capacity")
+	if stacked.primary_ap_reductions[0] != 2 or stacked.stolen_ap_total != 2:
+		_fail("stacked primary theft recorded the wrong totals")
+
+	var projected_limit := EnemyIntentPlan.new()
+	projected_limit.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+	]), EnemyIntentCategory.Type.UTILITY, 2)
+	if projected_limit.reduce_public_intent_budget(0, false, 5, 3) != 2 \
+			or projected_limit.reduce_public_intent_budget(1, false, 5, 3) != 1:
+		_fail("theft exceeded the remaining projected AP")
+	if projected_limit.reduce_public_intent_budget(-1, false, 1, 3) != 0 \
+			or projected_limit.reduce_public_intent_budget(0, false, 0, 3) != 0:
+		_fail("invalid primary theft request changed the plan")
+
+	var fallback_invalid := EnemyIntentPlan.new()
+	fallback_invalid.configure(PackedInt32Array([EnemyIntentCategory.Type.ATTACK]), EnemyIntentCategory.Type.DEFEND, 2)
+	var fallback_before_invalid := _public_intent_state_snapshot(fallback_invalid)
+	if fallback_invalid.reduce_public_intent_budget(-1, true, 1, 4) != 0 \
+			or fallback_invalid.reduce_public_intent_budget(1, true, 1, 4) != 0 \
+			or _public_intent_state_snapshot(fallback_invalid) != fallback_before_invalid:
+		_fail("invalid fallback address changed the public intent plan")
+	var fallback := EnemyIntentPlan.new()
+	fallback.configure(PackedInt32Array([EnemyIntentCategory.Type.ATTACK]), EnemyIntentCategory.Type.DEFEND, 2)
+	if fallback.reduce_public_intent_budget(0, true, 3, 4) != 2 \
+			or fallback.fallback_ap_reduction != 2 \
+			or fallback.stolen_ap_total != 2:
+		_fail("fallback intent theft was not recorded")
+
+	var exhausted := EnemyIntentPlan.new()
+	exhausted.configure(PackedInt32Array([EnemyIntentCategory.Type.ATTACK]), EnemyIntentCategory.Type.DEFEND, 2)
+	var exhausted_before := _public_intent_state_snapshot(exhausted)
+	if exhausted.reduce_public_intent_budget(0, false, 1, 0) != 0 \
+			or _public_intent_state_snapshot(exhausted) != exhausted_before:
+		_fail("zero projected AP materialized a primary reduction")
+
+
+func _test_ranger_intent_theft_integration() -> void:
+	var controller := _make_test_controller([&"hungry_fish"], "res://resources/characters/battle_ranger_state.tres")
+	if controller == null:
+		return
+	var ranger: BattleUnitState = controller.player_units[0]
+	var enemy: BattleUnitState = controller.enemy_units[0]
+	enemy.enemy_state.intent_plan.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+		EnemyIntentCategory.Type.DEFEND,
+	]), EnemyIntentCategory.Type.UTILITY, 1)
+	_activate_player_turn(controller, ranger)
+	ranger.current_ap = 0
+	_state_changed_count = 0
+	_log_message_count = 0
+	controller.state_changed.connect(_record_state_changed)
+	controller.log_message.connect(_record_log_message)
+	var stolen: int = controller.steal_enemy_intent_ap(ranger, enemy, 0, false, 4)
+	if stolen <= 0 or ranger.current_ap != stolen \
+			or enemy.enemy_state.intent_plan.stolen_ap_total != stolen \
+			or _state_changed_count != 1:
+		_fail("Ranger theft did not grant only the recorded AP and notify battle state")
+
+	var ap_before_invalid := ranger.current_ap
+	var intent_before_invalid := _public_intent_state_snapshot(enemy.enemy_state.intent_plan)
+	var state_changes_before_invalid := _state_changed_count
+	var logs_before_invalid := _log_message_count
+	if controller.steal_enemy_intent_ap(enemy, enemy, 0, false, 1) != 0 \
+			or ranger.current_ap != ap_before_invalid \
+			or _public_intent_state_snapshot(enemy.enemy_state.intent_plan) != intent_before_invalid \
+			or _state_changed_count != state_changes_before_invalid \
+			or _log_message_count != logs_before_invalid:
+		_fail("non-Ranger thief changed public intent state")
+	if controller.steal_enemy_intent_ap(ranger, ranger, 0, false, 1) != 0 \
+			or ranger.current_ap != ap_before_invalid \
+			or _public_intent_state_snapshot(enemy.enemy_state.intent_plan) != intent_before_invalid \
+			or _state_changed_count != state_changes_before_invalid \
+			or _log_message_count != logs_before_invalid:
+		_fail("non-enemy theft target changed public intent state")
+	if controller.steal_enemy_intent_ap(ranger, enemy, -1, true, 1) != 0 \
+			or controller.steal_enemy_intent_ap(ranger, enemy, 1, true, 1) != 0 \
+			or ranger.current_ap != ap_before_invalid \
+			or _public_intent_state_snapshot(enemy.enemy_state.intent_plan) != intent_before_invalid \
+			or _state_changed_count != state_changes_before_invalid \
+			or _log_message_count != logs_before_invalid:
+		_fail("invalid fallback address changed Ranger battle state")
+	controller.turn_flow_state = BattleController.TurnFlowState.IDLE
+	if controller.steal_enemy_intent_ap(ranger, enemy, 0, false, 1) != 0 \
+			or ranger.current_ap != ap_before_invalid \
+			or _public_intent_state_snapshot(enemy.enemy_state.intent_plan) != intent_before_invalid \
+			or _state_changed_count != state_changes_before_invalid \
+			or _log_message_count != logs_before_invalid:
+		_fail("inactive Ranger action phase changed public intent state")
+
+	var enemy_ranger_controller := _make_test_controller([&"bandit_bow", &"hungry_fish"])
+	if enemy_ranger_controller == null:
+		return
+	var enemy_ranger: BattleUnitState = enemy_ranger_controller.enemy_units[0]
+	var enemy_target: BattleUnitState = enemy_ranger_controller.enemy_units[1]
+	enemy_target.enemy_state.intent_plan.configure(PackedInt32Array([
+		EnemyIntentCategory.Type.ATTACK,
+	]), EnemyIntentCategory.Type.DEFEND, 1)
+	_activate_enemy_turn(enemy_ranger_controller, enemy_ranger)
+	enemy_ranger.current_ap = 0
+	_state_changed_count = 0
+	_log_message_count = 0
+	enemy_ranger_controller.state_changed.connect(_record_state_changed)
+	enemy_ranger_controller.log_message.connect(_record_log_message)
+	var enemy_target_before := _public_intent_state_snapshot(enemy_target.enemy_state.intent_plan)
+	if not enemy_ranger.is_ranger():
+		_fail("bandit bow fixture is not a Ranger-profile enemy")
+	if enemy_ranger_controller.steal_enemy_intent_ap(enemy_ranger, enemy_target, 0, false, 1) != 0 \
+			or enemy_ranger.current_ap != 0 \
+			or _public_intent_state_snapshot(enemy_target.enemy_state.intent_plan) != enemy_target_before \
+			or _state_changed_count != 0 or _log_message_count != 0:
+		_fail("Ranger-profile enemy thief changed public intent state")
+
+
 func _test_dynamic_action_selection() -> void:
 	var controller := _make_test_controller()
 	if controller == null:
@@ -483,7 +623,29 @@ func _make_entry(card: CardData, category: int, score: int, damage: int, defense
 	return entry
 
 
-func _make_test_controller(archetypes: Array = [&"hungry_fish"]) -> BattleController:
+func _activate_player_turn(controller: BattleController, player: BattleUnitState) -> void:
+	controller.phase = BattleController.Phase.BATTLE
+	controller.current_unit = player
+	controller.turn_flow_state = BattleController.TurnFlowState.ACTIVE
+
+
+func _record_state_changed() -> void:
+	_state_changed_count += 1
+
+
+func _record_log_message(_message: String) -> void:
+	_log_message_count += 1
+
+
+func _public_intent_state_snapshot(plan: EnemyIntentPlan) -> Dictionary:
+	return {
+		"primary_ap_reductions": plan.primary_ap_reductions.duplicate(),
+		"fallback_ap_reduction": plan.fallback_ap_reduction,
+		"stolen_ap_total": plan.stolen_ap_total,
+	}
+
+
+func _make_test_controller(archetypes: Array = [&"hungry_fish"], player_state_path: String = "res://resources/characters/battle_warrior_state.tres") -> BattleController:
 	var template := load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario
 	if template == null:
 		_fail("missing sample battle scenario")
@@ -491,7 +653,7 @@ func _make_test_controller(archetypes: Array = [&"hungry_fish"]) -> BattleContro
 	var scenario := template.duplicate(true) as BattleScenario
 	scenario.scene_prototype = null
 	scenario.players.clear()
-	scenario.players.append(load("res://resources/characters/battle_warrior_state.tres") as CharacterState)
+	scenario.players.append(load(player_state_path) as CharacterState)
 	scenario.enemies.clear()
 	for index in range(archetypes.size()):
 		scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(StringName(archetypes[index]), 811 + index))

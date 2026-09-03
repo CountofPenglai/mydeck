@@ -86,6 +86,42 @@ func prepare_execution(total_ap: int) -> void:
 		_create_fallback_group()
 
 
+func reduce_public_intent_budget(
+		slot_index: int,
+		is_fallback: bool,
+		requested: int,
+		projected_total_ap: int
+	) -> int:
+	if requested <= 0 or execution_prepared or is_finished():
+		return 0
+
+	var current_reduction := 0
+	if is_fallback:
+		if slot_index != 0:
+			return 0
+		current_reduction = maxi(0, fallback_ap_reduction)
+	else:
+		if slot_index < 0 or slot_index >= primary_intents.size():
+			return 0
+		current_reduction = maxi(0, primary_ap_reductions[slot_index]) \
+			if slot_index < primary_ap_reductions.size() else 0
+
+	var slot_remaining := clampi(MAX_AP_PER_SLOT - current_reduction, 0, MAX_AP_PER_SLOT)
+	var projected_remaining := maxi(0, projected_total_ap - stolen_ap_total)
+	var actual_stolen := mini(requested, mini(slot_remaining, projected_remaining))
+	if actual_stolen <= 0:
+		return 0
+
+	if is_fallback:
+		fallback_ap_reduction = current_reduction + actual_stolen
+	else:
+		if primary_ap_reductions.size() < primary_intents.size():
+			primary_ap_reductions.resize(primary_intents.size())
+		primary_ap_reductions[slot_index] = current_reduction + actual_stolen
+	stolen_ap_total += actual_stolen
+	return actual_stolen
+
+
 func clear() -> void:
 	round_locked = 0
 	primary_intents.clear()

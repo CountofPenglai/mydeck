@@ -13,6 +13,7 @@ const RangerBlindStatus = preload("res://scripts/status/ranger_blind_status.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const MageInfusionState = preload("res://scripts/mage/mage_infusion_state.gd")
 const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
+const EnemyIntentInterferenceService = preload("res://scripts/enemies/enemy_intent_interference_service.gd")
 
 signal log_message(message: String)
 signal state_changed
@@ -216,6 +217,23 @@ func _reset_runtime_state() -> void:
 	unbound_extra_ap = 0
 	unbound_extra_active = false
 	unbound_force_end_after_action = false
+
+
+func steal_enemy_intent_ap(
+		thief: BattleUnitState,
+		target: BattleUnitState,
+		slot_index: int,
+		is_fallback: bool,
+		requested: int
+	) -> int:
+	return EnemyIntentInterferenceService.steal_enemy_intent_ap(
+		self,
+		thief,
+		target,
+		slot_index,
+		is_fallback,
+		requested
+	)
 
 
 func _create_runtime_character_state(template: CharacterState) -> CharacterState:
