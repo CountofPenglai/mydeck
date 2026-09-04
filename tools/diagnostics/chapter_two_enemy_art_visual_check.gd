@@ -24,9 +24,17 @@ var _exit_code := 0
 
 
 func _ready() -> void:
+	if DisplayServer.get_name() != "headless":
+		get_window().size = MIN_CAPTURE_SIZE
 	_build_contact_sheet()
 	await get_tree().process_frame
 	await get_tree().process_frame
+	if DisplayServer.get_name() == "headless":
+		var validation_result := "art resources validated" if _exit_code == 0 else "art resource validation failed"
+		print("CHAPTER_TWO_ENEMY_ART_VISUAL: SKIP screenshot under headless display driver; %s" % validation_result)
+		print("CHAPTER_TWO_ENEMY_ART_VISUAL: completed")
+		get_tree().quit(_exit_code)
+		return
 	var image := get_viewport().get_texture().get_image()
 	if image == null or image.is_empty():
 		_fail("viewport capture is empty")
@@ -74,7 +82,15 @@ func _add_entry(grid: GridContainer, archetype: StringName, variant: StringName)
 	var art_row := HBoxContainer.new()
 	art_row.add_theme_constant_override("separation", 8)
 	panel.add_child(art_row)
+	var variants := ChapterTwoEnemyCatalog.ENEMY_ART.get(archetype, {}) as Dictionary
+	if not variants.has(variant):
+		_fail("missing exact variant %s/%s" % [archetype, variant])
+		return
+	var selected_variant := variants.get(variant, {}) as Dictionary
 	for kind in ["portrait", "battle"]:
+		if not selected_variant.has(kind) or str(selected_variant.get(kind, "")).is_empty():
+			_fail("missing catalog entry %s/%s/%s" % [archetype, variant, kind])
+			continue
 		var texture := ChapterTwoEnemyCatalog.get_art_texture(archetype, kind, variant)
 		if texture == null:
 			_fail("missing %s/%s/%s" % [archetype, variant, kind])

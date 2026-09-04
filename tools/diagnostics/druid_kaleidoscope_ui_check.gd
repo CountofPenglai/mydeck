@@ -51,22 +51,32 @@ func _ready() -> void:
 	var bottom_hud := hud_root.get_node_or_null("%BattleBottomHud") as Control if hud_root != null else null
 	var end_button := bottom_hud.get_node_or_null("%HudEndTurnButton") as Button if bottom_hud != null else null
 	var equipment_button := bottom_hud.get_node_or_null("%EquipmentButton") as Button if bottom_hud != null else null
+	var equipment_label := bottom_hud.get_node_or_null("%EquipmentLabel") as Label if bottom_hud != null else null
 	var equipment_popup := hud_root.get_node_or_null("%EquipmentActionsPopup") if hud_root != null else null
 	var viewport_rect: Rect2 = battle_scene.get_viewport_rect()
 	var button_rect := end_button.get_global_rect() if end_button != null else Rect2()
+	var equipment_button_rect := equipment_button.get_global_rect() if equipment_button != null else Rect2()
+	var equipment_label_rect := equipment_label.get_global_rect() if equipment_label != null else Rect2()
 	print("DRUID_KALEIDOSCOPE_UI: viewport=%s hud=%s end=%s disabled=%s" % [
 		viewport_rect,
 		bottom_hud.get_global_rect() if bottom_hud != null else Rect2(),
 		button_rect,
 		end_button.disabled if end_button != null else true,
 	])
-	if hud_root == null or bottom_hud == null or end_button == null or equipment_button == null or equipment_popup == null:
+	if hud_root == null or bottom_hud == null or end_button == null or equipment_button == null \
+			or equipment_label == null or equipment_popup == null:
 		_fail("DRUID_KALEIDOSCOPE_UI: new battle HUD modules are missing")
 	elif not viewport_rect.encloses(button_rect):
 		_fail("DRUID_KALEIDOSCOPE_UI: end-turn button is outside the viewport")
 	elif end_button.disabled:
 		_fail("DRUID_KALEIDOSCOPE_UI: end-turn button is unexpectedly disabled")
-	elif not equipment_button.text.contains("展开"):
+	elif not equipment_button.is_visible_in_tree() or not equipment_label.is_visible_in_tree():
+		_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment affordance is hidden")
+	elif not viewport_rect.encloses(equipment_button_rect) or not viewport_rect.encloses(equipment_label_rect):
+		_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment affordance is outside the viewport")
+	elif equipment_button.disabled:
+		_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment affordance is disabled")
+	elif not equipment_label.text.contains("展开"):
 		_fail("DRUID_KALEIDOSCOPE_UI: multifunction equipment has no expand affordance")
 	else:
 		equipment_button.pressed.emit()

@@ -16,35 +16,37 @@ func _ready() -> void:
 func _test_charge_direction_movement() -> void:
 	var controller := _create_controller()
 	var warrior := controller.player_units[0] as BattleUnitState
-	var blocker := controller.enemy_units[0] as BattleUnitState
-	warrior.set_hex_cell(Vector2i(2, 4), controller.map_data)
-	blocker.set_hex_cell(Vector2i(3, 4), controller.map_data)
-	var destination := Vector2i(4, 4)
+	var target := controller.enemy_units[0] as BattleUnitState
+	target.set_hex_cell(Vector2i(2, 2), controller.map_data)
+	var destination := Vector2i(1, 2)
 	var card := load("res://resources/cards/battle_charge.tres") as CardData
 	var effect := card.effect as ChargeCardEffect
 	var context := {"controller": controller, "user": warrior, "card": card, "equipment_slot": "weapon"}
-	var cells := effect.get_area_target_cells(context)
-	if not cells.has(destination):
-		_fail("CARD_MOVE_DIAG: charge did not expose a clear endpoint behind an enemy")
+	var valid_targets := effect.get_valid_targets(context)
+	if not valid_targets.has(target):
+		_fail("CARD_MOVE_DIAG: charge did not expose a reachable enemy target")
 		return
-	if not effect.are_targets_valid(context, [destination], false):
-		_fail("CARD_MOVE_DIAG: charge preview and target validation disagree")
+	if not effect.are_targets_valid(context, [target], false):
+		_fail("CARD_MOVE_DIAG: charge target query and validation disagree")
 		return
 	var started := Time.get_ticks_usec()
 	for _index in range(PREVIEW_ITERATIONS):
-		effect.get_area_target_cells(context)
+		effect.get_valid_targets(context)
 	var average_usec := float(Time.get_ticks_usec() - started) / float(PREVIEW_ITERATIONS)
 	if average_usec > 100000.0:
 		_fail("CARD_MOVE_DIAG: charge target query took %.2f us/call" % average_usec)
 	warrior.hand.append(card)
 	warrior.current_ap = 10
 	controller.current_unit = warrior
-	if not controller.play_card(warrior, card, [destination], {"equipment_slot": "weapon"}):
-		_fail("CARD_MOVE_DIAG: charge card frame rejected a valid cell target")
+	var target_health_before := target.get_current_health()
+	if not controller.play_card(warrior, card, [target], {"equipment_slot": "weapon"}):
+		_fail("CARD_MOVE_DIAG: charge card frame rejected a valid enemy target")
 		return
 	if warrior.cell != destination:
 		_fail("CARD_MOVE_DIAG: charge previewed %s but ended at %s" % [destination, warrior.cell])
-	print("CARD_MOVE_DIAG: charge %d cells, %.2f us/query" % [cells.size(), average_usec])
+	if target.get_current_health() >= target_health_before:
+		_fail("CARD_MOVE_DIAG: charge movement completed without its weapon strike")
+	print("CARD_MOVE_DIAG: charge %d targets, %.2f us/query" % [valid_targets.size(), average_usec])
 
 
 func _test_card_path_movement() -> void:
