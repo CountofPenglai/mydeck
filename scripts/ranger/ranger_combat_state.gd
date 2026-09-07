@@ -77,6 +77,18 @@ func add_element(element: int, amount: int = 1) -> int:
 	return added
 
 
+func store_element_without_collection(element: int, amount: int = 1) -> int:
+	if not BattleSurfaceState.BASE_ELEMENTS.has(element) or amount <= 0:
+		return 0
+	var added := 0
+	for _i in range(amount):
+		if get_element_total() >= ELEMENT_LIMIT:
+			break
+		element_inventory[element] = int(element_inventory.get(element, 0)) + 1
+		added += 1
+	return added
+
+
 func get_element_total() -> int:
 	var total := 0
 	for amount_value in element_inventory.values():

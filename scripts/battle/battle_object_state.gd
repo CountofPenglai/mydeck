@@ -10,6 +10,11 @@ class_name BattleObjectState
 var destruction_queued: bool = false
 var destroyed: bool = false
 var triggered_action_ids: Dictionary = {}
+var owner: BattleUnitState
+var owner_faction: int = BattleUnitState.Faction.PLAYER
+var threat_level: int = 0
+var is_trap: bool = false
+var trap_explosion_queued: bool = false
 
 
 static func create(
@@ -23,6 +28,9 @@ static func create(
 	state.definition = BattleObjectDefinition.create_builtin(object_kind)
 	state.cell = at_cell
 	state.current_health = state.definition.max_health
+	if object_kind == BattleObjectDefinition.Kind.ELEMENTAL_TRAP:
+		state.is_trap = true
+		state.threat_level = 1
 	state.fall_direction = BattleHexGrid.AXIAL_DIRECTIONS[0] \
 		if object_kind == BattleObjectDefinition.Kind.UNSTABLE_PILLAR \
 		and not BattleHexGrid.AXIAL_DIRECTIONS.has(direction) \
@@ -60,6 +68,10 @@ func get_max_health() -> int:
 
 func get_health_ratio() -> float:
 	return clampf(float(current_health) / float(maxi(1, get_max_health())), 0.0, 1.0)
+
+
+func get_threat_level() -> int:
+	return threat_level if is_trap and is_active() else 0
 
 
 func mark_triggered(action_id: int) -> bool:

@@ -19,6 +19,8 @@ const MUTATION_FIELD_LABELS: Dictionary = {
 @export_group("Display")
 @export var card_name: String = "未命名卡牌"
 @export_multiline var description: String = ""
+@export_multiline var card_text: String = ""
+@export_multiline var resolution_rules: String = ""
 @export var artwork: Texture2D
 
 @export_group("Gameplay")
@@ -197,6 +199,18 @@ func requires_ranger_recipe_choice(context: Dictionary = {}) -> bool:
 	if effect == null:
 		return false
 	return effect.requires_ranger_recipe_choice(context)
+
+
+func requires_enemy_intent_choice(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_enemy_intent_choice(context)
+
+
+func get_enemy_intent_choice_options(context: Dictionary = {}) -> Array[Dictionary]:
+	return effect.get_enemy_intent_choice_options(context) if effect != null else []
+
+
+func get_enemy_intent_choice_prompt(context: Dictionary = {}) -> String:
+	return effect.get_enemy_intent_choice_prompt(context) if effect != null else "选择一个敌人意图"
 
 
 func get_ranger_recipe_options(context: Dictionary = {}) -> Array[Dictionary]:
@@ -423,7 +437,18 @@ func get_play_timing_label() -> String:
 	return CardEnums.play_timing_label(play_timing)
 
 
+func resolve_equipment_slot(context: Dictionary = {}) -> String:
+	var equipment_slot := str(context.get("equipment_slot", ""))
+	if effect == null:
+		return equipment_slot
+	var resolved_context := context.duplicate()
+	resolved_context["equipment_slot"] = equipment_slot
+	var fixed_slot := effect.get_fixed_equipment_slot(resolved_context)
+	return fixed_slot if not fixed_slot.is_empty() else equipment_slot
+
+
 func get_effective_range(user = null, equipment_slot: String = "") -> int:
+	equipment_slot = resolve_equipment_slot({"user": user, "equipment_slot": equipment_slot})
 	var orientation := _resolve_druid_orientation(user, {})
 	var result := 0
 	if orientation == CardEnums.DruidOrientation.INVERTED:
@@ -462,8 +487,14 @@ func get_display_name_for_context(context: Dictionary = {}) -> String:
 func get_description_for_context(context: Dictionary = {}) -> String:
 	if _is_inverted_context(context) and not inverted_description.is_empty():
 		return inverted_description
+	if not card_text.strip_edges().is_empty():
+		return card_text
 
 	return description
+
+
+func get_resolution_rules_for_context(_context: Dictionary = {}) -> String:
+	return resolution_rules
 
 
 func get_druid_orientation_label(context: Dictionary = {}) -> String:

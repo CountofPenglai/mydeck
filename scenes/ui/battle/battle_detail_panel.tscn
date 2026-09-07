@@ -75,6 +75,13 @@ text = "×"
 [node name="Divider" type="HSeparator" parent="Margin/Stack"]
 layout_mode = 2
 
+[node name="ResolutionRulesButton" type="Button" parent="Margin/Stack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "展开详细裁定"
+text = "详细裁定"
+
 [node name="Scroll" type="ScrollContainer" parent="Margin/Stack"]
 layout_mode = 2
 size_flags_vertical = 3

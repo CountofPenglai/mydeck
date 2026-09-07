@@ -16,21 +16,23 @@ func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 	var unit: BattleUnitState = enemy_state as BattleUnitState
 	if controller == null or unit == null or unit.current_ap <= 0 or not unit.is_alive():
 		return {"state": state, "action_started": false}
-	var target := controller.get_nearest_opponent(unit)
+	var target = controller.get_nearest_legal_hostile_attack_target(unit)
+	if target == null:
+		target = controller.get_nearest_hostile_target(unit)
 	if target == null:
 		return {"state": state, "action_started": false}
-	var card := controller.find_playable_card_against(unit, target)
+	var card := controller.find_playable_card_against(unit, target) if target is BattleUnitState else null
 	if card != null:
 		state = State.ATTACK
 		return {"state": state, "action_started": controller.play_card(unit, card, [target])}
-	if unit.cell_distance_to(target) <= unit.get_attack_range():
+	if controller.can_basic_attack_target(unit, target):
 		state = State.ATTACK
-		return {"state": state, "action_started": controller.basic_attack(unit, target)}
+		return {"state": state, "action_started": controller.basic_attack(unit, target) if target is BattleUnitState else controller.basic_attack_object(unit, target)}
 	state = State.APPROACH
 	return {"state": state, "action_started": _move_toward_attack_range(controller, unit, target)}
 
 
-func _move_toward_attack_range(controller: BattleController, unit: BattleUnitState, target: BattleUnitState) -> bool:
+func _move_toward_attack_range(controller: BattleController, unit: BattleUnitState, target) -> bool:
 	var best_cell: Vector2i = BattleHexGrid.INVALID_CELL
 	var best_score := 2147483647
 	var best_move := 2147483647
@@ -40,7 +42,8 @@ func _move_toward_attack_range(controller: BattleController, unit: BattleUnitSta
 		if not controller.targeting.is_unit_cell_clear(unit, cell, false):
 			continue
 		var target_distance := controller.map_data.get_distance(cell, target.cell)
-		var score: int = absi(target_distance - unit.get_attack_range())
+		var desired_range := unit.get_attack_range() + (1 if target is BattleObjectState else 0)
+		var score: int = absi(target_distance - desired_range)
 		var move_distance := controller.map_data.get_distance(unit.cell, cell)
 		if score < best_score or (score == best_score and move_distance < best_move):
 			best_cell = cell

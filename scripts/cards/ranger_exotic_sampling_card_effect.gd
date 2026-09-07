@@ -2,20 +2,31 @@ extends CardEffect
 class_name RangerExoticSamplingCardEffect
 
 
-func _init() -> void:
-	uses_strike = true
-
-
 func can_play(context: Dictionary = {}) -> bool:
 	var user: BattleUnitState = context.get("user") as BattleUnitState
 	return user != null and user.is_ranger()
 
 
-func are_targets_valid(context: Dictionary = {}, _targets: Array = [], _write_log: bool = true) -> bool:
+func provides_area_target_cells() -> bool:
+	return true
+
+
+func get_area_target_cells(context: Dictionary = {}) -> Array[Vector2i]:
+	var controller: BattleController = context.get("controller") as BattleController
 	var user: BattleUnitState = context.get("user") as BattleUnitState
-	if user == null:
+	var cells: Array[Vector2i] = []
+	if controller == null or user == null:
+		return cells
+	for cell in controller.map_data.get_all_cells():
+		if controller.can_place_elemental_trap(user, cell) and controller.map_data.get_distance(user.cell, cell) <= 3:
+			cells.append(cell)
+	return cells
+
+
+func are_targets_valid(context: Dictionary = {}, targets: Array = [], _write_log: bool = true) -> bool:
+	if targets.size() != 1 or not (targets[0] is Vector2i):
 		return false
-	return not _get_weapon_mode(user, str(context.get("equipment_slot", "")), context).is_empty()
+	return get_area_target_cells(context).has(targets[0] as Vector2i)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
@@ -24,27 +35,4 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	var card: CardData = context.get("card") as CardData
 	if controller == null or user == null or card == null or targets.size() != 1:
 		return
-	var target: BattleUnitState = targets[0] as BattleUnitState
-	if target == null:
-		return
-
-	var equipment_slot := str(context.get("equipment_slot", ""))
-	var mode := _get_weapon_mode(user, equipment_slot, context)
-	if mode.is_empty():
-		return
-	var actual_damage := controller.perform_strike(user, target, card, "异域取样", equipment_slot)
-	if actual_damage <= 0:
-		return
-
-	if mode == "melee":
-		# 近战对目标格的通用采集已由 resolve_ranger_after_strike 完成。
-		controller.collect_surface_elements(user, user.cell, "游侠当前")
-	else:
-		controller.collect_surface_elements(user, target.cell, "目标")
-
-
-func _get_weapon_mode(user: BattleUnitState, equipment_slot: String, context: Dictionary) -> String:
-	var profile: StrikeProfile = user.build_strike_profile_object(equipment_slot, context)
-	if profile.primary_equipment == null:
-		return ""
-	return "melee" if profile.primary_range_type == EquipmentData.WeaponRangeType.MELEE else "ranged"
+	controller.place_elemental_trap(user, targets[0] as Vector2i)

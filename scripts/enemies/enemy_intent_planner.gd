@@ -199,6 +199,7 @@ static func choose_action(
 		_add_movement_candidate(candidates, controller, unit, category, ap_budget, true)
 	if candidates.is_empty():
 		return null
+	_filter_to_highest_hostile_threat(candidates, unit)
 	candidates.sort_custom(func(a: EnemyIntentAction, b: EnemyIntentAction) -> bool:
 		return a.score > b.score if not is_equal_approx(a.score, b.score) else a.ap_cost < b.ap_cost
 	)
@@ -270,7 +271,41 @@ static func _get_target_options(controller: BattleController, unit: BattleUnitSt
 	for target in controller.units:
 		if target != null and target.is_alive() and controller._targets_are_valid(unit, card, [target], false):
 			result.append([target])
+	for target in controller.get_hostile_target_candidates(unit):
+		if target is BattleObjectState and controller._targets_are_valid(unit, card, [target], false):
+			result.append([target])
 	return result
+
+
+static func _filter_to_highest_hostile_threat(candidates: Array[EnemyIntentAction], unit: BattleUnitState) -> void:
+	var highest := -1
+	for action in candidates:
+		if action == null or action.targets.size() != 1:
+			continue
+		var target = action.targets[0]
+		if not _is_hostile_target(target, unit):
+			continue
+		var threat: int = target.get_threat_level() if target.has_method("get_threat_level") else 0
+		highest = maxi(highest, threat)
+	if highest < 0:
+		return
+	for index in range(candidates.size() - 1, -1, -1):
+		var action := candidates[index]
+		if action == null or action.targets.size() != 1:
+			continue
+		var target = action.targets[0]
+		if _is_hostile_target(target, unit):
+			var threat: int = target.get_threat_level() if target.has_method("get_threat_level") else 0
+			if threat < highest:
+				candidates.remove_at(index)
+
+
+static func _is_hostile_target(target, unit: BattleUnitState) -> bool:
+	if target is BattleUnitState:
+		return (target as BattleUnitState).faction != unit.faction
+	if target is BattleObjectState:
+		return (target as BattleObjectState).is_trap and (target as BattleObjectState).owner_faction != unit.faction
+	return false
 
 
 static func _find_pool_entry(unit: BattleUnitState, card: CardData) -> EnemyCardPoolEntry:
@@ -340,19 +375,19 @@ static func _add_basic_attack_candidates(
 	if cost > ap_budget:
 		return
 	var profile := _get_profile(unit)
-	for target in controller.get_opposing_units(unit):
-		if target == null or not target.is_alive() \
-				or unit.cell_distance_to(target) > controller.get_effective_attack_range_against(unit, target):
+	for target in controller.get_hostile_target_candidates(unit):
+		if not controller.can_basic_attack_target(unit, target):
 			continue
 		if category == EnemyIntentCategory.Type.HARVEST \
-				and float(target.get_current_health()) / float(maxi(1, target.get_max_health())) > profile.harvest_health_ratio:
+				and (not target is BattleUnitState or float(target.get_current_health()) / float(maxi(1, target.get_max_health())) > profile.harvest_health_ratio):
 			continue
 		var action := EnemyIntentAction.new()
 		action.kind = EnemyIntentAction.Kind.BASIC_ATTACK
 		action.label = "武器打击"
 		action.targets = [target]
 		action.ap_cost = cost
-		action.score = 8.0 + unit.get_attack() + (20.0 if unit.get_attack() >= target.get_current_health() else 0.0)
+		var target_health: int = target.get_current_health() if target is BattleUnitState else target.current_health
+		action.score = 8.0 + unit.get_attack() + (20.0 if unit.get_attack() >= target_health else 0.0)
 		result.append(action)
 
 
@@ -366,7 +401,7 @@ static func _add_movement_candidate(
 ) -> void:
 	if ap_budget <= 0:
 		return
-	var opponents := controller.get_opposing_units(unit)
+	var opponents := controller.get_highest_threat_targets(controller.get_hostile_target_candidates(unit))
 	if opponents.is_empty():
 		return
 	var profile := _get_profile(unit)
@@ -379,7 +414,8 @@ static func _add_movement_candidate(
 		var nearest_distance := 999
 		var can_attack := false
 		for target in opponents:
-			if target == null or not target.is_alive():
+			if target == null or (target is BattleUnitState and not target.is_alive()) \
+					or (target is BattleObjectState and not target.is_targetable()):
 				continue
 			var distance := controller.map_data.get_distance(cell, target.cell)
 			nearest_distance = mini(nearest_distance, distance)

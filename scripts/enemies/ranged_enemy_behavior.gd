@@ -18,21 +18,23 @@ func choose_action(context: Dictionary = {}, enemy_state = null) -> Dictionary:
 	var unit: BattleUnitState = enemy_state as BattleUnitState
 	if controller == null or unit == null or unit.current_ap <= 0 or not unit.is_alive():
 		return {"state": state, "action_started": false}
-	var target := controller.get_nearest_opponent(unit)
+	var target = controller.get_nearest_legal_hostile_attack_target(unit)
+	if target == null:
+		target = controller.get_nearest_hostile_target(unit)
 	if target == null:
 		return {"state": state, "action_started": false}
-	var distance := unit.cell_distance_to(target)
+	var distance := controller.map_data.get_distance(unit.cell, target.cell)
 	if distance < min_preferred_range or distance > max_preferred_range:
 		state = State.REPOSITION
 		return {"state": state, "action_started": _move_to_preferred_range(controller, unit, target)}
 	state = State.ATTACK
-	var card := controller.find_playable_card_against(unit, target)
+	var card := controller.find_playable_card_against(unit, target) if target is BattleUnitState else null
 	if card != null:
 		return {"state": state, "action_started": controller.play_card(unit, card, [target])}
-	return {"state": state, "action_started": controller.basic_attack(unit, target)}
+	return {"state": state, "action_started": controller.basic_attack(unit, target) if target is BattleUnitState else controller.basic_attack_object(unit, target)}
 
 
-func _move_to_preferred_range(controller: BattleController, unit: BattleUnitState, target: BattleUnitState) -> bool:
+func _move_to_preferred_range(controller: BattleController, unit: BattleUnitState, target) -> bool:
 	var best_cell: Vector2i = BattleHexGrid.INVALID_CELL
 	var best_score := 2147483647
 	var best_move := 2147483647

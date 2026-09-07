@@ -59,6 +59,16 @@ var curse_proxy_max_health: int = 0
 var curse_proxy_mirrors_damage: bool = false
 var curse_proxy_hostile: bool = false
 var curse_proxy_depth: int = 1
+var threat_level_modifier: int = 0
+var trap_limit_modifier: int = 0
+
+
+func get_threat_level() -> int:
+	return maxi(0, 1 + threat_level_modifier)
+
+
+func get_trap_limit() -> int:
+	return maxi(0, (1 if is_ranger() else 0) + trap_limit_modifier)
 
 func setup_player(id: int, state: CharacterState, default_token_radius: float) -> void:
 	unit_id = id
@@ -893,7 +903,15 @@ func get_starting_hand_size(config: BattleConfig) -> int:
 
 
 func get_attack_range(equipment_slot: String = "", context: Dictionary = {}) -> int:
-	if not can_use_attack_mode(equipment_slot, context):
+	return _get_attack_range(equipment_slot, context, false)
+
+
+func get_attack_range_for_targeting(equipment_slot: String = "", context: Dictionary = {}) -> int:
+	return _get_attack_range(equipment_slot, context, true)
+
+
+func _get_attack_range(equipment_slot: String, context: Dictionary, range_only: bool) -> int:
+	if not range_only and not can_use_attack_mode(equipment_slot, context):
 		return 0
 	var result := 0
 	if character_state != null:
@@ -911,7 +929,7 @@ func get_attack_range(equipment_slot: String = "", context: Dictionary = {}) -> 
 		var effect := entry.get("effect") as EquipmentEffect
 		if effect != null:
 			result = effect.modify_attack_range(self, entry.get("root") as EquipmentData, entry.get("component") as EquipmentData, entry.get("runtime") as EquipmentRuntimeState, result, range_context)
-	if not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
+	if not range_only and not ranger_state.active_weapon_lock_slot.is_empty() and ranger_state.active_weapon_lock_slot != equipment_slot:
 		return 0
 	result += distortion_state.lashing_range_bonus
 	return maxi(0, result)

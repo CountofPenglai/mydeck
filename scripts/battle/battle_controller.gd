@@ -11,10 +11,12 @@ const RangerMoveSurchargeStatus = preload("res://scripts/status/ranger_move_surc
 const RangerBurnStatus = preload("res://scripts/status/ranger_burn_status.gd")
 const RangerBlindStatus = preload("res://scripts/status/ranger_blind_status.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
+const RangerSurfaceElementCollector = preload("res://scripts/ranger/ranger_surface_element_collector.gd")
 const MageInfusionState = preload("res://scripts/mage/mage_infusion_state.gd")
 const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
 const EnemyIntentInterferenceService = preload("res://scripts/enemies/enemy_intent_interference_service.gd")
 const EquipmentActionPayment = preload("res://scripts/items/equipment_action_payment.gd")
+const BattleTrapController = preload("res://scripts/battle/battle_trap_controller.gd")
 
 signal log_message(message: String)
 signal state_changed
@@ -73,6 +75,7 @@ var resolution_state_notification_active: bool = false
 var resolution_runner := BattleResolutionRunner.new()
 var targeting := BattleTargeting.new()
 var strike_resolver := BattleStrikeResolver.new()
+var trap_controller := BattleTrapController.new()
 var surface_state := BattleSurfaceState.new()
 var mage_infusion_state := MageInfusionState.new()
 var battle_round: int = 0
@@ -98,6 +101,7 @@ func setup(new_scenario: BattleScenario) -> void:
 		resolution_runner.setup(self)
 		targeting.setup(self)
 		strike_resolver.setup(self)
+		trap_controller.setup(self)
 		_emit_log("战斗场景缺少 BattleScenario，已使用空白配置。")
 		state_changed.emit()
 		return
@@ -128,6 +132,7 @@ func setup(new_scenario: BattleScenario) -> void:
 	resolution_runner.setup(self)
 	targeting.setup(self)
 	strike_resolver.setup(self)
+	trap_controller.setup(self)
 
 	var id := 0
 	for character_template in scenario.get_player_states():
@@ -852,6 +857,13 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 		return null
 
 	var druid_orientation := _get_druid_orientation_for_card(user, card)
+	var effective_strike_context := strike_context.duplicate()
+	effective_strike_context["equipment_slot"] = card.resolve_equipment_slot({
+		"controller": self,
+		"user": user,
+		"card": card,
+		"equipment_slot": str(strike_context.get("equipment_slot", "")),
+	})
 	var card_context_seed := {
 		"controller": self,
 		"user": user,
@@ -860,9 +872,11 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 		"druid_orientation": druid_orientation,
 		"ranger_universal_combo": ranger_universal_combo,
 	}
+	card_context_seed.merge(effective_strike_context, true)
 
 	var condition_context := _build_special_play_condition_context(user, card, play_mode)
-	condition_context.merge(strike_context, true)
+	condition_context.merge(effective_strike_context, true)
+	condition_context["targets"] = targets.duplicate()
 	condition_context["druid_orientation"] = druid_orientation
 	condition_context["ranger_universal_combo"] = ranger_universal_combo
 	if not ranger_universal_combo and not card.can_pay_special_conditions(condition_context, play_mode):
@@ -875,20 +889,20 @@ func _build_card_play_context(user: BattleUnitState, card: CardData, targets: Ar
 		return null
 
 	var effective_ap_cost := get_card_ap_cost_for_mode(user, card, play_mode, card_context_seed)
-	if strike_context.has("ap_cost_override"):
-		effective_ap_cost = maxi(0, int(strike_context["ap_cost_override"]))
+	if effective_strike_context.has("ap_cost_override"):
+		effective_ap_cost = maxi(0, int(effective_strike_context["ap_cost_override"]))
 	if user.current_ap < effective_ap_cost:
 		if write_log:
 			_emit_log("%s AP不足，%s 需要 %d AP。" % [user.get_display_name(), card.card_name, effective_ap_cost])
 		return null
 
-	var equipment_slot := str(strike_context.get("equipment_slot", ""))
-	var target_context := strike_context.duplicate()
+	var equipment_slot := str(effective_strike_context["equipment_slot"])
+	var target_context := effective_strike_context.duplicate()
 	target_context["druid_orientation"] = druid_orientation
 	if not _targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, target_context):
 		return null
 
-	var extra_context := strike_context.duplicate()
+	var extra_context := effective_strike_context.duplicate()
 	extra_context.erase("equipment_slot")
 	extra_context["actual_ap_cost"] = effective_ap_cost
 	extra_context["play_mode"] = play_mode
@@ -929,6 +943,7 @@ func _resolve_card_play_frame(frame: BattleCardFrame) -> void:
 	var druid_orientation := int(refreshed_context.extra.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
 	var condition_context := _build_special_play_condition_context(frame.user, frame.card, play_mode)
 	condition_context.merge(refreshed_context.extra, true)
+	condition_context["targets"] = frame.targets.duplicate()
 	condition_context["druid_orientation"] = druid_orientation
 	var ranger_universal_combo := bool(refreshed_context.extra.get("ranger_universal_combo", false))
 	condition_context["ranger_universal_combo"] = ranger_universal_combo
@@ -1421,6 +1436,27 @@ func perform_strike_with_options(attacker: BattleUnitState, target: BattleUnitSt
 	return strike_resolver.perform_strike_with_modifier_and_multiplier(attacker, target, source, damage_modifier, damage_multiplier, label, equipment_slot, options)
 
 
+# Unit strikes normally do not own a scope.  Cards with an explicitly ordered
+# post-strike consequence use this narrow wrapper so all strike descendants
+# (including hit-triggered traps) finish before `after_effect` runs.
+func perform_unit_strike_with_after_effects(attacker: BattleUnitState, target: BattleUnitState, source, label: String, equipment_slot: String, after_effect: Callable) -> int:
+	resolution_runner.begin_attack_scope()
+	var result := strike_resolver.perform_strike(attacker, target, source, label, equipment_slot)
+	resolution_runner.end_attack_scope()
+	if after_effect.is_valid():
+		after_effect.call()
+	return result
+
+
+func perform_unit_strike_with_options_and_after_effects(attacker: BattleUnitState, target: BattleUnitState, source, damage_modifier: int, damage_multiplier: float, label: String, equipment_slot: String, options: Dictionary, after_effect: Callable) -> int:
+	resolution_runner.begin_attack_scope()
+	var result := perform_strike_with_options(attacker, target, source, damage_modifier, damage_multiplier, label, equipment_slot, options)
+	resolution_runner.end_attack_scope()
+	if after_effect.is_valid():
+		after_effect.call()
+	return result
+
+
 func get_card_ap_cost(user: BattleUnitState, card: CardData, context: Dictionary = {}) -> int:
 	if user == null or card == null:
 		return 0
@@ -1468,6 +1504,7 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 		"play_mode": play_mode,
 		"druid_orientation": _get_druid_orientation_for_card(user, card),
 	}
+	context["equipment_slot"] = card.resolve_equipment_slot(context)
 	if user.current_ap < get_card_ap_cost_for_mode(user, card, play_mode, context):
 		return false
 	if not card.can_play(context):
@@ -1475,14 +1512,25 @@ func can_play_card_with_mode(user: BattleUnitState, card: CardData, play_mode: i
 
 	if _is_ranger_universal_combo(user, play_mode):
 		return true
-	return card.can_pay_special_conditions(_build_special_play_condition_context(user, card, play_mode), play_mode)
+	var condition_context := _build_special_play_condition_context(user, card, play_mode)
+	condition_context["equipment_slot"] = str(context.get("equipment_slot", ""))
+	condition_context["targetless_condition_search"] = true
+	return card.can_pay_special_conditions(condition_context, play_mode)
 
 
 func can_preview_card_targets(user: BattleUnitState, card: CardData, targets: Array, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
 	if card == null or not _can_submit_turn_action(user, "选择目标", false):
 		return false
 
-	return _targets_are_valid(user, card, targets, false, equipment_slot, play_mode, extra_context)
+	if not _targets_are_valid(user, card, targets, false, equipment_slot, play_mode, extra_context):
+		return false
+	var condition_context := _build_special_play_condition_context(user, card, play_mode)
+	condition_context.merge(extra_context, true)
+	condition_context["equipment_slot"] = card.resolve_equipment_slot({"controller": self, "user": user, "card": card, "equipment_slot": equipment_slot})
+	condition_context["targets"] = targets.duplicate()
+	if _is_ranger_universal_combo(user, play_mode):
+		return true
+	return card.can_pay_special_conditions(condition_context, play_mode)
 
 
 func can_activate_exiled_card(user: BattleUnitState, card: CardData) -> bool:
@@ -2510,44 +2558,12 @@ func _close_ranger_combo_window(unit: BattleUnitState) -> void:
 
 
 func collect_surface_elements(unit: BattleUnitState, cell: Vector2i, label: String = "采集", context: Dictionary = {}) -> int:
-	if unit == null or not unit.is_ranger():
-		return 0
-	var collector_id := "unit:%d" % unit.unit_id
-	var entries: Array[Dictionary] = surface_state.get_collectible_entries(cell, collector_id)
-	var components: Array[int] = []
-	for entry in entries:
-		if entry.has("components"):
-			for component_value in entry.get("components", []) as Array:
-				var component := int(component_value)
-				if BattleSurfaceState.BASE_ELEMENTS.has(component) and not components.has(component):
-					components.append(component)
-		else:
-			var element := int(entry.get("element", BattleSurfaceState.Element.NONE))
-			if BattleSurfaceState.BASE_ELEMENTS.has(element) and not components.has(element):
-				components.append(element)
-	components.sort_custom(func(left: int, right: int) -> bool:
-		return BattleSurfaceState.BASE_ELEMENTS.find(left) < BattleSurfaceState.BASE_ELEMENTS.find(right)
-	)
-	var added := 0
-	var successful_elements: Array[int] = []
-	for element in components:
-		var collection_context := context.merged({
-			"controller": self,
-			"cell": cell,
-			"element": element,
-			"label": label,
-		})
-		var amount := unit.modify_ranger_element_collection(1, collection_context)
-		var actual_added := unit.collect_ranger_element(element, amount)
-		added += actual_added
-		if actual_added > 0:
-			successful_elements.append(element)
-	surface_state.commit_collection(cell, collector_id, entries, successful_elements)
-	if added > 0:
-		unit.notify_ranger_elements_collected(added, context.merged({"controller": self, "cell": cell, "label": label}))
-		_emit_log("%s 从%s格采集 %d 枚元素。" % [unit.get_display_name(), label, added])
-		state_changed.emit()
-	return added
+	var result := RangerSurfaceElementCollector.collect(self, unit, [cell], label, context, true)
+	return int(result.get("total", 0))
+
+
+func collect_ranger_temporary_batch(unit: BattleUnitState, cells: Array[Vector2i], label: String = "异域爆瓶", context: Dictionary = {}) -> Dictionary:
+	return RangerSurfaceElementCollector.collect(self, unit, cells, label, context, false)
 
 
 func prepare_ranger_blend(unit: BattleUnitState, blend: int, equipment_slot: String, catalyst: int = BattleSurfaceState.Element.NONE) -> bool:
@@ -2621,14 +2637,14 @@ func apply_base_surface_element(cell: Vector2i, element: int, source_context: Di
 			"\u70b9\u71c3",
 			{"environmental": true, "source_cell": source_context.get("source_cell", cell)}
 		)
+	var before_surface := _get_surface_effect_snapshot(cell)
 	var result: Dictionary = surface_state.apply_base_element(cell, element, battle_round)
 	var reactions: Array = result.get("reactions", []) as Array
-	for reaction_value in reactions:
-		var reaction_context := source_context.duplicate()
-		reaction_context["source_element"] = element
-		if not reaction_context.has("source_cell"):
-			reaction_context["source_cell"] = current_unit.cell if current_unit != null else cell
-		_resolve_surface_reaction(cell, int(reaction_value), reaction_context)
+	var reaction_context := source_context.duplicate()
+	reaction_context["source_element"] = element
+	if not reaction_context.has("source_cell"):
+		reaction_context["source_cell"] = current_unit.cell if current_unit != null else cell
+	_resolve_final_surface_changes(cell, before_surface, reaction_context)
 	state_changed.emit()
 	return int(reactions.back()) if not reactions.is_empty() else element
 
@@ -2641,13 +2657,40 @@ func apply_advanced_surface(
 	if map_data == null or not map_data.is_valid_cell(cell) \
 			or not BattleSurfaceState.ADVANCED_ELEMENTS.has(element):
 		return false
+	var before_surface := _get_surface_effect_snapshot(cell)
 	surface_state.create_advanced_surface(cell, element, battle_round)
 	var reaction_context := source_context.duplicate()
 	if not reaction_context.has("source_cell"):
 		reaction_context["source_cell"] = current_unit.cell if current_unit != null else cell
-	_resolve_surface_reaction(cell, element, reaction_context)
+	_resolve_final_surface_changes(cell, before_surface, reaction_context)
 	state_changed.emit()
 	return true
+
+
+func apply_surface_element(cell: Vector2i, element: int, source_context: Dictionary = {}) -> bool:
+	if BattleSurfaceState.ADVANCED_ELEMENTS.has(element):
+		return apply_advanced_surface(cell, element, source_context)
+	if BattleSurfaceState.BASE_ELEMENTS.has(element):
+		return apply_base_surface_element(cell, element, source_context) != BattleSurfaceState.Element.NONE
+	return false
+
+
+func _get_surface_effect_snapshot(cell: Vector2i) -> Dictionary:
+	return {
+		"ground": surface_state.get_ground_effect(cell),
+		"air": surface_state.get_air_effect(cell),
+	}
+
+
+func _resolve_final_surface_changes(cell: Vector2i, before: Dictionary, context: Dictionary) -> void:
+	var final_ground := surface_state.get_ground_effect(cell)
+	var final_air := surface_state.get_air_effect(cell)
+	if final_ground != int(before.get("ground", BattleSurfaceState.Element.NONE)) \
+			and final_ground != BattleSurfaceState.Element.NONE:
+		_resolve_surface_reaction(cell, final_ground, context)
+	if final_air != int(before.get("air", BattleSurfaceState.Element.NONE)) \
+			and final_air != BattleSurfaceState.Element.NONE:
+		_resolve_surface_reaction(cell, final_air, context)
 
 
 func submit_mage_discard_conversion(unit: BattleUnitState, cards: Array[CardData], surface_choices: Array[int]) -> bool:
@@ -2951,13 +2994,22 @@ func get_effective_attack_range_against(attacker: BattleUnitState, target: Battl
 
 
 func get_effective_attack_range_at_cell(attacker: BattleUnitState, target_cell: Vector2i, equipment_slot: String = "", target: BattleUnitState = null) -> int:
+	return _get_effective_attack_range_at_cell(attacker, target_cell, equipment_slot, target, false)
+
+
+func get_effective_targeting_range_at_cell(attacker: BattleUnitState, target_cell: Vector2i, equipment_slot: String = "", target: BattleUnitState = null) -> int:
+	return _get_effective_attack_range_at_cell(attacker, target_cell, equipment_slot, target, true)
+
+
+func _get_effective_attack_range_at_cell(attacker: BattleUnitState, target_cell: Vector2i, equipment_slot: String, target: BattleUnitState, range_only: bool) -> int:
 	if attacker == null:
 		return 0
-	var attack_range := attacker.get_attack_range(equipment_slot, {
+	var range_context := {
 		"controller": self,
 		"target": target,
 		"target_cell": target_cell,
-	})
+	}
+	var attack_range := attacker.get_attack_range_for_targeting(equipment_slot, range_context) if range_only else attacker.get_attack_range(equipment_slot, range_context)
 	var profile := attacker.build_strike_profile_object(equipment_slot)
 	if profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
 		if surface_state.is_ranged_range_capped(attacker.cell) \
@@ -3047,7 +3099,10 @@ func apply_object_damage(
 	label: String = "\u4f24\u5bb3",
 	metadata: Dictionary = {}
 ) -> int:
-	if target == null or not target.can_be_damaged() or amount <= 0:
+	if target == null:
+		return 0
+	notify_object_attacked(source, target, metadata)
+	if not target.can_be_damaged() or amount <= 0:
 		return 0
 	var before := target.current_health
 	target.current_health = maxi(0, target.current_health - amount)
@@ -3079,8 +3134,8 @@ func apply_object_damage(
 			-30,
 			"%s \u9500\u6bc1" % target.get_display_name()
 		)
-		if get_current_action_id() <= 0:
-			resolve_effect_queue()
+	if get_current_action_id() <= 0 and not resolution_runner.is_attack_scope_active():
+		resolve_effect_queue()
 	state_changed.emit()
 	return actual
 
@@ -3220,6 +3275,30 @@ func _sort_cells_stably(cells: Array[Vector2i]) -> void:
 	cells.sort_custom(func(left: Vector2i, right: Vector2i) -> bool:
 		return left.y < right.y or (left.y == right.y and left.x < right.x)
 	)
+
+
+func can_place_elemental_trap(owner: BattleUnitState, cell: Vector2i) -> bool:
+	return trap_controller.can_place_elemental_trap(owner, cell)
+
+
+func place_elemental_trap(owner: BattleUnitState, cell: Vector2i) -> BattleObjectState:
+	return trap_controller.place_elemental_trap(owner, cell)
+
+
+func get_active_trap_count(owner: BattleUnitState) -> int:
+	return trap_controller.get_active_trap_count(owner)
+
+
+func get_trap_limit(owner: BattleUnitState) -> int:
+	return trap_controller.get_trap_limit(owner)
+
+
+func notify_object_attacked(attacker: BattleUnitState, target: BattleObjectState, metadata: Dictionary = {}) -> void:
+	trap_controller.notify_object_attacked(attacker, target, metadata)
+
+
+func enqueue_after_current_attack(callback: Callable, args: Array = [], label: String = "") -> void:
+	resolution_runner.enqueue_after_current_effect_queue(callback, args, label)
 
 
 func _resolve_ranger_turn_end(unit: BattleUnitState) -> void:
@@ -3566,6 +3645,94 @@ func get_nearest_opponent(unit: BattleUnitState) -> BattleUnitState:
 	return nearest
 
 
+func get_hostile_target_candidates(unit: BattleUnitState) -> Array:
+	var candidates: Array = []
+	if unit == null:
+		return candidates
+	for other in get_opposing_units(unit):
+		candidates.append(other)
+	for battle_object in battle_objects:
+		if battle_object != null and battle_object.is_trap and battle_object.is_targetable() \
+				and battle_object.owner_faction != unit.faction:
+			candidates.append(battle_object)
+	return candidates
+
+
+func get_highest_threat_targets(candidates: Array) -> Array:
+	var highest := -1
+	for candidate in candidates:
+		var threat: int = candidate.get_threat_level() if candidate != null and candidate.has_method("get_threat_level") else 0
+		highest = maxi(highest, threat)
+	var result: Array = []
+	for candidate in candidates:
+		var threat: int = candidate.get_threat_level() if candidate != null and candidate.has_method("get_threat_level") else 0
+		if threat == highest:
+			result.append(candidate)
+	return result
+
+
+func get_nearest_hostile_target(unit: BattleUnitState):
+	var nearest = null
+	var nearest_distance := INF
+	for candidate in get_highest_threat_targets(get_hostile_target_candidates(unit)):
+		var distance := map_data.get_distance(unit.cell, candidate.cell)
+		if distance < nearest_distance:
+			nearest = candidate
+			nearest_distance = distance
+	return nearest
+
+
+func get_nearest_legal_hostile_attack_target(unit: BattleUnitState):
+	var legal: Array = []
+	for candidate in get_hostile_target_candidates(unit):
+		var basic_legal := can_basic_attack_target(unit, candidate)
+		var card_legal := candidate is BattleUnitState \
+				and find_playable_card_against(unit, candidate as BattleUnitState) != null
+		if basic_legal or card_legal:
+			legal.append(candidate)
+	if legal.is_empty():
+		return null
+	var nearest = null
+	var nearest_distance := INF
+	for candidate in get_highest_threat_targets(legal):
+		var distance := map_data.get_distance(unit.cell, candidate.cell)
+		if distance < nearest_distance:
+			nearest = candidate
+			nearest_distance = distance
+	return nearest
+
+
+func can_basic_attack_target(attacker: BattleUnitState, target) -> bool:
+	if attacker == null or target == null or not attacker.is_alive():
+		return false
+	var target_cell: Vector2i
+	if target is BattleUnitState:
+		if not target.is_alive() or (attacker.faction != target.faction and is_unit_concealed(target)):
+			return false
+		target_cell = target.cell
+		if not attacker.can_use_attack_mode("", {"controller": self, "target": target}):
+			return false
+		if attacker.get_range_distance_to(target, {"controller": self, "equipment_slot": ""}) > get_effective_attack_range_against(attacker, target):
+			return false
+		var unit_profile := attacker.build_strike_profile_object()
+		return unit_profile.primary_range_type != EquipmentData.WeaponRangeType.RANGED \
+			or targeting.has_line_of_sight_between_units(attacker, target)
+	elif target is BattleObjectState:
+		if not target.is_targetable() or not target.can_be_damaged():
+			return false
+		target_cell = target.cell
+	else:
+		return false
+	if not attacker.can_use_attack_mode("", {"controller": self, "target_object": target}):
+		return false
+	if map_data.get_distance(attacker.cell, target_cell) > get_effective_attack_range_at_cell(attacker, target_cell):
+		return false
+	var profile := attacker.build_strike_profile_object()
+	if profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
+		return targeting.has_line_of_sight(attacker.cell, target_cell)
+	return true
+
+
 func find_playable_card_against(user: BattleUnitState, target: BattleUnitState) -> CardData:
 	if user == null or target == null:
 		return null
@@ -3633,7 +3800,8 @@ func perform_object_strike_with_modifier(
 	label: String = "\u6253\u51fb",
 	equipment_slot: String = ""
 ) -> int:
-	return strike_resolver.perform_object_strike_with_modifier(
+	resolution_runner.begin_attack_scope()
+	var result := strike_resolver.perform_object_strike_with_modifier(
 		attacker,
 		target,
 		source,
@@ -3641,6 +3809,8 @@ func perform_object_strike_with_modifier(
 		label,
 		equipment_slot
 	)
+	resolution_runner.end_attack_scope()
+	return result
 
 
 func get_cell_detail_text(cell: Vector2i) -> String:
@@ -3830,6 +4000,12 @@ func _lock_enemy_intent(unit: BattleUnitState) -> void:
 
 
 func _targets_are_valid(user: BattleUnitState, card: CardData, targets: Array, write_log: bool = true, equipment_slot: String = "", play_mode: int = CardEnums.CardPlayMode.NORMAL, extra_context: Dictionary = {}) -> bool:
+	equipment_slot = card.resolve_equipment_slot({
+		"controller": self,
+		"user": user,
+		"card": card,
+		"equipment_slot": equipment_slot,
+	})
 	var target_type := _get_card_target_type(user, card, equipment_slot, play_mode, extra_context)
 	if target_type == CardEnums.TargetType.NONE:
 		return _card_effect_targets_are_valid(user, card, targets, write_log, equipment_slot, play_mode, extra_context)

@@ -21,6 +21,9 @@ const RANGER_CARD_PATHS := [
 	"res://resources/cards/ranger_final_hunt_declaration.tres",
 	"res://resources/cards/ranger_no_place_to_hunt.tres",
 	"res://resources/cards/ranger_hunter_three_acts.tres",
+	"res://resources/cards/ranger_farthest_arrow.tres",
+	"res://resources/cards/ranger_surface_pursuit.tres",
+	"res://resources/cards/ranger_stealth_preparation.tres",
 ]
 
 var _exit_code := 0

@@ -5,16 +5,19 @@ signal lock_changed(locked: bool)
 
 var _preview_model: Dictionary = {}
 var _locked_model: Dictionary = {}
+var _showing_locked := false
 
 @onready var art_rect: TextureRect = %DetailArt
 @onready var title_label: Label = %DetailTitle
 @onready var subtitle_label: Label = %DetailSubtitle
 @onready var body_label: RichTextLabel = %DetailBody
 @onready var close_button: Button = %DetailCloseButton
+@onready var resolution_rules_button: Button = %ResolutionRulesButton
 
 
 func _ready() -> void:
 	close_button.pressed.connect(clear_lock)
+	resolution_rules_button.pressed.connect(toggle_resolution_rules)
 	visible = false
 
 
@@ -29,6 +32,8 @@ func preview_card(card: CardData, context: Dictionary = {}) -> void:
 		"subtitle": card.get_druid_orientation_label(context) if card.is_druid_dual_card else "卡牌",
 		"art": card.artwork,
 		"body": RulesTextFormatter.format_card(card, context),
+		"resolution_rules": card.get_resolution_rules_for_context(context),
+		"rules_expanded": false,
 	})
 
 
@@ -112,7 +117,7 @@ func lock_current() -> void:
 		return
 	_locked_model = _preview_model.duplicate()
 	lock_changed.emit(true)
-	_render(_locked_model)
+	_render_locked()
 
 
 func clear_preview() -> void:
@@ -120,7 +125,7 @@ func clear_preview() -> void:
 	if _locked_model.is_empty():
 		visible = false
 	else:
-		_render(_locked_model)
+		_render_locked()
 
 
 func clear_lock() -> void:
@@ -129,7 +134,7 @@ func clear_lock() -> void:
 	if _preview_model.is_empty():
 		visible = false
 	else:
-		_render(_preview_model)
+		_render_preview()
 
 
 func is_locked() -> bool:
@@ -140,9 +145,35 @@ func get_display_title() -> String:
 	return title_label.text
 
 
+func get_display_body() -> String:
+	return body_label.text
+
+
+func has_resolution_rules_toggle() -> bool:
+	return resolution_rules_button.visible
+
+
+func toggle_resolution_rules() -> void:
+	var active_model := _locked_model if _showing_locked else _preview_model
+	if active_model.is_empty() or str(active_model.get("resolution_rules", "")).strip_edges().is_empty():
+		return
+	active_model["rules_expanded"] = not bool(active_model.get("rules_expanded", false))
+	_render(active_model)
+
+
 func _show_preview(model: Dictionary) -> void:
 	_preview_model = model
-	_render(model)
+	_render_preview()
+
+
+func _render_preview() -> void:
+	_showing_locked = false
+	_render(_preview_model)
+
+
+func _render_locked() -> void:
+	_showing_locked = true
+	_render(_locked_model)
 
 
 func _render(model: Dictionary) -> void:
@@ -154,7 +185,14 @@ func _render(model: Dictionary) -> void:
 	subtitle_label.text = str(model.get("subtitle", ""))
 	art_rect.texture = model.get("art") as Texture2D
 	art_rect.visible = art_rect.texture != null
+	var rules := str(model.get("resolution_rules", "")).strip_edges()
+	var rules_expanded := bool(model.get("rules_expanded", false))
+	resolution_rules_button.visible = not rules.is_empty()
+	resolution_rules_button.text = "收起详细裁定" if rules_expanded else "详细裁定"
+	resolution_rules_button.tooltip_text = resolution_rules_button.text
 	body_label.text = str(model.get("body", ""))
+	if rules_expanded:
+		body_label.text += "\n\n详细裁定\n" + rules
 
 
 func _build_enemy_intent(unit: BattleUnitState) -> String:

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_stealth_preparation_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "潜踪整备"
+description = "选择并弃置至多2张其他手牌，然后抽等量牌。进入潜行。你的下回合开始时，获得1 AP。"
+card_text = "选择并弃置至多2张其他手牌，然后抽等量牌。进入潜行。你的下回合开始时，获得1 AP。"
+resolution_rules = "选择取消不会支付 AP、弃牌、抽牌或进入潜行。确认后重新检查所选牌均为至多两张仍在手中的其他牌；依次弃置并触发弃牌事件，再抽取实际弃置数量并触发抽牌事件。每次成功结算独立累积 1 层“下个自己回合 AP”；该状态在自己的回合 AP 补充后生效，与潜行是否随后被破除无关。"
+artwork = ExtResource("2_art")
+rarity = 0
+card_class = 3
+card_type = 1
+target_type = 4
+ap_cost = 1
+effect = ExtResource("3_effect")

@@ -4,4 +4,4 @@
 
 [resource]
 script = ExtResource("1_effect")
-pull_distance = 2
+pull_distance = 1

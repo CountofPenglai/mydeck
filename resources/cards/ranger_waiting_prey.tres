@@ -5,11 +5,13 @@
 [resource]
 script = ExtResource("1")
 card_name = "守候猎物"
-description = "附魔：你进入潜行并选择近战或远程组件。你的下回合开始前，首名移动结束后位于所选武器范围内的敌人自动受到 1 次对应武器打击。触发后、期限届满时或你提前离开潜行时，将本牌移入弃牌堆。"
+description = "选择 1 个公开的敌人意图。使其 AP 预算 -1，然后获得实际减少的 AP。"
+card_text = "选择 1 个公开的敌人意图。使其 AP 预算 -1，然后获得实际减少的 AP。"
+resolution_rules = "可选择任意敌人的主意图或备用意图；已锁定、预算为 0 或不可削减的意图不能选择。选择取消或结算前计划替换时不支付 AP。"
 artwork = ExtResource("2")
-rarity = 1
+rarity = 0
 card_class = 3
-card_type = 2
-target_type = 4
+card_type = 1
+target_type = 0
 ap_cost = 1
 effect = ExtResource("3")

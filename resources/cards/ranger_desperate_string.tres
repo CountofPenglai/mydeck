@@ -9,6 +9,8 @@
 script = ExtResource("1_card")
 card_name = "绝处续弦"
 description = "你进行 1 次武器打击，然后抽 3 张牌；若抽牌后你有其他手牌，结算完成后选择并弃置 1 张。\n\n连击：本牌是唯一手牌。你以 0 AP 结算上述效果。"
+card_text = "连击：本牌是唯一手牌。进行 1 次武器打击，然后抽 3 张牌；若抽牌后你有其他手牌，结算完成后选择并弃置 1 张。"
+resolution_rules = "普通模式支付 1 AP。连击模式要求本牌为唯一手牌；两种模式均按相同顺序完成打击、抽牌与随后弃牌。"
 artwork = ExtResource("2_art")
 rarity = 1
 card_class = 3

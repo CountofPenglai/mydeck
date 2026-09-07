@@ -6,14 +6,14 @@
 
 [resource]
 script = ExtResource("1_card")
-card_name = "异域取样"
-description = "武器打击。匕首首次造成正数生命伤害后，按通用规则采集目标格，再额外采集游侠当前格；弩首次造成正数生命伤害后采集目标格一次。"
+card_name = "异域诱饵"
+description = "在范围 3 内的 1 个元素地表空格放置 1 个【元素陷阱】。"
+card_text = "在范围 3 内的 1 个元素地表空格放置 1 个【元素陷阱】。\n\n【元素陷阱】具有 1 耐久，仇恨等级为 1。其受到攻击后，在该攻击结算完成后【爆炸】。\n\n【爆炸】：将所在格的元素地表扩散至所有相邻合法格，然后摧毁此陷阱。"
+resolution_rules = "目标必须是范围 3 内、已存在元素地表且没有单位或战场对象的合法格。卡牌、武器或范围攻击命中陷阱后，攻击结算完成后爆炸；环境和地表伤害不触发。爆炸读取结算时的当前地表；无地表仍摧毁。达到上限仍可放置，界面提示“超限：放置后爆炸”；仅新陷阱立即爆炸，旧陷阱保留。"
 artwork = ExtResource("2_art")
 rarity = 1
 card_class = 3
-card_type = 0
-card_tags = 1
-damage_type = 3
-target_type = 1
-ap_cost = 1
+card_type = 1
+target_type = 3
+ap_cost = 2
 effect = ExtResource("3_effect")

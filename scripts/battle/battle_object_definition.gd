@@ -7,6 +7,7 @@ enum Kind {
 	WIND_TOTEM,
 	UNSTABLE_PILLAR,
 	RUBBLE,
+	ELEMENTAL_TRAP,
 }
 
 @export var kind: int = Kind.EXPLOSIVE_BARREL
@@ -57,6 +58,13 @@ static func create_builtin(object_kind: int) -> BattleObjectDefinition:
 			definition.blocks_line_of_sight = true
 			definition.persistent_element = BattleSurfaceState.Element.EARTH
 			definition.map_color = Color(0.38, 0.36, 0.31)
+		Kind.ELEMENTAL_TRAP:
+			definition.display_name = "元素陷阱"
+			definition.description = "受到攻击后，在该攻击完整结算后爆炸，将当前元素地表扩散至相邻合法格。"
+			definition.max_health = 1
+			definition.blocks_movement = false
+			definition.blocks_line_of_sight = false
+			definition.map_color = Color(0.88, 0.68, 0.20)
 		_:
 			definition.display_name = "\u6218\u573a\u5bf9\u8c61"
 	return definition

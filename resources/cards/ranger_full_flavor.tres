@@ -6,8 +6,10 @@
 script = ExtResource("1")
 card_name = "百味齐备"
 description = "抽 2 张；元素库存至少有 2 种时额外抽 1 张，四种齐全时再额外抽 1 张。"
+card_text = "抽 2 张牌。若你的元素库存中有至少 2 种不同的基础元素，额外抽 1 张；若四种基础元素齐全，再额外抽 1 张。"
+resolution_rules = "结算时一次性检查元素库存中不同基础元素的种类数，不消耗元素。"
 artwork = ExtResource("2")
-rarity = 1
+rarity = 0
 card_class = 3
 card_type = 1
 target_type = 4

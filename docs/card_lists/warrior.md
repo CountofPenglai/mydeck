@@ -40,7 +40,7 @@
 | 坚守     | 技能  |   2 | 无需目标       | 余势             | 你磨 3 张牌，然后从弃牌堆选择至多 3 张牌，按所选顺序置于牌库顶。<br><br>余势：无条件。改为放逐弃牌堆中的所有剩余牌，并获得等同于实际放逐牌数 x2 的护甲。                                                           | [stand_firm.tres](../../resources/cards/stand_firm.tres)                               |
 | 披坚执锐   | 附魔  |   1 | 自身         | —              | 附魔：每回合第一次切换武器后获得 3 护甲。自身行动阶段可将本牌作为 0 AP 独立行动主动使用：先移入弃牌堆，再切换一次武器。                                                                                | [armed_and_armored.tres](../../resources/cards/armed_and_armored.tres)                 |
 | 蓄势/回旋斩 | 攻击  |   3 | 自身         | 余势             | 你获得 3 点势。<br><br>余势：支付 2 AP。改为选择 1 种武器，并以该武器对其攻击范围 +1 内每名敌人与每个战场对象各进行 1 次武器打击；每次打击获得等同于你当前势点数 x2 的伤害加值。                                         | [gather_momentum_whirlwind.tres](../../resources/cards/gather_momentum_whirlwind.tres) |
-| 藏锋再起   | 攻击  |   2 | 单体；武器射程    | 余势、连击、共享：战士/游侠 | 你进行 1 次武器打击。<br><br>连击：弃置 1 张手牌。你以 0 AP 进行 1 次武器打击。<br><br>余势：从弃牌堆放逐 1 张牌。你以 0 AP 进行 1 次获得 +2 伤害加值的武器打击。                                        | [hidden_blade_again.tres](../../resources/cards/hidden_blade_again.tres)               |
+| 藏锋再起   | 攻击  |   2 | 单体；武器射程    | 余势、连击、共享：战士/游侠 | 连击：弃置 1 张手牌。进行 1 次武器打击。余势：从弃牌堆放逐 1 张牌。该次武器打击获得 +2 伤害加值。                                        | [hidden_blade_again.tres](../../resources/cards/hidden_blade_again.tres)               |
 | 野蛮斗殴   | 攻击  |   2 | 全体         | 余势             | 你对武器范围内所有敌人各进行 1 次武器打击。<br><br>余势：支付 2 AP。将目标范围改为武器范围 +2，然后对范围内所有敌人各进行 1 次武器打击。<br><br>放逐区：每场战斗限 1 次。你可以弃置所有手牌，将本牌移回你的弃牌堆，并使你打出的下一张牌获得 +2 伤害加值。 | [barbaric_brawl.tres](../../resources/cards/barbaric_brawl.tres)                       |
 
 ## 史诗

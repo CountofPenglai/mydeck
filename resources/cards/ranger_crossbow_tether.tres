@@ -7,15 +7,15 @@
 [resource]
 script = ExtResource("1_card")
 card_name = "弩索牵引"
-description = "使用弩打击。目标存活时沿朝向游侠的六边直线强制移动至多 2 格；沿途触发地表，冰面立即终止。移动结束后采集目标最终所在格一次。"
+description = "使用远程配件进行 1 次武器打击。目标存活时，将其朝你强制移动至多 1 格，然后采集目标最终所在格中的元素。"
+card_text = "使用远程配件进行 1 次武器打击。目标存活时，将其朝你强制移动至多 1 格，然后采集目标最终所在格中的元素。"
+resolution_rules = "使用远程配件的实际、目标相关射程。武器打击及其命中后续结算完成后，若目标存活，强制移动至多 1 格；随后采集最终格。"
 artwork = ExtResource("2_art")
-rarity = 1
+rarity = 0
 card_class = 3
 card_type = 0
 card_tags = 1
 damage_type = 3
 target_type = 1
 ap_cost = 2
-override_range = true
-card_range = 3
 effect = ExtResource("3_effect")

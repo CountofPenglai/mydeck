@@ -55,6 +55,8 @@ func _resolve_weapon_strike(
 	if controller == null or user == null or target == null or not user.is_alive() or not target.is_alive():
 		return
 	var resolved_options := options.duplicate()
+	var after_effect: Callable = resolved_options.get("after_strike_effect", Callable()) as Callable
+	resolved_options.erase("after_strike_effect")
 	if _is_dagger_slot(user, equipment_slot):
 		var status: StatusEffect = user.get_status(NEXT_DAGGER_STATUS_ID)
 		if status != null and status.stacks > 0:
@@ -65,7 +67,7 @@ func _resolve_weapon_strike(
 			)
 			status.stacks = 0
 			user.remove_expired_statuses()
-	controller.perform_strike_with_options(
+	controller.perform_unit_strike_with_options_and_after_effects(
 		user,
 		target,
 		card,
@@ -73,7 +75,8 @@ func _resolve_weapon_strike(
 		damage_multiplier,
 		label,
 		equipment_slot,
-		resolved_options
+		resolved_options,
+		after_effect
 	)
 
 

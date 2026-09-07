@@ -18,6 +18,8 @@ var effect_limit_reached: bool = false
 var next_action_id: int = 1
 var current_action_id: int = 0
 var current_action_frame: BattleActionFrame
+var after_current_effect_queue: Array = []
+var attack_after_scopes: Array = []
 
 
 func setup(new_controller: BattleController) -> void:
@@ -37,6 +39,8 @@ func reset() -> void:
 	next_action_id = 1
 	current_action_id = 0
 	current_action_frame = null
+	after_current_effect_queue.clear()
+	attack_after_scopes.clear()
 
 
 func get_current_action_id() -> int:
@@ -57,6 +61,55 @@ func enqueue_trigger(callback: Callable, args: Array = [], priority: int = 0, la
 	_enqueue(callback, args, priority, label, context)
 
 
+func enqueue_after_current_effect_queue(callback: Callable, args: Array = [], label: String = "") -> void:
+	if not callback.is_valid():
+		return
+	if not attack_after_scopes.is_empty():
+		(attack_after_scopes.back() as Array).append(BattleResolutionEntry.create(callback, args, 0, queue_sequence, label, null))
+		queue_sequence += 1
+		return
+	if not action_active:
+		after_current_effect_queue.append(BattleResolutionEntry.create(callback, args, 0, queue_sequence, label, null))
+		queue_sequence += 1
+		return
+	after_current_effect_queue.append(BattleResolutionEntry.create(callback, args, 0, queue_sequence, label, null))
+	queue_sequence += 1
+
+
+func begin_attack_scope() -> void:
+	_push_effect_queue_scope()
+	attack_after_scopes.append([])
+
+
+func is_attack_scope_active() -> bool:
+	return not attack_after_scopes.is_empty()
+
+
+func end_attack_scope() -> void:
+	if attack_after_scopes.is_empty():
+		return
+	var callbacks: Array = attack_after_scopes.back() as Array
+	_drain_current_effect_queue()
+	while not callbacks.is_empty():
+		var pending := callbacks.duplicate()
+		callbacks.clear()
+		for entry in pending:
+			_execute_effect_queue_entry(entry as BattleResolutionEntry)
+		_drain_current_effect_queue()
+	attack_after_scopes.pop_back()
+	_pop_effect_queue_scope()
+	if attack_after_scopes.is_empty() and not is_draining_actions and not action_queue.is_empty():
+		_drain_action_queue()
+
+
+# Bottle damage must settle descendants before payload placement, while trap
+# after-attack callbacks remain deferred until the enclosing scope is closed.
+func drain_active_attack_effects() -> void:
+	if attack_after_scopes.is_empty():
+		return
+	_drain_current_effect_queue()
+
+
 func push_action_frame(frame: BattleActionFrame) -> bool:
 	if frame == null or not frame.callback.is_valid():
 		return false
@@ -66,17 +119,18 @@ func push_action_frame(frame: BattleActionFrame) -> bool:
 		return false
 
 	action_queue.append(frame)
-	if not is_draining_actions and queue_depth <= 0:
+	if not is_draining_actions and queue_depth <= 0 and not is_attack_scope_active():
 		_drain_action_queue()
 	return true
 
 
 func resolve_effect_queue() -> void:
-	if queue_depth > 0:
+	if queue_depth > 0 or is_attack_scope_active():
 		return
 	if queue_scopes.is_empty():
 		queue_scopes.append([])
 	_drain_current_effect_queue()
+	_drain_after_current_effect_queue()
 	if not is_draining_actions and not action_queue.is_empty():
 		_drain_action_queue()
 
@@ -155,6 +209,7 @@ func _resolve_action_frame(frame: BattleActionFrame) -> void:
 		return
 
 	current_action_frame = frame
+	after_current_effect_queue.clear()
 	_push_effect_queue_scope()
 	enqueue_effect(
 		frame.callback,
@@ -164,15 +219,27 @@ func _resolve_action_frame(frame: BattleActionFrame) -> void:
 		frame.context
 	)
 	_drain_current_effect_queue()
+	_drain_after_current_effect_queue()
 	if frame.after_callback.is_valid():
 		frame.after_callback.callv(frame.after_args)
 		_drain_current_effect_queue()
+		_drain_after_current_effect_queue()
 	if controller != null:
 		controller._finalize_ap_action(frame, current_action_id)
 		_drain_current_effect_queue()
+		_drain_after_current_effect_queue()
 		controller._on_action_resolution_completed(current_action_id)
 	_pop_effect_queue_scope()
 	current_action_frame = null
+
+
+func _drain_after_current_effect_queue() -> void:
+	while not after_current_effect_queue.is_empty():
+		var pending := after_current_effect_queue.duplicate()
+		after_current_effect_queue.clear()
+		for entry in pending:
+			_execute_effect_queue_entry(entry as BattleResolutionEntry)
+		_drain_current_effect_queue()
 
 
 func _drain_current_effect_queue() -> void:

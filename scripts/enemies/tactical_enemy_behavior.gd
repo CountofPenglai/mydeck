@@ -74,7 +74,8 @@ func _execute_action(controller: BattleController, unit: BattleUnitState, action
 			unit.enemy_state.remember_seen_card(action.card)
 			return controller.play_card(unit, action.card, action.targets)
 		EnemyIntentAction.Kind.BASIC_ATTACK:
-			return controller.basic_attack(unit, action.targets[0] as BattleUnitState)
+			var target = action.targets[0]
+			return controller.basic_attack(unit, target) if target is BattleUnitState else controller.basic_attack_object(unit, target as BattleObjectState)
 		EnemyIntentAction.Kind.MOVE:
 			return controller.move_unit_to_cell(unit, action.cell)
 	return false

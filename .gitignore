@@ -4,3 +4,5 @@
 /android/
 /non_project_docs/
 /*.log
+.DS_Store
+.obsidian/

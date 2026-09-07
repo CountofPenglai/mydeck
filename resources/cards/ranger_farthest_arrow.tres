@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_farthest_arrow_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_farthest_arrow_combo_condition.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+card_name = "尽程一矢"
+description = "连击：目标与你的距离等于远程配件对该目标的实际射程。使用远程配件进行1次获得+X伤害加值的武器打击，X等于你与目标的距离-1，最高为+3。"
+card_text = "连击：目标与你的距离等于远程配件对该目标的实际射程。使用远程配件进行1次获得+X伤害加值的武器打击，X等于你与目标的距离-1，最高为+3。"
+resolution_rules = "使用远程配件的实际、目标相关射程。普通模式支付 2 AP；连击模式必须选择位于该目标实际最远射程的目标且免费。伤害加值为距离减 1，最高 +3。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3")
+has_combo = true
+combo_conditions = [ExtResource("4")]

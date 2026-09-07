@@ -10,6 +10,8 @@
 script = ExtResource("1_card_data")
 card_name = "藏锋再起"
 description = "你进行 1 次武器打击。\n\n连击：弃置 1 张手牌。你以 0 AP 进行 1 次武器打击。\n\n余势：从弃牌堆放逐 1 张牌。你以 0 AP 进行 1 次获得 +2 伤害加值的武器打击。"
+card_text = "连击：弃置 1 张手牌。进行 1 次武器打击。余势：从弃牌堆放逐 1 张牌。该次武器打击获得 +2 伤害加值。"
+resolution_rules = "普通与连击模式均进行一次武器打击；连击须弃置 1 张手牌。余势仍须从弃牌堆放逐 1 张牌，并仅在余势模式使该次打击获得 +2 伤害加值。"
 artwork = ExtResource("2_scroll")
 rarity = 1
 card_class = 1

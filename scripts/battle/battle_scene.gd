@@ -64,6 +64,11 @@ var _curse_choice_list: VBoxContainer
 var _curse_choice_card: CardData
 var _curse_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _curse_choice_extra_context: Dictionary = {}
+var _intent_choice_popup: PopupPanel
+var _intent_choice_list: VBoxContainer
+var _intent_choice_card: CardData
+var _intent_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
+var _intent_choice_extra_context: Dictionary = {}
 var _manifest_popup: PopupPanel
 var _manifest_list: VBoxContainer
 var _manifest_selected: Array[CardData] = []
@@ -107,6 +112,7 @@ func _ready() -> void:
 	_create_ranger_blend_popup()
 	_create_curse_popup()
 	_create_curse_choice_popup()
+	_create_intent_choice_popup()
 	_create_manifest_popup()
 	_create_return_to_map_button()
 	var startup_scenario := scenario
@@ -560,18 +566,7 @@ func _select_discard_card(card: CardData) -> void:
 		_refresh()
 		return
 
-	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card, "play_mode": play_mode}) and _needs_weapon_choice(controller.current_unit):
-		_show_weapon_choice(InputMode.CARD_TARGET, card, play_mode)
-		_refresh()
-		return
-
-	if _is_direct_card_target(card, play_mode):
-		_play_direct_card(card, play_mode)
-		_refresh()
-		return
-
-	_begin_card_targeting(card, play_mode)
-	_refresh()
+	_continue_card_with_extra_context(card, play_mode)
 
 
 func _activate_discard_action(card: CardData) -> void:
@@ -644,18 +639,7 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 		_refresh()
 		return
 
-	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card, "play_mode": play_mode}) and _needs_weapon_choice(controller.current_unit):
-		_show_weapon_choice(InputMode.CARD_TARGET, card, play_mode)
-		_refresh()
-		return
-
-	if _is_direct_card_target(card, play_mode):
-		_play_direct_card(card, play_mode)
-		_refresh()
-		return
-
-	_begin_card_targeting(card, play_mode)
-	_refresh()
+	_continue_card_with_extra_context(card, play_mode)
 
 
 func _begin_card_targeting(card: CardData, play_mode: int = CardEnums.CardPlayMode.NORMAL) -> void:
@@ -664,6 +648,9 @@ func _begin_card_targeting(card: CardData, play_mode: int = CardEnums.CardPlayMo
 	input_mode = InputMode.CARD_TARGET
 	var target_type := _get_card_target_type(card, play_mode)
 	_append_log("选择%s：%s，请点击%s。" % [CardEnums.play_mode_label(play_mode), card.card_name, "位置" if target_type == CardEnums.TargetType.AREA else "目标"])
+	if card.effect is RangerExoticSamplingCardEffect and controller.current_unit != null \
+			and controller.get_active_trap_count(controller.current_unit) >= controller.get_trap_limit(controller.current_unit):
+		_append_log("超限：放置后爆炸")
 
 
 func _clear_input() -> void:
@@ -707,6 +694,8 @@ func _hide_action_popups() -> void:
 		_ordered_discard_popup.hide()
 	if _curse_choice_popup != null:
 		_curse_choice_popup.hide()
+	if _intent_choice_popup != null:
+		_intent_choice_popup.hide()
 
 
 func _refresh() -> void:
@@ -1162,6 +1151,8 @@ func _create_ranger_blend_popup() -> void:
 	_ranger_blend_popup = PopupPanel.new()
 	_ranger_blend_popup.title = "调配特调"
 	_ranger_blend_popup.exclusive = true
+	_ranger_blend_popup.close_requested.connect(_cancel_ranger_recipe_choice)
+	_ranger_blend_popup.popup_hide.connect(_on_ranger_blend_popup_hidden)
 	add_child(_ranger_blend_popup)
 
 	var margin := MarginContainer.new()
@@ -1171,15 +1162,19 @@ func _create_ranger_blend_popup() -> void:
 	margin.add_theme_constant_override("margin_bottom", 12)
 	_ranger_blend_popup.add_child(margin)
 
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(380, 360)
+	margin.add_child(scroll)
 	_ranger_blend_list = VBoxContainer.new()
 	_ranger_blend_list.custom_minimum_size = Vector2(360, 0)
 	_ranger_blend_list.add_theme_constant_override("separation", 8)
-	margin.add_child(_ranger_blend_list)
+	scroll.add_child(_ranger_blend_list)
 
 
 func _show_ranger_blend_popup(unit: BattleUnitState) -> void:
 	if unit == null or unit != controller.current_unit or not unit.is_ranger():
 		return
+	_ranger_blend_popup.title = "调配特调"
 	_clear_children(_ranger_blend_list)
 	var title := Label.new()
 	title.text = "选择配方与装填武器"
@@ -1219,16 +1214,38 @@ func _on_ranger_blend_selected(unit: BattleUnitState, blend: int, equipment_slot
 func _show_ranger_card_recipe_popup(card: CardData, play_mode: int, context: Dictionary) -> void:
 	_ranger_recipe_card = card
 	_ranger_recipe_play_mode = play_mode
+	_ranger_blend_popup.title = "%s：选择载荷" % card.card_name
 	_clear_children(_ranger_blend_list)
 	var title := Label.new()
-	title.text = "%s：选择配方与催化剂" % card.card_name
+	title.text = "%s：选择载荷" % card.card_name
 	_ranger_blend_list.add_child(title)
 	for option in card.get_ranger_recipe_options(context):
 		var button := Button.new()
 		button.text = str(option.get("label", "配方"))
 		button.pressed.connect(_on_ranger_card_recipe_selected.bind(option))
 		_ranger_blend_list.add_child(button)
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.pressed.connect(_cancel_ranger_recipe_choice)
+	_ranger_blend_list.add_child(cancel)
 	_ranger_blend_popup.popup_centered()
+
+
+func _cancel_ranger_recipe_choice() -> void:
+	_ranger_recipe_card = null
+	_ranger_recipe_play_mode = CardEnums.CardPlayMode.NORMAL
+	_ranger_blend_popup.hide()
+	_clear_input()
+	_refresh()
+
+
+func _on_ranger_blend_popup_hidden() -> void:
+	if _ranger_recipe_card == null:
+		return
+	_ranger_recipe_card = null
+	_ranger_recipe_play_mode = CardEnums.CardPlayMode.NORMAL
+	_clear_input()
+	_refresh()
 
 
 func _on_ranger_card_recipe_selected(option: Dictionary) -> void:
@@ -1239,12 +1256,7 @@ func _on_ranger_card_recipe_selected(option: Dictionary) -> void:
 	_ranger_blend_popup.hide()
 	if card == null:
 		return
-	pending_extra_context = option.duplicate(true)
-	if _is_direct_card_target(card, play_mode):
-		_play_direct_card(card, play_mode, pending_extra_context)
-	else:
-		_begin_card_targeting(card, play_mode)
-	_refresh()
+	_continue_card_with_extra_context(card, play_mode, option.duplicate(true))
 
 
 func _show_ranger_enemy_hand_choice(target: BattleUnitState) -> void:
@@ -1571,8 +1583,14 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 		_refresh()
 		return
 
-	if card.requires_weapon_choice({"controller": controller, "user": controller.current_unit, "card": card, "play_mode": play_mode}) and _needs_weapon_choice(controller.current_unit):
+	var choice_context := _build_card_choice_context(card, play_mode, extra_context)
+	if card.requires_weapon_choice(choice_context) and _needs_weapon_choice(controller.current_unit) \
+			and str(choice_context.get("equipment_slot", "")).is_empty():
 		_show_weapon_choice(InputMode.CARD_TARGET, card, play_mode, extra_context)
+		_refresh()
+		return
+	if card.requires_enemy_intent_choice(choice_context) and not extra_context.has("enemy_intent_choice"):
+		_show_intent_choice(card, play_mode, extra_context)
 		_refresh()
 		return
 
@@ -1582,6 +1600,7 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 		return
 
 	pending_extra_context = extra_context.duplicate()
+	pending_equipment_slot = str(choice_context.get("equipment_slot", ""))
 	_begin_card_targeting(card, play_mode)
 	_refresh()
 
@@ -1592,8 +1611,74 @@ func _build_card_choice_context(card: CardData, play_mode: int, extra_context: D
 	context["user"] = controller.current_unit
 	context["card"] = card
 	context["play_mode"] = play_mode
-	context["equipment_slot"] = pending_equipment_slot
+	context["equipment_slot"] = card.resolve_equipment_slot({
+		"controller": controller,
+		"user": controller.current_unit,
+		"card": card,
+		"equipment_slot": str(extra_context.get("equipment_slot", pending_equipment_slot)),
+	})
 	return context
+
+
+func _create_intent_choice_popup() -> void:
+	_intent_choice_popup = PopupPanel.new()
+	_intent_choice_popup.title = "选择敌人意图"
+	_intent_choice_popup.exclusive = true
+	_intent_choice_popup.popup_hide.connect(_on_intent_choice_popup_hidden)
+	add_child(_intent_choice_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_intent_choice_popup.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(420, 160)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(scroll)
+	_intent_choice_list = VBoxContainer.new()
+	_intent_choice_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_intent_choice_list)
+
+
+func _show_intent_choice(card: CardData, play_mode: int, extra_context: Dictionary) -> void:
+	_intent_choice_card = card
+	_intent_choice_play_mode = play_mode
+	_intent_choice_extra_context = extra_context.duplicate()
+	_clear_children(_intent_choice_list)
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var title := Label.new()
+	title.text = card.get_enemy_intent_choice_prompt(context)
+	_intent_choice_list.add_child(title)
+	for choice in card.get_enemy_intent_choice_options(context):
+		var button := Button.new()
+		button.text = str(choice.get("label", "意图"))
+		button.pressed.connect(_on_intent_choice_selected.bind(choice))
+		_intent_choice_list.add_child(button)
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.pressed.connect(_intent_choice_popup.hide)
+	_intent_choice_list.add_child(cancel)
+	_intent_choice_popup.popup_centered()
+
+
+func _on_intent_choice_selected(choice: Dictionary) -> void:
+	var card := _intent_choice_card
+	var mode := _intent_choice_play_mode
+	var context := _intent_choice_extra_context.duplicate()
+	context["enemy_intent_choice"] = choice
+	context["equipment_slot"] = str(_build_card_choice_context(card, mode, context).get("equipment_slot", ""))
+	_intent_choice_card = null
+	_intent_choice_extra_context.clear()
+	_intent_choice_popup.hide()
+	_continue_card_with_extra_context(card, mode, context)
+
+
+func _on_intent_choice_popup_hidden() -> void:
+	_intent_choice_card = null
+	_intent_choice_play_mode = CardEnums.CardPlayMode.NORMAL
+	_intent_choice_extra_context.clear()
+	_clear_input()
 
 
 func _create_curse_choice_popup() -> void:
@@ -2020,20 +2105,20 @@ func _on_weapon_choice_pressed(slot: String) -> void:
 	if _actions_locked():
 		return
 
+	var next_mode := _weapon_choice_next_mode
+	var card := _weapon_choice_card
+	var play_mode := _weapon_choice_play_mode
+	var context := _weapon_choice_extra_context.duplicate()
+	context["equipment_slot"] = slot
 	pending_equipment_slot = slot
-	_weapon_choice_popup.hide()
-	input_mode = _weapon_choice_next_mode
-	if input_mode == InputMode.BASIC_ATTACK_TARGET:
-		_append_log("请选择普通攻击目标。")
-	elif input_mode == InputMode.CARD_TARGET and _weapon_choice_card != null:
-		if _is_direct_card_target(_weapon_choice_card, _weapon_choice_play_mode):
-			_play_direct_card(_weapon_choice_card, _weapon_choice_play_mode, _weapon_choice_extra_context)
-		else:
-			pending_extra_context = _weapon_choice_extra_context.duplicate()
-			_begin_card_targeting(_weapon_choice_card, _weapon_choice_play_mode)
-
 	_weapon_choice_next_mode = InputMode.NONE
 	_weapon_choice_card = null
 	_weapon_choice_play_mode = CardEnums.CardPlayMode.NORMAL
 	_weapon_choice_extra_context.clear()
+	_weapon_choice_popup.hide()
+	input_mode = next_mode
+	if input_mode == InputMode.BASIC_ATTACK_TARGET:
+		_append_log("请选择普通攻击目标。")
+	elif input_mode == InputMode.CARD_TARGET and card != null:
+		_continue_card_with_extra_context(card, play_mode, context)
 	_refresh()

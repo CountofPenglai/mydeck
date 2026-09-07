@@ -182,6 +182,25 @@ func requires_ranger_recipe_choice(_context: Dictionary = {}) -> bool:
 	return false
 
 
+# A serializable choice is deliberately kept out of card text.  The UI stores
+# `enemy_intent_choice` (enemy instance id, plan instance id, slot, fallback)
+# and effects validate it again immediately before resolution.
+func requires_enemy_intent_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_enemy_intent_choice_options(_context: Dictionary = {}) -> Array[Dictionary]:
+	return []
+
+
+func get_enemy_intent_choice_prompt(_context: Dictionary = {}) -> String:
+	return "选择一个敌人意图"
+
+
+func get_fixed_equipment_slot(_context: Dictionary = {}) -> String:
+	return ""
+
+
 func get_ranger_recipe_options(_context: Dictionary = {}) -> Array[Dictionary]:
 	return []
 

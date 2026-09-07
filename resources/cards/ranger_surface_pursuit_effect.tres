@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="RangerSurfacePursuitCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/ranger_surface_pursuit_card_effect.gd" id="1"]
+
+[resource]
+script = ExtResource("1")

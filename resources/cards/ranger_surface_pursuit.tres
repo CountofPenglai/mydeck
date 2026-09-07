@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_surface_pursuit_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/ranger_surface_pursuit_combo_condition.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+card_name = "踏境追刃"
+description = "连击：你位于元素地表。使用近战配件进行1次武器打击，然后额外采集你所在格中的元素。"
+card_text = "连击：你位于元素地表。使用近战配件进行1次武器打击，然后额外采集你所在格中的元素。"
+resolution_rules = "使用近战配件的实际射程。普通模式支付 2 AP；连击模式要求游侠当前格存在基础或高级元素地表且免费。整次武器打击及其后续效果完成后，按通用规则采集游侠当前格；不要求造成正数伤害，目标死亡时仍采集。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 3
+card_type = 0
+card_tags = 1
+damage_type = 3
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3")
+has_combo = true
+combo_conditions = [ExtResource("4")]

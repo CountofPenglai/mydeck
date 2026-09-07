@@ -14,4 +14,4 @@ func can_pay(context: Dictionary = {}) -> bool:
 
 
 func get_description() -> String:
-	return "本回合实际加入库存的元素至少 %d 枚" % required_count
+	return "本回合实际采集的元素至少 %d 枚" % required_count

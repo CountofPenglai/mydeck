@@ -39,6 +39,7 @@ func _test_card_text() -> void:
 	contextual_card.range_modifier = 2
 	contextual_card.is_choice_one_card = true
 	contextual_card.description = "造成1点伤害。"
+	contextual_card.card_text = "新版造成2点伤害。"
 	var contextual_text := RulesTextFormatter.format_card(contextual_card, {
 		"user": FormatterUser.new(),
 		"effective_ap_cost": 1,
@@ -46,6 +47,47 @@ func _test_card_text() -> void:
 	_expect(contextual_text.contains("1 AP"), "card uses effective AP context")
 	_expect(contextual_text.contains("范围 7"), "card uses effective runtime range")
 	_expect(contextual_text.contains("选择一项"), "choice-one structured tag")
+	_expect(contextual_text.contains("新版造成2点伤害。") and not contextual_text.contains("造成1点伤害。"),
+		"card text overrides legacy description")
+	contextual_card.card_text = ""
+	_expect(RulesTextFormatter.format_card(contextual_card).contains("造成1点伤害。"),
+		"empty card text falls back to legacy description")
+	var dual_card := CardData.new()
+	dual_card.is_druid_dual_card = true
+	dual_card.description = "正位旧版效果。"
+	dual_card.inverted_description = "逆位旧版效果。"
+	dual_card.card_text = "正位新版效果。"
+	_expect(RulesTextFormatter.format_card(dual_card, {"druid_orientation": CardEnums.DruidOrientation.INVERTED}).contains("逆位旧版效果。"),
+		"inverted legacy description keeps priority")
+	_test_ranger_combo_display_faces()
+
+
+func _test_ranger_combo_display_faces() -> void:
+	var paths := [
+		"res://resources/cards/ranger_perilous_assault.tres",
+		"res://resources/cards/hidden_blade_again.tres",
+		"res://resources/cards/ranger_seamless_pursuit.tres",
+		"res://resources/cards/ranger_overdrawn_inspiration.tres",
+		"res://resources/cards/ranger_desperate_string.tres",
+		"res://resources/cards/ranger_relentless_backslash.tres",
+		"res://resources/cards/ranger_shadow_passage.tres",
+		"res://resources/cards/ranger_tri_phase_dissection.tres",
+	]
+	for path: String in paths:
+		var card := load(path) as CardData
+		_expect(card != null, "%s loads ranger combo face" % path)
+		if card == null:
+			continue
+		var display := card.get_description_for_context()
+		_expect(display.begins_with("连击："), "%s uses canonical combo-first display" % path)
+		_expect(not display.contains("以 0 AP") and not display.contains("以0 AP"), "%s hides explicit free-AP wording" % path)
+		_expect(not card.card_text.strip_edges().is_empty() and not card.resolution_rules.strip_edges().is_empty(), "%s has canonical display fields" % path)
+	var shared := load("res://resources/cards/hidden_blade_again.tres") as CardData
+	_expect(shared != null and shared.is_available_to_class(CardEnums.CardClass.WARRIOR) and shared.is_available_to_class(CardEnums.CardClass.RANGER), "hidden blade keeps Warrior/Ranger availability")
+	var seamless := load("res://resources/cards/ranger_seamless_pursuit.tres") as CardData
+	_expect(seamless != null and seamless.get_description_for_context().contains("若以连击模式打出"), "seamless pursuit keeps combo-only continuation rider")
+	var overdrawn := load("res://resources/cards/ranger_overdrawn_inspiration.tres") as CardData
+	_expect(overdrawn != null and overdrawn.get_description_for_context().contains("若以连击模式打出"), "overdrawn inspiration keeps combo-only debt rider")
 
 
 func _test_equipment_text() -> void:
@@ -147,7 +189,7 @@ func _test_resource_corpus() -> void:
 			_expect(_is_expected_resource_for_root(root, resource), "%s has an expected resource type" % path)
 			if resource is CardData:
 				var card := resource as CardData
-				_check_rules_body(path, card.description, "description")
+				_check_rules_body(path, card.get_description_for_context(), "display description")
 				_check_special_condition_sentence(path, card, CardEnums.CardPlayMode.COMBO, "连击")
 				_check_special_condition_sentence(path, card, CardEnums.CardPlayMode.MOMENTUM, "余势")
 				if card.is_druid_dual_card and card.allow_inverted_play:
@@ -203,13 +245,14 @@ func _check_special_condition_sentence(path: String, card: CardData, play_mode: 
 		return
 	var conditions := card.get_special_conditions(play_mode)
 	if conditions.is_empty():
-		var prefix_index := card.description.find("%s：" % label)
-		var sentence_end := card.description.find("。", prefix_index + label.length() + 1) if prefix_index >= 0 else -1
+		var display := card.get_description_for_context()
+		var prefix_index := display.find("%s：" % label)
+		var sentence_end := display.find("。", prefix_index + label.length() + 1) if prefix_index >= 0 else -1
 		_expect(prefix_index >= 0 and sentence_end > prefix_index,
 			"%s requires an explicit %s condition sentence" % [path, label])
 		return
 	var expected := "%s：%s。" % [label, card.get_special_condition_text(play_mode)]
-	_expect(card.description.contains(expected), "%s requires condition sentence '%s'" % [path, expected])
+	_expect(card.get_description_for_context().contains(expected), "%s requires condition sentence '%s'" % [path, expected])
 
 
 func _collect_resource_paths(root: String) -> PackedStringArray:
