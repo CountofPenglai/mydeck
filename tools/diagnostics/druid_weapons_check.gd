@@ -32,7 +32,7 @@ func _ready() -> void:
 	druid.set_hex_cell(Vector2i(2, 4), controller.map_data)
 	enemy.set_hex_cell(Vector2i(3, 4), controller.map_data)
 	_test_resources_and_faces(druid)
-	_test_mana_capacity(druid, controller)
+	_test_stored_mana_and_production(druid, controller)
 	_test_eagle_armor_bypass(druid, enemy, controller)
 	_test_chaos_conversion(druid, enemy, controller)
 	_test_dragon_repeat_armor(druid, enemy, controller)
@@ -73,19 +73,23 @@ func _test_resources_and_faces(druid: BattleUnitState) -> void:
 		_fail("DRUID_WEAPONS: kaleidoscope inverse should grant flying")
 
 
-func _test_mana_capacity(druid: BattleUnitState, controller: BattleController) -> void:
+func _test_stored_mana_and_production(druid: BattleUnitState, controller: BattleController) -> void:
 	druid.mana_zone.clear()
-	druid.druid_spent_mana = 0
-	druid.druid_temporary_mana = 0
+	druid.druid_state.reset_for_battle()
+	druid.set_druid_transformed(false)
 	for index in range(3):
 		var card := CardData.new()
 		card.card_name = "mana_%d" % index
 		druid.add_card_to_mana_zone(card, {"controller": controller, "reason": "diagnostic"})
+	if druid.get_available_mana() != 0:
+		_fail("DRUID_WEAPONS: entering mana-zone cards produced stored mana immediately")
+	druid.gain_mana(3, {"controller": controller, "reason": "diagnostic_seed"})
 	if not druid.pay_mana(2, {"controller": controller}) or druid.mana_zone.size() != 3 or druid.get_available_mana() != 1:
-		_fail("DRUID_WEAPONS: mana payment consumed cards or reported wrong availability")
-	druid.start_turn(controller.config)
-	if druid.get_mana_capacity() != 3 or druid.get_available_mana() != 3:
-		_fail("DRUID_WEAPONS: persistent mana did not refresh at turn start")
+		_fail("DRUID_WEAPONS: stored mana payment consumed cards or reported wrong balance")
+	druid.clear_mana({"controller": controller, "reason": "diagnostic_reset"})
+	DruidTurnRules.resolve_turn_start(druid, {"controller": controller, "phase": "turn_start"})
+	if druid.get_available_mana() != 3:
+		_fail("DRUID_WEAPONS: human mana-zone production did not add one stored mana per ordinary card")
 
 
 func _test_eagle_armor_bypass(druid: BattleUnitState, enemy: BattleUnitState, controller: BattleController) -> void:

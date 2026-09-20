@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_defensive_pursuit_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_defensive_pursuit_momentum_condition.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+card_name = "护势追击"
+description = "你获得 2 护甲。\n\n余势：具有至少 1 点护甲。改为移除你的护甲（至多 5 点），然后对武器射程内 1 名敌人进行 1 次武器打击；每移除 1 点护甲，本次打击获得 +2 伤害加值。"
+card_text = "你获得 2 护甲。\n\n余势：具有至少 1 点护甲。改为移除你的护甲（至多 5 点），然后对武器射程内 1 名敌人进行 1 次武器打击；每移除 1 点护甲，本次打击获得 +2 伤害加值。"
+resolution_rules = "普通模式获得 2 护甲。余势模式至少具有 1 护甲；移除至多 5 点当前护甲后，以每点 +2 的伤害加值进行一次武器打击。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 1
+card_type = 0
+card_tags = 1
+damage_type = 0
+target_type = 4
+ap_cost = 2
+effect = ExtResource("3")
+has_momentum = true
+momentum_conditions = [ExtResource("4")]

@@ -1,6 +1,8 @@
 extends CardEffect
 class_name DruidBloodwoodCovenantCardEffect
 
+
+const ROOT_STATUS := preload("res://scripts/status/druid_root_status.gd")
 const TURN_DAMAGE_BONUS_STATUS := preload("res://scripts/status/druid_turn_damage_bonus_status.gd")
 
 
@@ -9,101 +11,58 @@ func _init() -> void:
 
 
 func requires_weapon_choice(context: Dictionary = {}) -> bool:
-	return _orientation(context) == CardEnums.DruidOrientation.INVERTED
+	return not _is_upright(context)
 
 
 func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = null) -> bool:
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	return user != null and target != null and target != user
-
-
-func requires_ordered_discard_choice(context: Dictionary = {}) -> bool:
-	return _orientation(context) == CardEnums.DruidOrientation.INVERTED and not get_ordered_discard_choice_cards(context).is_empty()
-
-
-func get_ordered_discard_choice_cards(context: Dictionary = {}) -> Array[CardData]:
-	var result: Array[CardData] = []
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	var card: CardData = context.get("card") as CardData
-	if user != null:
-		for hand_card in user.hand:
-			if hand_card != null and hand_card != card:
-				result.append(hand_card)
-	return result
-
-
-func get_ordered_discard_choice_max_count(context: Dictionary = {}) -> int:
-	return get_ordered_discard_choice_cards(context).size()
-
-
-func get_ordered_discard_choice_min_count(_context: Dictionary = {}) -> int:
-	return 0
-
-
-func get_ordered_discard_choice_prompt(_context: Dictionary = {}) -> String:
-	return "汲生猛袭：按顺序选择可能置入法力区的手牌（可不选）"
+	var user := context.get("user") as BattleUnitState
+	if user == null or target == null:
+		return false
+	return target != user if _is_upright(context) else target.faction != user.faction
 
 
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], _write_log: bool = true) -> bool:
-	if targets.size() != 1 or not (targets[0] is BattleUnitState):
-		return false
-	var target := targets[0] as BattleUnitState
-	if not is_unit_target_allowed(context, target):
-		return false
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	var card: CardData = context.get("card") as CardData
-	for selected in _selected_cards(context):
-		if selected == card or user == null or not user.has_card_in_hand(selected):
-			return false
-	return true
+	return targets.size() == 1 and targets[0] is BattleUnitState and is_unit_target_allowed(context, targets[0] as BattleUnitState)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
-	var controller: BattleController = context.get("controller") as BattleController
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	var card: CardData = context.get("card") as CardData
-	if controller == null or user == null or card == null or targets.is_empty():
+	var controller := context.get("controller") as BattleController
+	var user := context.get("user") as BattleUnitState
+	var card := context.get("card") as CardData
+	if controller == null or user == null or card == null or targets.size() != 1 or not (targets[0] is BattleUnitState):
 		return
 	var target := targets[0] as BattleUnitState
-	if _orientation(context) == CardEnums.DruidOrientation.UPRIGHT:
-		_play_upright(context, controller, user, target)
+	if _is_upright(context):
+		var amount := user.get_available_mana()
+		if target.faction == user.faction:
+			var bonus := TURN_DAMAGE_BONUS_STATUS.new() as StatusEffect
+			bonus.stacks = amount
+			target.add_status(bonus)
+		else:
+			_deal_intelligence_damage(controller, user, target, card, amount, "根脉结契")
+		target.add_status(ROOT_STATUS.new())
 		return
-
-	var actual_damage := controller.perform_strike(user, target, card, "汲生猛袭", str(context.get("equipment_slot", "")))
-	var move_limit := maxi(0, actual_damage - user.get_available_mana())
-	var moved := 0
-	for selected in _selected_cards(context):
-		if moved >= move_limit:
-			break
-		if user.move_hand_card_to_mana(selected, context):
-			moved += 1
-	controller._emit_log("%s 的汲生猛袭造成 %d 点实际伤害，并将 %d 张手牌置入法力区。" % [user.get_display_name(), actual_damage, moved])
+	var root_count := _count_rooted_in_weapon_range(controller, user, str(context.get("equipment_slot", "")))
+	controller.perform_unit_strike_with_options_and_after_effects(
+		user, target, card, root_count * 4, 1.0, "群根怒袭", str(context.get("equipment_slot", "")), {}, Callable()
+	)
 
 
-func _play_upright(context: Dictionary, controller: BattleController, user: BattleUnitState, target: BattleUnitState) -> void:
-	var amount := user.hand.size() + user.get_available_mana()
-	if target.faction != user.faction:
-		controller.apply_damage(user, target, amount, "血木盟约")
-		return
-	var status := TURN_DAMAGE_BONUS_STATUS.new() as StatusEffect
-	status.stacks = amount
-	target.add_status(status)
-	controller._emit_log("%s 使 %s 获得 %d 点伤害加值，持续到其下回合开始。" % [user.get_display_name(), target.get_display_name(), amount])
+func _deal_intelligence_damage(controller: BattleController, user: BattleUnitState, target: BattleUnitState, card: CardData, base: int, label: String) -> int:
+	var damage_context := {"controller": controller, "card": card, "target": target, "resolved_damage_type": CardEnums.DamageType.INTELLIGENCE, "source_card": card}
+	return controller.apply_damage(user, target, base + user.get_damage_bonus(damage_context), label, damage_context)
 
 
-func _orientation(context: Dictionary) -> int:
-	if context.has("druid_orientation"):
-		return int(context.get("druid_orientation"))
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	var card: CardData = context.get("card") as CardData
-	return user.get_druid_card_orientation(card) if user != null else CardEnums.DruidOrientation.UPRIGHT
+func _count_rooted_in_weapon_range(controller: BattleController, user: BattleUnitState, equipment_slot: String) -> int:
+	var count := 0
+	for candidate_value in controller.units:
+		var candidate := candidate_value as BattleUnitState
+		if candidate == null or not candidate.is_alive() or not candidate.has_status("druid_root"):
+			continue
+		if user.get_range_distance_to(candidate, {"controller": controller, "equipment_slot": equipment_slot}) <= controller.get_effective_attack_range_against(user, candidate, equipment_slot):
+			count += 1
+	return count
 
 
-func _selected_cards(context: Dictionary) -> Array[CardData]:
-	var result: Array[CardData] = []
-	var raw_selected: Variant = context.get("ordered_discard_cards", [])
-	if raw_selected is Array:
-		for value in raw_selected:
-			if value is CardData:
-				result.append(value as CardData)
-	return result
+func _is_upright(context: Dictionary) -> bool:
+	return int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT)) == CardEnums.DruidOrientation.UPRIGHT

@@ -32,6 +32,14 @@ var _weapon_choice_extra_context: Dictionary = {}
 var _play_choice_popup: PopupPanel
 var _play_choice_list: VBoxContainer
 var _play_choice_card: CardData
+var _card_choice_popup: PopupPanel
+var _card_choice_list: VBoxContainer
+var _card_choice_card: CardData
+var _card_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
+var _card_choice_extra_context: Dictionary = {}
+var _hand_card_choice_popup: PopupPanel
+var _hand_card_choice_list: VBoxContainer
+var _hand_card_choice_selected: Array[CardData] = []
 var _discard_popup: PopupPanel
 var _discard_list: VBoxContainer
 var _draw_choice_popup: PopupPanel
@@ -106,6 +114,8 @@ func _ready() -> void:
 	defeat_all_enemies_confirmation.confirmed.connect(_defeat_all_enemies_for_test)
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
+	_create_card_choice_popup()
+	_create_hand_card_choice_popup()
 	_create_discard_popup()
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
@@ -131,6 +141,11 @@ func _ready() -> void:
 	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
 	_refresh()
+
+
+func _exit_tree() -> void:
+	if controller != null and controller.resolution_runner != null:
+		controller.resolution_runner.cancel_pending_hand_card_choice()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -618,6 +633,10 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 		"card": card,
 		"play_mode": play_mode,
 	}
+	if _needs_card_choice(card, play_mode):
+		_show_card_choice(card, play_mode)
+		_refresh()
+		return
 	if card.requires_ranger_recipe_choice(choice_context):
 		_show_ranger_card_recipe_popup(card, play_mode, choice_context)
 		_refresh()
@@ -688,6 +707,8 @@ func _hide_action_popups() -> void:
 		_weapon_choice_popup.hide()
 	if _play_choice_popup != null:
 		_play_choice_popup.hide()
+	if _card_choice_popup != null:
+		_card_choice_popup.hide()
 	if _draw_choice_popup != null:
 		_draw_choice_popup.hide()
 	if _ordered_discard_popup != null:
@@ -704,6 +725,7 @@ func _refresh() -> void:
 		return
 	if _actions_locked():
 		_hide_action_popups()
+	_refresh_hand_card_choice_popup()
 	battle_hud_root.refresh_view()
 	_refresh_discard_popup()
 	_refresh_curse_popup()
@@ -940,6 +962,11 @@ func _needs_inventory_weapon_choice(card: CardData, play_mode: int, extra_contex
 	)
 
 
+func _needs_card_choice(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
+	return card != null and not extra_context.has("card_choice") \
+		and card.requires_card_choice(_build_card_choice_context(card, play_mode, extra_context))
+
+
 func _play_direct_card(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
 	if controller.current_unit == null or card == null:
 		return false
@@ -1051,6 +1078,40 @@ func _create_play_choice_popup() -> void:
 	_play_choice_list = VBoxContainer.new()
 	_play_choice_list.custom_minimum_size = Vector2(260, 0)
 	margin.add_child(_play_choice_list)
+
+
+func _create_card_choice_popup() -> void:
+	_card_choice_popup = PopupPanel.new()
+	_card_choice_popup.title = "选择卡牌效果"
+	_card_choice_popup.exclusive = true
+	_card_choice_popup.popup_hide.connect(_on_card_choice_popup_hidden)
+	add_child(_card_choice_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_card_choice_popup.add_child(margin)
+	_card_choice_list = VBoxContainer.new()
+	_card_choice_list.custom_minimum_size = Vector2(320, 0)
+	margin.add_child(_card_choice_list)
+
+
+func _create_hand_card_choice_popup() -> void:
+	_hand_card_choice_popup = PopupPanel.new()
+	_hand_card_choice_popup.title = "选择手牌"
+	_hand_card_choice_popup.exclusive = true
+	_hand_card_choice_popup.popup_hide.connect(_on_hand_card_choice_popup_hidden)
+	add_child(_hand_card_choice_popup)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_hand_card_choice_popup.add_child(margin)
+	_hand_card_choice_list = VBoxContainer.new()
+	_hand_card_choice_list.custom_minimum_size = Vector2(360, 0)
+	margin.add_child(_hand_card_choice_list)
 
 
 func _create_discard_popup() -> void:
@@ -1172,7 +1233,10 @@ func _create_ranger_blend_popup() -> void:
 
 
 func _show_ranger_blend_popup(unit: BattleUnitState) -> void:
-	if unit == null or unit != controller.current_unit or not unit.is_ranger():
+	if unit == null or unit != controller.current_unit or not unit.is_ranger() \
+			or not controller.can_prepare_ranger_blend(unit):
+		_append_log("当前不能调配特调：需要自己的自由时间、未装填特调、可用调配机会与至少两种元素。")
+		_refresh()
 		return
 	_ranger_blend_popup.title = "调配特调"
 	_clear_children(_ranger_blend_list)
@@ -1206,8 +1270,10 @@ func _show_ranger_blend_popup(unit: BattleUnitState) -> void:
 
 
 func _on_ranger_blend_selected(unit: BattleUnitState, blend: int, equipment_slot: String) -> void:
+	var prepared := controller.prepare_ranger_blend(unit, blend, equipment_slot)
 	_ranger_blend_popup.hide()
-	controller.prepare_ranger_blend(unit, blend, equipment_slot)
+	if not prepared:
+		_append_log("调配未完成：当前状态已变化，请在自己的自由时间重新检查调配机会与元素。")
 	_refresh()
 
 
@@ -1568,6 +1634,10 @@ func _on_draw_pile_choice_pressed(draw_card: CardData) -> void:
 
 func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> void:
 	if card == null:
+		return
+	if _needs_card_choice(card, play_mode, extra_context):
+		_show_card_choice(card, play_mode, extra_context)
+		_refresh()
 		return
 	if card.requires_curse_choice(_build_card_choice_context(card, play_mode, extra_context)) and not extra_context.has("selected_curse"):
 		_show_curse_choice(card, play_mode, extra_context)
@@ -2013,6 +2083,142 @@ func _on_play_choice_pressed(play_mode: int) -> void:
 		_select_card_with_mode(card, play_mode)
 
 
+func _show_card_choice(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> void:
+	if card == null:
+		return
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var options := card.get_card_choice_options(context)
+	if options.is_empty():
+		_append_log("%s 没有可用的效果选择。" % card.card_name)
+		return
+	_card_choice_card = card
+	_card_choice_play_mode = play_mode
+	_card_choice_extra_context = extra_context.duplicate()
+	_clear_children(_card_choice_list)
+	var title := Label.new()
+	title.text = card.get_card_choice_prompt(context)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_card_choice_list.add_child(title)
+	for option in options:
+		var option_id := str(option.get("id", ""))
+		if option_id.is_empty():
+			continue
+		var button := Button.new()
+		var description := str(option.get("description", ""))
+		button.text = str(option.get("label", option_id))
+		if not description.is_empty():
+			button.text += "\n%s" % description
+		button.disabled = not bool(option.get("enabled", true))
+		button.pressed.connect(_on_card_choice_selected.bind(option_id))
+		_card_choice_list.add_child(button)
+	var cancel := Button.new()
+	cancel.text = "取消"
+	cancel.pressed.connect(_cancel_card_choice)
+	_card_choice_list.add_child(cancel)
+	_card_choice_popup.popup_centered()
+
+
+func _on_card_choice_selected(option_id: String) -> void:
+	if _actions_locked() or _card_choice_card == null or option_id.is_empty():
+		return
+	var card := _card_choice_card
+	var play_mode := _card_choice_play_mode
+	var extra_context := _card_choice_extra_context.duplicate()
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var enabled := false
+	for option in card.get_card_choice_options(context):
+		if str(option.get("id", "")) == option_id:
+			enabled = bool(option.get("enabled", true))
+			break
+	if not enabled:
+		return
+	extra_context["card_choice"] = option_id
+	_card_choice_card = null
+	_card_choice_play_mode = CardEnums.CardPlayMode.NORMAL
+	_card_choice_extra_context.clear()
+	_card_choice_popup.hide()
+	_continue_card_with_extra_context(card, play_mode, extra_context)
+
+
+func _cancel_card_choice() -> void:
+	_card_choice_card = null
+	_card_choice_play_mode = CardEnums.CardPlayMode.NORMAL
+	_card_choice_extra_context.clear()
+	if _card_choice_popup != null:
+		_card_choice_popup.hide()
+
+
+func _on_card_choice_popup_hidden() -> void:
+	if _card_choice_card != null:
+		_card_choice_card = null
+		_card_choice_play_mode = CardEnums.CardPlayMode.NORMAL
+		_card_choice_extra_context.clear()
+
+
+func _refresh_hand_card_choice_popup() -> void:
+	if _hand_card_choice_popup == null or controller == null:
+		return
+	var runner := controller.resolution_runner
+	if runner == null or not runner.has_pending_hand_card_choice():
+		_hand_card_choice_selected.clear()
+		_hand_card_choice_popup.hide()
+		return
+	var choice = runner.get_pending_hand_card_choice()
+	if choice == null:
+		return
+	var live_cards: Array[CardData] = choice.get_live_cards()
+	for selected in _hand_card_choice_selected.duplicate():
+		if not live_cards.has(selected):
+			_hand_card_choice_selected.erase(selected)
+	_clear_children(_hand_card_choice_list)
+	var title := Label.new()
+	title.text = str(choice.prompt)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hand_card_choice_list.add_child(title)
+	for card in live_cards:
+		var toggle := CheckBox.new()
+		toggle.text = "%s | %s" % [card.card_name, card.get_card_type_label()]
+		toggle.tooltip_text = _build_card_tooltip(card)
+		toggle.button_pressed = _hand_card_choice_selected.has(card)
+		toggle.disabled = _hand_card_choice_selected.size() >= int(choice.max_count) and not toggle.button_pressed
+		toggle.toggled.connect(_on_hand_card_choice_toggled.bind(card))
+		_hand_card_choice_list.add_child(toggle)
+	var confirm := Button.new()
+	confirm.text = "确认"
+	confirm.disabled = _hand_card_choice_selected.size() < int(choice.min_count)
+	confirm.pressed.connect(_submit_hand_card_choice)
+	_hand_card_choice_list.add_child(confirm)
+	if not _hand_card_choice_popup.visible:
+		_hand_card_choice_popup.popup_centered()
+
+
+func _on_hand_card_choice_toggled(pressed: bool, card: CardData) -> void:
+	if card == null:
+		return
+	if pressed:
+		if not _hand_card_choice_selected.has(card):
+			_hand_card_choice_selected.append(card)
+	else:
+		_hand_card_choice_selected.erase(card)
+	_refresh_hand_card_choice_popup()
+
+
+func _submit_hand_card_choice() -> void:
+	if controller == null:
+		return
+	var selected: Array[CardData] = []
+	selected.assign(_hand_card_choice_selected)
+	if controller.resolution_runner.submit_hand_card_choice(selected):
+		_hand_card_choice_selected.clear()
+		_hand_card_choice_popup.hide()
+		_refresh()
+
+
+func _on_hand_card_choice_popup_hidden() -> void:
+	if controller != null and controller.resolution_runner.has_pending_hand_card_choice() and is_inside_tree():
+		call_deferred("_refresh_hand_card_choice_popup")
+
+
 func _hide_discard_popup() -> void:
 	if _discard_popup != null:
 		_discard_popup.hide()
@@ -2103,6 +2309,16 @@ func _on_inventory_weapon_choice_pressed(
 
 func _on_weapon_choice_pressed(slot: String) -> void:
 	if _actions_locked():
+		return
+	if controller.current_unit == null:
+		return
+	var valid_slot := false
+	for option in controller.current_unit.get_attack_weapon_options():
+		if str(option.get("slot", "")) == slot:
+			valid_slot = true
+			break
+	if not valid_slot:
+		_append_log("该武器模式当前不可用。")
 		return
 
 	var next_mode := _weapon_choice_next_mode

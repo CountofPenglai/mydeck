@@ -12,6 +12,7 @@ const RangerBurnStatus = preload("res://scripts/status/ranger_burn_status.gd")
 const RangerBlindStatus = preload("res://scripts/status/ranger_blind_status.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const RangerSurfaceElementCollector = preload("res://scripts/ranger/ranger_surface_element_collector.gd")
+const DruidTurnRules = preload("res://scripts/druid/druid_turn_rules.gd")
 const MageInfusionState = preload("res://scripts/mage/mage_infusion_state.gd")
 const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
 const EnemyIntentInterferenceService = preload("res://scripts/enemies/enemy_intent_interference_service.gd")
@@ -413,6 +414,8 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 
 	active_turn_serial += 1
 	unit.start_turn(config)
+	DruidTurnRules.resolve_turn_start(unit, {"controller": self, "phase": "turn_start"})
+	unit.notify_zone_turn_start({"controller": self, "phase": "turn_start"})
 	EnemyRuleDispatcher.on_turn_started(self, unit)
 	for battle_unit in units:
 		if battle_unit != null:
@@ -653,6 +656,7 @@ func _resolve_turn_end_action(unit: BattleUnitState) -> void:
 
 func _finish_turn_end_action(unit: BattleUnitState) -> void:
 	if unit != null:
+		DruidTurnRules.resolve_turn_end(self, unit, {"controller": self, "phase": "turn_end"})
 		unit.remove_expired_statuses()
 	EnemyRuleDispatcher.on_turn_ended(self, unit)
 	if unit != null and unit.faction == BattleUnitState.Faction.ENEMY:
@@ -1186,8 +1190,7 @@ func _snapshot_card_payment_state(user: BattleUnitState) -> Dictionary:
 		"statuses": _duplicate_resources(user.statuses),
 		"druid_transformed": user.druid_transformed,
 		"druid_prepare_used": user.druid_prepare_used,
-		"druid_spent_mana": user.druid_spent_mana,
-		"druid_temporary_mana": user.druid_temporary_mana,
+		"druid_state": user.druid_state.snapshot(),
 		"druid_max_health_loss": user.druid_max_health_loss,
 		"ranger_elements": user.ranger_state.element_inventory.duplicate(true),
 		"ranger_prepared_blend": user.ranger_state.prepared_blend,
@@ -1246,8 +1249,7 @@ func _restore_card_payment_state(user: BattleUnitState, snapshot: Dictionary) ->
 	user.statuses.assign(status_snapshot)
 	user.druid_transformed = bool(snapshot.get("druid_transformed", user.druid_transformed))
 	user.druid_prepare_used = bool(snapshot.get("druid_prepare_used", user.druid_prepare_used))
-	user.druid_spent_mana = int(snapshot.get("druid_spent_mana", user.druid_spent_mana))
-	user.druid_temporary_mana = int(snapshot.get("druid_temporary_mana", user.druid_temporary_mana))
+	user.druid_state.restore(snapshot.get("druid_state", {}) as Dictionary)
 	user.druid_max_health_loss = int(snapshot.get("druid_max_health_loss", user.druid_max_health_loss))
 	user.ranger_state.element_inventory = (snapshot.get("ranger_elements", {}) as Dictionary).duplicate(true)
 	user.ranger_state.prepared_blend = int(snapshot.get("ranger_prepared_blend", user.ranger_state.prepared_blend))
@@ -2244,7 +2246,7 @@ func use_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData 
 		Callable(self, "_resolve_druid_prepare_transform"),
 		[unit, selected_card],
 		0,
-		"%s 准备变身" % unit.get_display_name(),
+		"%s 准备变形" % unit.get_display_name(),
 		{"unit": unit, "selected_card": selected_card}
 	))
 
@@ -2262,7 +2264,7 @@ func _resolve_druid_prepare_transform(unit: BattleUnitState, selected_card: Card
 	var replacement := unit.try_replace_druid_form_change(true, form_context)
 	if bool(replacement.get("handled", false)):
 		unit.druid_prepare_used = true
-		_emit_log(str(replacement.get("log", "%s 的变身被武器效果替代。" % unit.get_display_name())))
+		_emit_log(str(replacement.get("log", "%s 的变形被武器效果替代。" % unit.get_display_name())))
 		state_changed.emit()
 		return
 
@@ -2281,7 +2283,7 @@ func _resolve_druid_prepare_transform(unit: BattleUnitState, selected_card: Card
 		return
 	unit.set_druid_transformed(true, form_context)
 	unit.druid_prepare_used = true
-	_emit_log("%s 将 %s 逆置置入法力区，并进入变身状态。" % [unit.get_display_name(), card.card_name])
+	_emit_log("%s 将 %s 逆置置入法力区，并进入变形状态。" % [unit.get_display_name(), card.card_name])
 	state_changed.emit()
 
 
@@ -2308,7 +2310,7 @@ func use_druid_prepare_untransform(unit: BattleUnitState) -> bool:
 		Callable(self, "_resolve_druid_prepare_untransform"),
 		[unit],
 		0,
-		"%s 解除变身" % unit.get_display_name(),
+		"%s 解除变形" % unit.get_display_name(),
 		{"unit": unit}
 	))
 
@@ -2321,7 +2323,7 @@ func _resolve_druid_prepare_untransform(unit: BattleUnitState) -> void:
 
 	unit.set_druid_transformed(false, {"controller": self, "reason": "druid_prepare_restore", "source": unit})
 	unit.druid_prepare_used = true
-	_emit_log("%s 支付 1 点法力，解除变身状态。" % unit.get_display_name())
+	_emit_log("%s 支付 1 点法力，解除变形状态。" % unit.get_display_name())
 	state_changed.emit()
 
 
@@ -2344,11 +2346,7 @@ func should_card_enter_mana_after_play(frame: BattleCardFrame) -> bool:
 		return false
 	if frame.context != null and bool(frame.context.extra.get("druid_send_to_mana_after_play", false)):
 		return frame.user.should_druid_card_enter_mana_after_play(frame.card, true, {"controller": self, "card_context": frame.context})
-	if frame.context != null:
-		var orientation := int(frame.context.extra.get("druid_orientation", _get_druid_orientation_for_card(frame.user, frame.card)))
-		return frame.user.should_druid_card_enter_mana_after_play(frame.card, orientation == CardEnums.DruidOrientation.INVERTED, {"controller": self, "card_context": frame.context})
-
-	return frame.user.should_druid_card_enter_mana_after_play(frame.card, frame.user.get_druid_card_orientation(frame.card) == CardEnums.DruidOrientation.INVERTED, {"controller": self})
+	return frame.user.should_druid_card_enter_mana_after_play(frame.card, false, {"controller": self, "card_context": frame.context})
 
 
 func should_card_exile_after_play(frame: BattleCardFrame) -> bool:
@@ -2566,12 +2564,28 @@ func collect_ranger_temporary_batch(unit: BattleUnitState, cells: Array[Vector2i
 	return RangerSurfaceElementCollector.collect(self, unit, cells, label, context, false)
 
 
-func prepare_ranger_blend(unit: BattleUnitState, blend: int, equipment_slot: String, catalyst: int = BattleSurfaceState.Element.NONE) -> bool:
-	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions():
+func can_prepare_ranger_blend(unit: BattleUnitState) -> bool:
+	if phase != Phase.BATTLE or turn_flow_state != TurnFlowState.ACTIVE or is_resolving_actions() or resolution_state_notification_active:
 		return false
-	if unit == null or unit != current_unit or not unit.is_ranger() or not unit.is_stealthed():
+	if unit == null or unit != current_unit or not unit.is_alive() or not unit.is_ranger():
+		return false
+	if not unit.ranger_state.blend_opportunity_available:
 		return false
 	if unit.ranger_state.prepared_blend != BattleSurfaceState.Element.NONE:
+		return false
+	return unit.ranger_state.get_element_type_count() >= 2
+
+
+func prepare_ranger_blend(unit: BattleUnitState, blend: int, equipment_slot: String, catalyst: int = BattleSurfaceState.Element.NONE) -> bool:
+	if not can_prepare_ranger_blend(unit):
+		return false
+	var has_usable_slot := false
+	for option_value in unit.get_attack_weapon_options():
+		var option := option_value as Dictionary
+		if str(option.get("slot", "")) == equipment_slot:
+			has_usable_slot = true
+			break
+	if not has_usable_slot:
 		return false
 	var ingredients: Array[int] = surface_state.get_component_elements(blend)
 	if ingredients.size() != 2:
@@ -2583,6 +2597,7 @@ func prepare_ranger_blend(unit: BattleUnitState, blend: int, equipment_slot: Str
 	unit.sync_ranger_element_inventory()
 	unit.ranger_state.prepared_blend = blend
 	unit.ranger_state.prepared_weapon_slot = equipment_slot
+	unit.ranger_state.consume_blend_opportunity()
 	_close_ranger_combo_window(unit)
 	_emit_log("%s 调配%s，并装填至%s。" % [unit.get_display_name(), BattleSurfaceState.label(blend), equipment_slot])
 	state_changed.emit()

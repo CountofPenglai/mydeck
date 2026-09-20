@@ -12,13 +12,11 @@ func play(context: Dictionary = {}, _targets: Array = []) -> void:
 		return
 
 	var orientation := int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
+	var form_context := context.merged({"source_card": context.get("card")})
 	if orientation == CardEnums.DruidOrientation.INVERTED:
+		controller.request_druid_form_change(user, false, form_context)
 		controller.heal_unit(user, user, inverted_heal, "返生")
-		user.gain_temporary_mana(1, context)
-		controller._emit_log("%s 获得 1 点本回合临时法力。" % user.get_display_name())
 	else:
-		var source_card := context.get("card") as CardData
-		var form_result := controller.request_druid_form_change(user, true, context.merged({"source_card": source_card}))
-		var drawn := user.draw_cards(draw_count, controller.rng, context)
-		controller._emit_log("%s %s，抽取 %d 张牌。" % [user.get_display_name(), "进入变身状态" if bool(form_result.get("changed", false)) else "触发形态替代", drawn])
-		controller.mark_played_card_to_mana(context)
+		user.gain_mana(2, context)
+		controller.request_druid_form_change(user, true, form_context)
+	user.draw_cards(draw_count, controller.rng, context)

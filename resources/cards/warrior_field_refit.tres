@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_field_refit_effect.tres" id="3"]
+
+[resource]
+script = ExtResource("1")
+card_name = "临阵换装"
+description = "切换武器，然后抽 1 张牌。无法切换武器时不能打出本牌。"
+card_text = "切换武器，然后抽 1 张牌。无法切换武器时不能打出本牌。"
+resolution_rules = "没有备战武器时，本牌不能打出且不支付 AP。成功切换后抽 1 张牌。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 1
+card_type = 1
+target_type = 4
+ap_cost = 1
+effect = ExtResource("3")

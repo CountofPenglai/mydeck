@@ -5,6 +5,7 @@ var _exit_code := 0
 
 func _ready() -> void:
 	_test_card_text_precedence_and_legacy_fallback()
+	_test_druid_face_text_and_rules()
 	await _test_detail_rules_toggle_and_preview_state()
 	if _exit_code == 0:
 		print("CARD_DETAIL_TEXT_CHECK: PASS")
@@ -24,6 +25,29 @@ func _test_card_text_precedence_and_legacy_fallback() -> void:
 	_expect(RulesTextFormatter.format_card(card).contains("旧版卡面效果。"), "empty card text does not fall back to legacy description")
 	card.card_text = " \n\t "
 	_expect(RulesTextFormatter.format_card(card).contains("旧版卡面效果。"), "whitespace-only card text does not fall back to legacy description")
+
+
+func _test_druid_face_text_and_rules() -> void:
+	var card := CardData.new()
+	if not _has_export(card, "inverted_card_text") or not _has_export(card, "inverted_resolution_rules"):
+		_fail("Druid inverse face cannot carry its own display text and rulings")
+		return
+	card.is_druid_dual_card = true
+	card.card_text = "正位正文"
+	card.resolution_rules = "正位裁定"
+	card.inverted_description = "旧逆位正文"
+	card.set("inverted_card_text", "逆位新正文")
+	card.set("inverted_resolution_rules", "逆位裁定")
+	var upright := {"druid_orientation": CardEnums.DruidOrientation.UPRIGHT}
+	var inverted := {"druid_orientation": CardEnums.DruidOrientation.INVERTED}
+	_expect(card.get_description_for_context(upright) == "正位正文", "upright face leaked inverse text")
+	_expect(card.get_description_for_context(inverted) == "逆位新正文", "inverse display ignored new face text")
+	_expect(card.get_resolution_rules_for_context(inverted) == "逆位裁定", "inverse detail leaked upright ruling")
+	_expect(card.get_resolution_rules_for_context(upright) == "正位裁定", "upright detail leaked inverse ruling")
+	card.set("inverted_card_text", " \n ")
+	card.set("inverted_resolution_rules", "")
+	_expect(card.get_description_for_context(inverted) == "旧逆位正文", "legacy inverse display fallback lost")
+	_expect(card.get_resolution_rules_for_context(inverted) == "正位裁定", "legacy shared rule fallback lost")
 
 
 func _test_detail_rules_toggle_and_preview_state() -> void:

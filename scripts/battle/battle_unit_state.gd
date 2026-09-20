@@ -5,6 +5,7 @@ const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const MageCombatState = preload("res://scripts/mage/mage_combat_state.gd")
 const WarlockCombatState = preload("res://scripts/warlock/warlock_combat_state.gd")
+const DruidCombatState = preload("res://scripts/druid/druid_combat_state.gd")
 const DRUID_TRANSFORMED_DAMAGE_REDUCTION := 1
 
 enum Faction {
@@ -44,8 +45,7 @@ var turn_serial: int = 0
 var block_lost_rounds: Dictionary = {}
 var druid_transformed: bool = false
 var druid_prepare_used: bool = false
-var druid_spent_mana: int = 0
-var druid_temporary_mana: int = 0
+var druid_state := DruidCombatState.new()
 var druid_max_health_loss: int = 0
 var battle_controller: BattleController
 var ranger_state := RangerCombatState.new()
@@ -64,7 +64,10 @@ var trap_limit_modifier: int = 0
 
 
 func get_threat_level() -> int:
-	return maxi(0, 1 + threat_level_modifier)
+	var modifier := threat_level_modifier
+	if is_ranger() and ranger_state.stealth_active:
+		modifier -= 1
+	return maxi(0, 1 + modifier)
 
 
 func get_trap_limit() -> int:
@@ -145,8 +148,6 @@ func start_turn(config: BattleConfig) -> void:
 	turn_serial += 1
 	current_ap = get_max_ap(config)
 	druid_prepare_used = false
-	druid_spent_mana = 0
-	druid_temporary_mana = 0
 	druid_max_health_loss = 0
 	_reset_curse_turn_runtime()
 	distortion_state.start_turn()
@@ -315,10 +316,11 @@ func setup_curse_proxy(id: int, owner: BattleUnitState, display_name: String, ma
 
 
 func enter_stealth() -> bool:
-	if not is_ranger() or not is_alive():
+	if not is_ranger() or not is_alive() or ranger_state.stealth_active:
 		return false
 	ranger_state.stealth_active = true
 	ranger_state.stealth_expires_turn_serial = turn_serial + 1
+	ranger_state.refresh_blend_opportunity()
 	_notify_all_equipment_runtime_effects("on_ranger_stealth_entered", [], _with_unit_context({
 		"controller": battle_controller,
 	}))
@@ -618,6 +620,10 @@ func notify_enemy_card_completed(enemy: BattleUnitState, card: CardData, context
 func notify_zone_turn_end(context: Dictionary = {}) -> void:
 	_notify_zone_card_effects("on_zone_owner_turn_end", [], _with_unit_context(context))
 	_notify_curse_effects("on_turn_end", [], _with_unit_context(context))
+
+
+func notify_zone_turn_start(context: Dictionary = {}) -> void:
+	_notify_zone_card_effects("on_zone_owner_turn_start", [], _with_unit_context(context))
 
 
 func notify_curse_battle_started(context: Dictionary = {}) -> void:
@@ -1289,7 +1295,6 @@ func add_card_to_mana_zone(card: CardData, context: Dictionary = {}) -> void:
 
 	mana_zone.append(card)
 	_notify_card_entered_special_zone(card, "mana", context)
-	_notify_mana_gained(1, context)
 
 
 func add_card_to_enchant_zone(card: CardData, context: Dictionary = {}) -> void:
@@ -1542,64 +1547,36 @@ func get_curse_runtime_state(curse: CurseInstance, create_if_missing: bool = tru
 
 
 func get_available_mana() -> int:
-	return get_unspent_persistent_mana() + maxi(0, druid_temporary_mana)
+	return druid_state.get_mana()
 
 
 func get_mana_capacity() -> int:
-	return mana_zone.size()
+	return get_available_mana()
 
 
 func get_unspent_persistent_mana() -> int:
-	return maxi(0, get_mana_capacity() - druid_spent_mana)
+	return get_available_mana()
 
 
 func can_pay_mana(amount: int) -> bool:
-	return amount <= 0 or get_available_mana() >= amount
+	return druid_state.can_pay_mana(amount)
 
 
 func can_pay_mana_excluding_card(amount: int, excluded_card: CardData) -> bool:
-	if amount <= 0:
-		return true
-
-	var persistent_capacity := get_mana_capacity()
-	if excluded_card != null and mana_zone.find(excluded_card) >= 0:
-		persistent_capacity -= 1
-	var available := maxi(0, persistent_capacity - druid_spent_mana) + maxi(0, druid_temporary_mana)
-	return available >= amount
+	return can_pay_mana(amount)
 
 
 func pay_mana(amount: int, context: Dictionary = {}) -> bool:
-	if amount <= 0:
-		return true
-	if not can_pay_mana(amount):
+	var cost := maxi(0, amount)
+	if not druid_state.pay_mana(cost):
 		return false
-
-	var remaining := amount
-	var temporary_paid := mini(druid_temporary_mana, remaining)
-	druid_temporary_mana -= temporary_paid
-	remaining -= temporary_paid
-	druid_spent_mana += remaining
-	remaining = 0
-	_notify_mana_paid(amount, context)
-
-	return remaining <= 0
+	if cost > 0:
+		_notify_mana_paid(cost, context)
+	return true
 
 
 func pay_mana_excluding_card(amount: int, excluded_card: CardData, context: Dictionary = {}) -> bool:
-	if amount <= 0:
-		return true
-	if not can_pay_mana_excluding_card(amount, excluded_card):
-		return false
-
-	var remaining := amount
-	var temporary_paid := mini(druid_temporary_mana, remaining)
-	druid_temporary_mana -= temporary_paid
-	remaining -= temporary_paid
-	druid_spent_mana += remaining
-	remaining = 0
-	_notify_mana_paid(amount, context)
-
-	return remaining <= 0
+	return pay_mana(amount, context)
 
 
 func remove_card_from_mana_zone(card: CardData) -> bool:
@@ -1607,17 +1584,22 @@ func remove_card_from_mana_zone(card: CardData) -> bool:
 	if index < 0:
 		return false
 	mana_zone.remove_at(index)
-	druid_spent_mana = mini(druid_spent_mana, get_mana_capacity())
 	return true
 
 
-func gain_temporary_mana(amount: int, context: Dictionary = {}) -> void:
-	var actual := maxi(0, amount)
-	if actual <= 0:
-		return
+func gain_mana(amount: int, context: Dictionary = {}) -> int:
+	var actual := druid_state.gain_mana(amount)
+	if actual > 0:
+		_notify_mana_gained(actual, context)
+	return actual
 
-	druid_temporary_mana = maxi(0, druid_temporary_mana + actual)
-	_notify_mana_gained(actual, context)
+
+func gain_temporary_mana(amount: int, context: Dictionary = {}) -> void:
+	gain_mana(amount, context)
+
+
+func clear_mana(_context: Dictionary = {}) -> int:
+	return druid_state.clear_mana()
 
 
 func is_druid() -> bool:
@@ -2156,8 +2138,7 @@ func _reset_druid_state() -> void:
 	curse_zone.clear()
 	druid_transformed = false
 	druid_prepare_used = false
-	druid_spent_mana = 0
-	druid_temporary_mana = 0
+	druid_state.reset_for_battle()
 
 
 func add_status(status: StatusEffect) -> void:

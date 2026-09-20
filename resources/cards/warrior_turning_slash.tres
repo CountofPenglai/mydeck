@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_turning_slash_effect.tres" id="3"]
+
+[resource]
+script = ExtResource("1")
+card_name = "转锋斩"
+description = "对 1 名敌人进行 1 次武器打击，然后切换武器。若切换成功，对切换后武器射程内所有敌人造成 1 点固定伤害。"
+card_text = "对 1 名敌人进行 1 次武器打击，然后切换武器。若切换成功，对切换后武器射程内所有敌人造成 1 点固定伤害。"
+resolution_rules = "第一击及其后续效果完整结算后再切换武器。切换失败不取消第一击。切换成功时，对新当前武器实际射程内每名敌人造成 1 点固定伤害。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 1
+card_type = 0
+card_tags = 1
+damage_type = 0
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3")

@@ -39,30 +39,26 @@ func _test_canopy_cycle(controller: BattleController, druid: BattleUnitState) ->
 	_reset_druid(druid, false)
 	var card := template.duplicate() as CardData
 	druid.hand.assign([card, fodder])
-	druid.add_card_to_mana_zone(_dummy_card(), {"controller": controller, "reason": "diagnostic"})
 	druid.current_ap = 20
-	if not controller.play_card(druid, card, [druid], {"ordered_discard_cards": [fodder]}):
+	if not controller.play_card(druid, card, [druid]):
 		_fail("DRUID_REMAINING: canopy upright play failed")
+	var selected: Array[CardData] = [fodder]
+	if not controller.resolution_runner.submit_hand_card_choice(selected):
+		_fail("DRUID_REMAINING: canopy upright selection failed")
 	elif not druid.druid_transformed or not druid.mana_zone.has(fodder):
 		_fail("DRUID_REMAINING: canopy upright did not move selected card and transform")
 
 	_reset_druid(druid, true)
 	card = template.duplicate() as CardData
-	fodder = _dummy_card()
-	druid.hand.assign([card, fodder])
-	druid.gain_armor(4, {"controller": controller})
+	druid.hand.assign([card])
+	druid.add_card_to_mana_zone(_dummy_card(), {"controller": controller, "reason": "diagnostic"})
+	druid.draw_pile.append(_dummy_card())
 	druid.current_ap = 20
-	if not controller.play_card(druid, card, [druid], {"ordered_discard_cards": [fodder]}):
+	if not controller.play_card(druid, card, [druid]):
 		_fail("DRUID_REMAINING: canopy inverted play failed")
 		return
-	if druid.get_armor_stacks() != 8 or not druid.has_status("druid_canopy_shelter"):
-		_fail("DRUID_REMAINING: canopy inverted armor setup incorrect")
-	var shelter := druid.get_status("druid_canopy_shelter")
-	var hand_before := druid.hand.size()
-	shelter.on_turn_start(druid, {"controller": controller})
-	druid.remove_expired_statuses()
-	if druid.get_armor_stacks() != 4 or druid.hand.size() < hand_before:
-		_fail("DRUID_REMAINING: canopy shelter expiry incorrect")
+	if druid.get_armor_stacks() != 5 or not druid.mana_zone.has(card):
+		_fail("DRUID_REMAINING: canopy inverted must count existing mana, draw, and enter mana")
 
 
 func _test_bloodwood_covenant(controller: BattleController, druid: BattleUnitState, ally: BattleUnitState, enemy: BattleUnitState) -> void:
@@ -70,63 +66,55 @@ func _test_bloodwood_covenant(controller: BattleController, druid: BattleUnitSta
 	_reset_druid(druid, false)
 	ally.statuses.clear()
 	var card := template.duplicate() as CardData
-	druid.hand.assign([card, _dummy_card()])
+	druid.hand.assign([card])
+	druid.gain_mana(3, {"controller": controller})
 	druid.current_ap = 20
 	if not controller.play_card(druid, card, [ally]):
 		_fail("DRUID_REMAINING: bloodwood ally play failed")
-	elif ally.get_status_damage_bonus() <= 0:
-		_fail("DRUID_REMAINING: bloodwood ally buff missing")
-
-	_reset_druid(druid, true)
-	enemy.statuses.clear()
-	enemy.set_current_health(enemy.get_max_health())
-	card = template.duplicate() as CardData
-	var first := _dummy_card()
-	var second := _dummy_card()
-	druid.hand.assign([card, first, second])
-	druid.current_ap = 20
-	if not controller.play_card(druid, card, [enemy], {"ordered_discard_cards": [first, second]}):
-		_fail("DRUID_REMAINING: bloodwood inverted play failed")
-	elif enemy.get_current_health() >= enemy.get_max_health() or not druid.mana_zone.has(card):
-		_fail("DRUID_REMAINING: bloodwood inverted strike or mana destination failed")
-
-
-func _test_overgrowth_graft(controller: BattleController, druid: BattleUnitState, ally: BattleUnitState, enemy: BattleUnitState) -> void:
-	var template := load("res://resources/cards/druid_overgrowth_graft.tres") as CardData
-	_reset_druid(druid, false)
-	ally.mana_zone.clear()
-	ally.enchant_zone.clear()
-	var card := template.duplicate() as CardData
-	var selected := _dummy_card()
-	druid.hand.assign([card, selected])
-	druid.current_ap = 20
-	if not controller.play_card(druid, card, [ally], {"ordered_discard_cards": [selected]}):
-		_fail("DRUID_REMAINING: graft upright play failed")
-	elif not ally.mana_zone.has(card) or not ally.mana_zone.has(selected) or ally.druid_temporary_mana != 1:
-		_fail("DRUID_REMAINING: graft upright zone transfer failed")
+	elif ally.get_status_damage_bonus() != 3 or not ally.has_status("druid_root"):
+		_fail("DRUID_REMAINING: covenant must use stored mana and apply root")
 
 	_reset_druid(druid, true)
 	enemy.statuses.clear()
 	enemy.set_current_health(enemy.get_max_health())
 	card = template.duplicate() as CardData
 	druid.hand.assign([card])
+	druid.add_status((load("res://scripts/status/druid_root_status.gd") as GDScript).new())
+	enemy.add_status((load("res://scripts/status/druid_root_status.gd") as GDScript).new())
+	druid.current_ap = 20
+	if not controller.play_card(druid, card, [enemy]):
+		_fail("DRUID_REMAINING: bloodwood inverted play failed")
+	elif enemy.get_current_health() >= enemy.get_max_health() or druid.mana_zone.has(card):
+		_fail("DRUID_REMAINING: root strike must discard rather than enter mana")
+
+
+func _test_overgrowth_graft(controller: BattleController, druid: BattleUnitState, ally: BattleUnitState, enemy: BattleUnitState) -> void:
+	var template := load("res://resources/cards/druid_overgrowth_graft.tres") as CardData
+	_reset_druid(druid, false)
+	druid.mana_zone.clear()
+	var card := template.duplicate() as CardData
+	druid.hand.assign([card])
+	druid.current_ap = 20
+	if not controller.play_card(druid, card, [druid]):
+		_fail("DRUID_REMAINING: graft upright play failed")
+	elif not druid.mana_zone.has(card) or not druid.has_status("druid_root"):
+		_fail("DRUID_REMAINING: graft upright must root target and enter owner mana")
+
+	_reset_druid(druid, true)
+	enemy.statuses.clear()
+	enemy.set_current_health(enemy.get_max_health())
+	card = template.duplicate() as CardData
+	druid.hand.assign([card])
+	druid.gain_mana(2, {"controller": controller})
+	druid.add_status((load("res://scripts/status/druid_root_status.gd") as GDScript).new())
 	druid.set_current_health(maxi(1, druid.get_max_health() - 10))
 	var health_before := druid.get_current_health()
 	druid.current_ap = 20
 	if not controller.play_card(druid, card, [enemy]):
 		_fail("DRUID_REMAINING: graft inverted play failed")
 		return
-	if enemy.get_current_health() >= enemy.get_max_health() or druid.get_current_health() <= health_before:
-		_fail("DRUID_REMAINING: graft inverted strikes or lifesteal failed")
-	var temporary_before := druid.druid_temporary_mana
-	var other_mana := _dummy_card()
-	druid.add_card_to_mana_zone(other_mana, {
-		"controller": controller,
-		"reason": "diagnostic_other_mana",
-		"source_card": other_mana,
-	})
-	if druid.druid_temporary_mana != temporary_before + 1:
-		_fail("DRUID_REMAINING: graft mana gain hook failed")
+	if enemy.get_current_health() >= enemy.get_max_health() or druid.get_current_health() <= health_before or druid.has_status("druid_root"):
+		_fail("DRUID_REMAINING: graft must perform rooted third lifesteal strike")
 
 
 func _reset_druid(druid: BattleUnitState, transformed: bool) -> void:
@@ -135,7 +123,7 @@ func _reset_druid(druid: BattleUnitState, transformed: bool) -> void:
 	druid.mana_zone.clear()
 	druid.enchant_zone.clear()
 	druid.statuses.clear()
-	druid.druid_temporary_mana = 0
+	druid.clear_mana()
 	druid.set_druid_transformed(transformed)
 	druid.set_current_health(druid.get_max_health())
 

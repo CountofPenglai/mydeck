@@ -7,7 +7,9 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "法脉寄生"
-description = "正位：将本牌从你的手牌移入另一名目标单位的法力区。你可以额外选择 1 张其他手牌；若为攻击牌，将其移入该目标的法力区，否则移入该目标的附魔区，然后你抽 1 张牌。"
+description = "对目标施加【根系】，然后将本牌移入你的法力区。"
+card_text = "对目标施加【根系】，然后将本牌移入你的法力区。\n【法力区】本牌提供X点法力，X等于战场上具有【根系】的角色数量。"
+resolution_rules = "正位目标为武器射程内任意角色（敌我及自身）。法力区效果：本牌提供X点法力，X等于战场上具有【根系】的存活角色数量，替代普通的1点产出。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 4
@@ -16,13 +18,11 @@ card_tags = 2
 damage_type = 3
 target_type = 1
 ap_cost = 2
-override_range = true
-card_range = 2
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "血潮连击"
-inverted_description = "逆位：你进行 1 次武器打击；若造成正数生命伤害且目标仍存活，再对同一目标打击 1 次，然后你恢复等同于两次实际生命伤害总和的生命。本牌在法力区时，每当区域持有者通过本牌以外的来源获得法力，额外获得 1 点本回合临时法力。"
+inverted_description = "进行1次武器打击。若目标仍存活，自动支付2点法力，对其再进行1次武器打击。第二次打击后，若目标仍存活，移除范围内距离你最近的1名角色的【根系】，对目标再进行1次具有【吸血】的武器打击。"
+inverted_card_text = "进行1次武器打击。若目标仍存活，自动支付2点法力，对其再进行1次武器打击。第二次打击后，若目标仍存活，移除范围内距离你最近的1名角色的【根系】，对目标再进行1次具有【吸血】的武器打击。\n【法力区】本牌提供X点法力，X等于战场上具有【根系】的角色数量。"
+inverted_resolution_rules = "每次打击及附带效果完全结算后才继续。第一击后不足2点法力则停止；第二击后没有范围内根系则停止。根系跨阵营且可为自身；同距按稳定单位ID。仅第三击按实际生命伤害吸血，本牌正常弃置。"
 inverted_ap_cost = 2
 inverted_target_type = 1
-inverted_override_range = true
-inverted_card_range = 2

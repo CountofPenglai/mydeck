@@ -7,7 +7,9 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "月光"
-description = "正位：数值等于 4 加你的伤害加值。若目标是友方，使其恢复等同于该数值的生命；若目标是敌人，对其造成等同于该数值的智力伤害。打出时若你能支付 1 点法力，则自动支付并使该数值 +2。"
+description = "若目标是友方，恢复其4点生命；若目标是敌人，对其造成4点智力伤害。"
+card_text = "若目标是友方，恢复其4点生命；若目标是敌人，对其造成4点智力伤害。"
+resolution_rules = "可选择自身、友方或敌人。正位不支付法力；治疗不受伤害加值影响，伤害遵循智力伤害规则。结算后弃置。"
 artwork = ExtResource("2_scroll")
 rarity = 4
 card_class = 4
@@ -21,9 +23,11 @@ card_range = 3
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
 inverted_name = "暗月"
-inverted_description = "逆位：数值等于 4 加你的伤害加值。若目标是友方，使其恢复等同于该数值的生命；若目标是敌人，对其造成等同于该数值的智力伤害。打出时若你能支付 1 点法力，则自动支付并使该数值 +2。打出后将本牌移入你的法力区。"
+inverted_description = "X等于6。打出时若你能支付1点法力，则自动支付并使X+2。若目标是友方，恢复其X点生命；若目标是敌人，对其造成X点智力伤害。"
+inverted_card_text = "X等于6。打出时若你能支付1点法力，则自动支付并使X+2。若目标是友方，恢复其X点生命；若目标是敌人，对其造成X点智力伤害。"
+inverted_resolution_rules = "仅逆位自动支付1点法力加强，治疗和伤害的基础数值均由6升至8；不足仍以6结算。治疗不受伤害加值影响。两面均不施加根系，不进入法力区。"
 inverted_ap_cost = 2
 inverted_target_type = 1
 inverted_override_range = true
 inverted_card_range = 3
-resonance_cost = 1
+resonance_cost = 0

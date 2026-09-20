@@ -379,7 +379,7 @@ func on_mana_paid(owner: BattleUnitState, _root: EquipmentData, _component: Equi
 	if runtime.get_counter("mana_refund_turn", -1) == owner.turn_serial or runtime.get_counter("mana_gained_turn", -1) == owner.turn_serial:
 		return
 	runtime.set_counter("mana_refund_turn", owner.turn_serial)
-	owner.gain_temporary_mana(1, context.merged({"reason": "unifier_refund"}))
+	owner.gain_mana(1, context.merged({"reason": "unifier_refund"}))
 
 
 func on_druid_form_changed(_owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, runtime: EquipmentRuntimeState, was_transformed: bool, is_transformed: bool, _context: Dictionary = {}) -> void:
@@ -422,10 +422,10 @@ func try_replace_druid_form_change(owner: BattleUnitState, _root: EquipmentData,
 	var mode := runtime.get_counter(LANTERN_MODE)
 	if mode == 1:
 		owner.draw_cards(1, controller.rng, context.merged({"reason": "lantern_revelation"}))
-		return {"handled": true, "success": true, "log": "%s 的提灯启示牌库顶，普通变身被替代。" % owner.get_display_name()}
+		return {"handled": true, "success": true, "log": "%s 的提灯启示牌库顶，普通变形被替代。" % owner.get_display_name()}
 	var top: CardData = owner.draw_pile.pop_back() as CardData
 	owner.add_card_to_mana_zone(top, context.merged({"reason": "lantern_store"}))
-	return {"handled": true, "success": true, "log": "%s 的提灯收纳牌库顶，普通变身被替代。" % owner.get_display_name()}
+	return {"handled": true, "success": true, "log": "%s 的提灯收纳牌库顶，普通变形被替代。" % owner.get_display_name()}
 
 
 func get_activated_actions(owner: BattleUnitState, _root: EquipmentData, _component: EquipmentData, runtime: EquipmentRuntimeState, context: Dictionary = {}) -> Array[Dictionary]:

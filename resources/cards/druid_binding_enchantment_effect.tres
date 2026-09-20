@@ -4,7 +4,3 @@
 
 [resource]
 script = ExtResource("1_effect")
-hand_armor_multiplier = 1
-draw_count = 2
-mana_cost = 1
-

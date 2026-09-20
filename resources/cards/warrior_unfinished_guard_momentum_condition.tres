@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="WarriorArmorMomentumCondition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/conditions/warrior_armor_momentum_condition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+minimum_armor = 4

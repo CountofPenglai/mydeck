@@ -1,6 +1,11 @@
 extends RefCounted
 class_name BattleResolutionRunner
 
+const CARD_CHOICE_STATE := preload("res://scripts/battle/battle_card_choice_state.gd")
+
+signal hand_card_choice_requested(choice)
+signal hand_card_choice_cleared
+
 const MAX_EFFECTS_PER_ACTION := 32
 const MAX_EFFECTS_PER_CARD := MAX_EFFECTS_PER_ACTION
 const MAX_PENDING_ACTIONS := 64
@@ -20,6 +25,11 @@ var current_action_id: int = 0
 var current_action_frame: BattleActionFrame
 var after_current_effect_queue: Array = []
 var attack_after_scopes: Array = []
+var pending_hand_card_choice
+var resolved_actions_in_pump: int = 0
+var current_frame_after_callback_started: bool = false
+var current_frame_ap_finalization_started: bool = false
+var current_frame_completion_notified: bool = false
 
 
 func setup(new_controller: BattleController) -> void:
@@ -41,6 +51,12 @@ func reset() -> void:
 	current_action_frame = null
 	after_current_effect_queue.clear()
 	attack_after_scopes.clear()
+	pending_hand_card_choice = null
+	resolved_actions_in_pump = 0
+	current_frame_after_callback_started = false
+	current_frame_ap_finalization_started = false
+	current_frame_completion_notified = false
+	hand_card_choice_cleared.emit()
 
 
 func get_current_action_id() -> int:
@@ -51,6 +67,71 @@ func record_current_action_ap_spent(unit: BattleUnitState, amount: int) -> void:
 	if current_action_frame == null or amount <= 0:
 		return
 	current_action_frame.record_ap_spent(unit, amount)
+
+
+func request_hand_card_choice(
+	owner: BattleUnitState,
+	source_card: CardData,
+	min_count: int,
+	max_count: int,
+	prompt: String,
+	continuation: Callable
+) -> bool:
+	if owner == null or source_card == null or not continuation.is_valid() \
+			or min_count < 0 or max_count < min_count:
+		return false
+	# A suspended selection can only safely resume a normal action's open effect
+	# scope. Attack scopes have their own deferred callback contract.
+	if not action_active or current_action_frame == null or pending_hand_card_choice != null \
+			or is_attack_scope_active() or queue_scopes.size() != 2:
+		if controller != null:
+			controller._emit_log("当前结算阶段不支持手牌选择。")
+		return false
+	var choice: Variant = CARD_CHOICE_STATE.create(owner, source_card, min_count, max_count, prompt, continuation)
+	if choice.get_live_cards().is_empty():
+		# There is no player decision to make. Continue with an empty result rather
+		# than silently selecting a card or leaving the action permanently locked.
+		var empty_selection: Array[CardData] = []
+		enqueue_effect(continuation, [empty_selection], 0, "手牌选择：无可选牌")
+		return true
+	pending_hand_card_choice = choice
+	hand_card_choice_requested.emit(choice)
+	return true
+
+
+func submit_hand_card_choice(selected: Array[CardData]) -> bool:
+	var choice: Variant = pending_hand_card_choice
+	if choice == null:
+		return false
+	if selected.size() < choice.min_count or selected.size() > choice.max_count:
+		return false
+	var live_cards: Array[CardData] = choice.get_live_cards()
+	var unique_cards := {}
+	for card in selected:
+		if card == null or card == choice.source_card or not live_cards.has(card) or unique_cards.has(card):
+			return false
+		unique_cards[card] = true
+	var continuation: Callable = choice.continuation
+	pending_hand_card_choice = null
+	hand_card_choice_cleared.emit()
+	enqueue_effect(continuation, [selected.duplicate()], 0, "手牌选择：已确认")
+	_resume_suspended_action()
+	return true
+
+
+func has_pending_hand_card_choice() -> bool:
+	return pending_hand_card_choice != null
+
+
+func get_pending_hand_card_choice():
+	return pending_hand_card_choice
+
+
+func cancel_pending_hand_card_choice() -> void:
+	if pending_hand_card_choice == null:
+		return
+	pending_hand_card_choice = null
+	hand_card_choice_cleared.emit()
 
 
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:
@@ -113,6 +194,13 @@ func drain_active_attack_effects() -> void:
 func push_action_frame(frame: BattleActionFrame) -> bool:
 	if frame == null or not frame.callback.is_valid():
 		return false
+	# A hand-card choice suspends one specific action frame. Effects already
+	# queued by that frame remain resumable, but accepting a fresh action here
+	# would let it run after the player's selection and interleave two turns.
+	if pending_hand_card_choice != null:
+		if controller != null:
+			controller._emit_log("请先完成当前的手牌选择。")
+		return false
 	if action_queue.size() >= MAX_PENDING_ACTIONS:
 		if controller != null:
 			controller._emit_log("待结算行动达到 %d 个，新行动未加入队列。" % MAX_PENDING_ACTIONS)
@@ -155,32 +243,42 @@ func _drain_action_queue() -> void:
 		return
 
 	is_draining_actions = true
+	resolved_actions_in_pump = 0
 	if controller != null:
 		controller._begin_action_resolution()
-	var resolved_action_count := 0
+	_continue_action_drain()
+
+
+func _continue_action_drain() -> void:
+	if not is_draining_actions or pending_hand_card_choice != null:
+		return
 	while not action_queue.is_empty():
-		if resolved_action_count >= MAX_ACTIONS_PER_PUMP:
+		if resolved_actions_in_pump >= MAX_ACTIONS_PER_PUMP:
 			var cancelled_actions := action_queue.duplicate()
 			action_queue.clear()
 			if controller != null:
 				controller._emit_log("单次结算达到 %d 个行动，剩余行动已取消。" % MAX_ACTIONS_PER_PUMP)
 				controller._on_action_frames_cancelled(cancelled_actions)
 			break
-		resolved_action_count += 1
+		resolved_actions_in_pump += 1
 		var frame: BattleActionFrame = action_queue.pop_front() as BattleActionFrame
 		current_action_id = next_action_id
 		next_action_id += 1
 		action_active = true
 		current_action_effect_count = 0
 		effect_limit_reached = false
-		_resolve_action_frame(frame)
+		if not _resolve_action_frame(frame):
+			return
 		action_active = false
 		current_action_effect_count = 0
 		effect_limit_reached = false
 		current_action_id = 0
+	if pending_hand_card_choice != null:
+		return
 	if controller != null:
 		controller._end_action_resolution()
 	is_draining_actions = false
+	resolved_actions_in_pump = 0
 	if controller != null:
 		controller._notify_action_resolution_finished()
 
@@ -203,12 +301,15 @@ func _enqueue(callback: Callable, args: Array, priority: int, label: String, con
 	queue_sequence += 1
 
 
-func _resolve_action_frame(frame: BattleActionFrame) -> void:
+func _resolve_action_frame(frame: BattleActionFrame) -> bool:
 	current_action_frame = null
 	if frame == null or not frame.callback.is_valid():
-		return
+		return true
 
 	current_action_frame = frame
+	current_frame_after_callback_started = false
+	current_frame_ap_finalization_started = false
+	current_frame_completion_notified = false
 	after_current_effect_queue.clear()
 	_push_effect_queue_scope()
 	enqueue_effect(
@@ -219,33 +320,76 @@ func _resolve_action_frame(frame: BattleActionFrame) -> void:
 		frame.context
 	)
 	_drain_current_effect_queue()
+	if pending_hand_card_choice != null:
+		return false
+	return _finish_current_action_frame(frame)
+
+
+func _resume_suspended_action() -> void:
+	if not is_draining_actions or not action_active or current_action_frame == null:
+		return
+	_drain_current_effect_queue()
+	if pending_hand_card_choice != null:
+		return
+	if not _finish_current_action_frame(current_action_frame):
+		return
+	action_active = false
+	current_action_effect_count = 0
+	effect_limit_reached = false
+	current_action_id = 0
+	_continue_action_drain()
+
+
+func _finish_current_action_frame(frame: BattleActionFrame) -> bool:
 	_drain_after_current_effect_queue()
-	if frame.after_callback.is_valid():
+	if pending_hand_card_choice != null:
+		return false
+	if not current_frame_after_callback_started and frame.after_callback.is_valid():
+		current_frame_after_callback_started = true
 		frame.after_callback.callv(frame.after_args)
 		_drain_current_effect_queue()
+		if pending_hand_card_choice != null:
+			return false
 		_drain_after_current_effect_queue()
-	if controller != null:
+		if pending_hand_card_choice != null:
+			return false
+	if controller != null and not current_frame_ap_finalization_started:
+		current_frame_ap_finalization_started = true
 		controller._finalize_ap_action(frame, current_action_id)
 		_drain_current_effect_queue()
+		if pending_hand_card_choice != null:
+			return false
 		_drain_after_current_effect_queue()
+		if pending_hand_card_choice != null:
+			return false
+	if controller != null and not current_frame_completion_notified:
+		current_frame_completion_notified = true
 		controller._on_action_resolution_completed(current_action_id)
 	_pop_effect_queue_scope()
 	current_action_frame = null
+	current_frame_after_callback_started = false
+	current_frame_ap_finalization_started = false
+	current_frame_completion_notified = false
+	return true
 
 
 func _drain_after_current_effect_queue() -> void:
 	while not after_current_effect_queue.is_empty():
-		var pending := after_current_effect_queue.duplicate()
-		after_current_effect_queue.clear()
-		for entry in pending:
-			_execute_effect_queue_entry(entry as BattleResolutionEntry)
-		_drain_current_effect_queue()
+		var entry: BattleResolutionEntry = after_current_effect_queue.pop_front() as BattleResolutionEntry
+		_execute_effect_queue_entry(entry)
+		if pending_hand_card_choice != null:
+			return
+	_drain_current_effect_queue()
+	if pending_hand_card_choice != null:
+		return
 
 
 func _drain_current_effect_queue() -> void:
 	var queue := _get_current_effect_queue()
 	queue_depth += 1
 	while not queue.is_empty():
+		if pending_hand_card_choice != null:
+			break
 		if effect_limit_reached:
 			queue.clear()
 			break

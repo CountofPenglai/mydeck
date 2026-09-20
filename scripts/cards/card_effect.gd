@@ -78,6 +78,14 @@ func play(_context: Dictionary = {}, _targets: Array = []) -> void:
 	pass
 
 
+func get_mana_production(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> int:
+	return 1
+
+
+func on_zone_owner_turn_start(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
 func on_zone_owner_card_ap_cost_paid(_owner: BattleUnitState, _zone_card: CardData, _played_card: CardData, _context: Dictionary = {}) -> void:
 	pass
 
@@ -180,6 +188,18 @@ func get_curse_choice_prompt(_context: Dictionary = {}) -> String:
 
 func requires_ranger_recipe_choice(_context: Dictionary = {}) -> bool:
 	return false
+
+
+func requires_card_choice(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_card_choice_options(_context: Dictionary = {}) -> Array[Dictionary]:
+	return []
+
+
+func get_card_choice_prompt(_context: Dictionary = {}) -> String:
+	return "选择卡牌效果"
 
 
 # A serializable choice is deliberately kept out of card text.  The UI stores

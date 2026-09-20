@@ -306,32 +306,36 @@ func _set_interactive(interactive: bool) -> void:
 
 func _refresh_class_actions(unit: BattleUnitState, controller: BattleController, interactive: bool) -> void:
 	_clear_children(resource_action_list)
-	if unit == null or controller == null or not interactive:
+	if unit == null or controller == null:
 		return
-	if controller.can_use_druid_prepare_transform(unit):
+	if interactive and controller.can_use_druid_prepare_transform(unit):
 		_add_class_action(
 			&"druid_transform",
 			"变形" if _compact_mode else "准备变形",
-			"选择一张手牌逆置置入法力区，然后进入变身状态。",
+			"选择一张手牌逆置置入法力区，然后进入变形状态。",
 			unit,
 			true
 		)
-	elif controller.can_use_druid_prepare_untransform(unit):
+	elif interactive and controller.can_use_druid_prepare_untransform(unit):
 		_add_class_action(
 			&"druid_untransform",
 			"复原" if _compact_mode else "准备复原",
-			"支付 1 点法力解除变身状态。",
+			"支付 1 点法力解除变形状态。",
 			unit,
 			true
 		)
-	if unit.is_ranger() and unit.is_stealthed() \
+	if unit.is_ranger() and unit.is_alive() \
 			and unit.ranger_state.prepared_blend == BattleSurfaceState.Element.NONE:
+		var can_prepare_blend := controller.can_prepare_ranger_blend(unit)
+		var blend_tooltip := "每回合一次：在自己的自由时间消耗两枚不同基础元素，为近战或远程模式装填一份特调。只有实际进入潜行（从非潜行转变）才会刷新这次机会。"
+		if not can_prepare_blend:
+			blend_tooltip += "\n当前不能调配：调配机会可能已用尽，或不在自己的自由时间，或元素不足。"
 		_add_class_action(
 			&"ranger_blend",
 			"特调",
-			"消耗两枚不同基础元素，为近战或远程模式装填一份特调。",
+			blend_tooltip,
 			unit,
-			unit.ranger_state.get_element_type_count() >= 2
+			can_prepare_blend
 		)
 
 
@@ -359,7 +363,7 @@ func _build_resource_summary(unit: BattleUnitState) -> String:
 	if unit.get_character_class() == CardEnums.CardClass.WARRIOR:
 		parts.append("势 %d/5" % unit.get_class_resource_value(BattleController.WARRIOR_MOMENTUM_RESOURCE))
 	if unit.is_druid():
-		parts.append("法力 %d/%d  %s" % [unit.get_available_mana(), unit.get_mana_capacity(), "变身" if unit.druid_transformed else "正位"])
+		parts.append("法力 %d  法力区 %d张\n%s" % [unit.get_available_mana(), unit.mana_zone.size(), "变形：回合结束支付1法力" if unit.druid_transformed else "人形：回合开始产法，结束清空"])
 	if unit.is_ranger():
 		parts.append("元素 %s" % unit.ranger_state.get_summary())
 		parts.append("连击 %d  %s" % [unit.ranger_state.combo_points, "潜行" if unit.is_stealthed() else "显形"])

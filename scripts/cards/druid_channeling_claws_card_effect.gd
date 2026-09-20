@@ -7,60 +7,46 @@ func _init() -> void:
 
 
 func get_target_type_for_mode(context: Dictionary = {}, _play_mode: int = CardEnums.CardPlayMode.NORMAL, default_target_type: int = CardEnums.TargetType.NONE) -> int:
-	if int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT)) == CardEnums.DruidOrientation.UPRIGHT:
-		return CardEnums.TargetType.NONE
+	return CardEnums.TargetType.NONE if _is_upright(context) else default_target_type
 
-	return default_target_type
+
+func requires_weapon_choice(context: Dictionary = {}) -> bool:
+	return not _is_upright(context)
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
-	var controller: BattleController = context.get("controller") as BattleController
-	var user: BattleUnitState = context.get("user") as BattleUnitState
-	var card: CardData = context.get("card") as CardData
+	var controller := context.get("controller") as BattleController
+	var user := context.get("user") as BattleUnitState
+	var card := context.get("card") as CardData
 	if controller == null or user == null or card == null:
 		return
-
-	var orientation := int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
-	if orientation == CardEnums.DruidOrientation.UPRIGHT:
-		_play_upright(context, controller, user)
+	if _is_upright(context):
+		user.draw_cards(2, controller.rng, context)
+		controller.resolution_runner.enqueue_after_current_effect_queue(Callable(self, "_request_upright_choice").bind(context, controller, user, card), [], "灵脉爪击：抽牌后选择")
 		return
-
-	var total_lifesteal := 0
-	var equipment_slot := str(context.get("equipment_slot", ""))
-	for target in targets:
-		if target == null or not (target is BattleUnitState):
-			continue
-		var target_unit: BattleUnitState = target as BattleUnitState
-		total_lifesteal += controller.perform_strike(user, target_unit, card, "汲生爪击", equipment_slot)
-	if total_lifesteal > 0:
-		controller.heal_unit(user, user, total_lifesteal, "吸血")
-
-
-func on_zone_card_entered_special_zone(owner: BattleUnitState, zone_card: CardData, entered_card: CardData, zone_name: String, context: Dictionary = {}) -> void:
-	if owner == null or zone_card == null or entered_card != zone_card or zone_name != "mana":
+	if targets.size() != 1 or not (targets[0] is BattleUnitState):
 		return
-	if str(context.get("reason", "")) != "druid_inverted_card_played":
-		return
-
-	var gain_context := context.duplicate()
-	gain_context["reason"] = "druid_channeling_claws"
-	owner.gain_temporary_mana(1, gain_context)
-	var controller: BattleController = context.get("controller") as BattleController
-	if controller != null:
-		controller._emit_log("%s 的 %s 进入法力区，获得 1 点本回合临时法力。" % [owner.get_display_name(), zone_card.card_name])
+	controller.resolution_runner.begin_attack_scope()
+	var actual := controller.perform_strike(user, targets[0] as BattleUnitState, card, "汲生爪击", str(context.get("equipment_slot", "")))
+	controller.resolution_runner.end_attack_scope()
+	if actual > 0:
+		controller.heal_unit(user, user, actual, "汲生爪击吸血")
+	_finish_inverted_strike(context, controller, user)
 
 
-func _play_upright(context: Dictionary, controller: BattleController, user: BattleUnitState) -> void:
-	var drawn_cards := user.draw_cards_detailed(1, controller.rng, context)
-	if drawn_cards.is_empty():
-		controller.mark_played_card_to_mana(context)
-		controller._emit_log("%s 没有抽到牌，打出的牌将进入法力区。" % user.get_display_name())
-		return
+func _request_upright_choice(context: Dictionary, controller: BattleController, user: BattleUnitState, card: CardData) -> void:
+	controller.resolution_runner.request_hand_card_choice(user, card, 1, 1, "灵脉爪击：选择 1 张其他手牌移入法力区", Callable(self, "_move_selected_to_mana").bind(context, user))
 
-	var drawn_card: CardData = drawn_cards[0]
-	if user.move_hand_card_to_mana(drawn_card, context):
-		controller._emit_log("%s 将抽到的 %s 置入法力区，然后再抽 1 张牌。" % [user.get_display_name(), drawn_card.card_name])
-		user.draw_cards(1, controller.rng, context)
-	else:
-		controller.mark_played_card_to_mana(context)
 
+func _move_selected_to_mana(selected: Array[CardData], _context: Dictionary, user: BattleUnitState) -> void:
+	if selected.size() == 1 and selected[0] != null:
+		user.move_hand_card_to_mana(selected[0], {"reason": "druid_channeling_claws"})
+
+
+func _finish_inverted_strike(context: Dictionary, controller: BattleController, user: BattleUnitState) -> void:
+	user.gain_mana(1, context)
+	controller.mark_played_card_to_mana(context)
+
+
+func _is_upright(context: Dictionary) -> bool:
+	return int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT)) == CardEnums.DruidOrientation.UPRIGHT

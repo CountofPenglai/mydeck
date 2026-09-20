@@ -4,6 +4,4 @@
 
 [resource]
 script = ExtResource("1_effect")
-armor_per_hand_card = 1
-inverted_armor_per_mana = 1
-
+inverted_armor = 2

@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="WarriorUnfinishedGuardCardEffect" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/warrior_unfinished_guard_card_effect.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+normal_armor = 4
+block_stacks = 1

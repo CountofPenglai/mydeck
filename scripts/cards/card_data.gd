@@ -58,6 +58,8 @@ var bound_curse_instance: CurseInstance
 @export var allow_inverted_play: bool = true
 @export var inverted_name: String = ""
 @export_multiline var inverted_description: String = ""
+@export_multiline var inverted_card_text: String = ""
+@export_multiline var inverted_resolution_rules: String = ""
 @export_range(0, 99, 1) var inverted_ap_cost: int = 2
 @export_enum("无需目标", "单体", "多目标", "指定范围", "自身", "全体") var inverted_target_type: int = CardEnums.TargetType.NONE
 @export var inverted_override_range: bool = false
@@ -199,6 +201,18 @@ func requires_ranger_recipe_choice(context: Dictionary = {}) -> bool:
 	if effect == null:
 		return false
 	return effect.requires_ranger_recipe_choice(context)
+
+
+func requires_card_choice(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_card_choice(context)
+
+
+func get_card_choice_options(context: Dictionary = {}) -> Array[Dictionary]:
+	return effect.get_card_choice_options(context) if effect != null else []
+
+
+func get_card_choice_prompt(context: Dictionary = {}) -> String:
+	return effect.get_card_choice_prompt(context) if effect != null else "选择卡牌效果"
 
 
 func requires_enemy_intent_choice(context: Dictionary = {}) -> bool:
@@ -485,15 +499,20 @@ func get_display_name_for_context(context: Dictionary = {}) -> String:
 
 
 func get_description_for_context(context: Dictionary = {}) -> String:
-	if _is_inverted_context(context) and not inverted_description.is_empty():
-		return inverted_description
+	if _is_inverted_context(context):
+		if not inverted_card_text.strip_edges().is_empty():
+			return inverted_card_text
+		if not inverted_description.is_empty():
+			return inverted_description
 	if not card_text.strip_edges().is_empty():
 		return card_text
 
 	return description
 
 
-func get_resolution_rules_for_context(_context: Dictionary = {}) -> String:
+func get_resolution_rules_for_context(context: Dictionary = {}) -> String:
+	if _is_inverted_context(context) and not inverted_resolution_rules.strip_edges().is_empty():
+		return inverted_resolution_rules
 	return resolution_rules
 
 

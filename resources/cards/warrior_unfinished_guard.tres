@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_unfinished_guard_effect.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_unfinished_guard_momentum_condition.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+card_name = "守势未尽"
+description = "你获得 4 护甲。\n\n余势：具有至少 4 点护甲。改为获得 1 层抵挡。"
+card_text = "你获得 4 护甲。\n\n余势：具有至少 4 点护甲。改为获得 1 层抵挡。"
+resolution_rules = "普通模式获得 4 护甲。余势模式须在支付前具有至少 4 点护甲，获得 1 层抵挡而不改变护甲。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 1
+card_type = 1
+target_type = 4
+ap_cost = 1
+effect = ExtResource("3")
+has_momentum = true
+momentum_conditions = [ExtResource("4")]

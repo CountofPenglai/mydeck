@@ -1,8 +1,7 @@
 extends CardEffect
 class_name DruidVerdantStrikeCardEffect
 
-@export_range(0, 99, 1) var armor_per_hand_card: int = 1
-@export_range(0, 99, 1) var inverted_armor_per_mana: int = 1
+@export_range(0, 99, 1) var inverted_armor: int = 2
 
 
 func _init() -> void:
@@ -11,7 +10,15 @@ func _init() -> void:
 
 func can_play(context: Dictionary = {}) -> bool:
 	var user: BattleUnitState = context.get("user") as BattleUnitState
-	return user != null and user.get_active_weapon_equipment() != null
+	return user != null and (not _is_inverted(context) or user.get_active_weapon_equipment() != null)
+
+
+func requires_weapon_choice(context: Dictionary = {}) -> bool:
+	return _is_inverted(context)
+
+
+func _is_inverted(context: Dictionary) -> bool:
+	return int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT)) == CardEnums.DruidOrientation.INVERTED
 
 
 func play(context: Dictionary = {}, targets: Array = []) -> void:
@@ -21,21 +28,20 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 	if controller == null or user == null or card == null:
 		return
 
-	var orientation := int(context.get("druid_orientation", CardEnums.DruidOrientation.UPRIGHT))
-	var equipment_slot := str(context.get("equipment_slot", ""))
-	for target in targets:
-		if target == null or not (target is BattleUnitState):
-			continue
-		var target_unit: BattleUnitState = target as BattleUnitState
-		controller.perform_strike(user, target_unit, card, card.get_display_name_for_context(context), equipment_slot)
-
-	var armor_amount := user.hand.size() * armor_per_hand_card
-	if orientation == CardEnums.DruidOrientation.INVERTED:
-		armor_amount = user.get_available_mana() * inverted_armor_per_mana
-	if armor_amount <= 0:
+	if not _is_inverted(context):
+		user.gain_mana(1, context)
+		controller.request_druid_form_change(user, true, context.merged({"source_card": card}))
 		return
+	if targets.is_empty() or not (targets[0] is BattleUnitState):
+		return
+	controller.perform_unit_strike_with_after_effects(
+		user, targets[0] as BattleUnitState, card, "兽形猛击", str(context.get("equipment_slot", "")),
+		Callable(self, "_finish_strike").bind(context)
+	)
 
-	var armor := ArmorStatus.new()
-	armor.stacks = armor_amount
-	user.add_status(armor)
-	controller._emit_log("%s 获得 %d 点护甲。" % [user.get_display_name(), armor_amount])
+
+func _finish_strike(context: Dictionary) -> void:
+	var user := context.get("user") as BattleUnitState
+	var controller := context.get("controller") as BattleController
+	user.gain_armor(inverted_armor, context)
+	controller.mark_played_card_to_mana(context)

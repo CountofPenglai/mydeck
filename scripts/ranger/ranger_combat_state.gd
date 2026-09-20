@@ -12,6 +12,7 @@ var combo_window_open: bool = false
 var element_inventory: Dictionary = {}
 var prepared_blend: int = BattleSurfaceState.Element.NONE
 var prepared_weapon_slot: String = ""
+var blend_opportunity_available: bool = true
 var discard_debt: int = 0
 var pending_hand_discard_count: int = 0
 var cards_played_this_turn: int = 0
@@ -31,6 +32,7 @@ func reset_for_battle() -> void:
 	element_inventory.clear()
 	prepared_blend = BattleSurfaceState.Element.NONE
 	prepared_weapon_slot = ""
+	blend_opportunity_available = true
 	discard_debt = 0
 	pending_hand_discard_count = 0
 	cards_played_this_turn = 0
@@ -56,12 +58,24 @@ func start_turn(turn_serial: int) -> void:
 	combo_window_open = false
 	cards_played_this_turn = 0
 	elements_collected_this_turn = 0
+	refresh_blend_opportunity()
 	if weapon_lock_expires_turn_serial >= 0 and turn_serial >= weapon_lock_expires_turn_serial:
 		active_weapon_lock_slot = ""
 		weapon_lock_expires_turn_serial = -1
 	if universal_combo_expires_turn_serial >= 0 and turn_serial >= universal_combo_expires_turn_serial:
 		universal_combo_ready = false
 		universal_combo_expires_turn_serial = -1
+
+
+func refresh_blend_opportunity() -> void:
+	blend_opportunity_available = true
+
+
+func consume_blend_opportunity() -> bool:
+	if not blend_opportunity_available:
+		return false
+	blend_opportunity_available = false
+	return true
 
 
 func add_element(element: int, amount: int = 1) -> int:

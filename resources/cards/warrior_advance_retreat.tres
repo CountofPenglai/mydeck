@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2"]
+[ext_resource type="Resource" path="res://resources/cards/warrior_advance_retreat_effect.tres" id="3"]
+
+[resource]
+script = ExtResource("1")
+card_name = "进退有势"
+description = "打出时选择 1 项：\n稳进：获得 1 点势，对目标进行 1 次武器打击，然后获得 2 护甲。\n强攻：消耗 2 点势，对目标进行 1 次获得 +5 伤害加值的武器打击；势不足时不能选择此项。"
+card_text = "打出时选择 1 项：\n稳进：获得 1 点势，对目标进行 1 次武器打击，然后获得 2 护甲。\n强攻：消耗 2 点势，对目标进行 1 次获得 +5 伤害加值的武器打击；势不足时不能选择此项。"
+resolution_rules = "打出前必须选择稳进或强攻；取消或无效选择不支付 AP、势或其他成本。稳进先获得 1 点势，完成武器打击及其附带效果后获得 2 护甲。强攻在 AP 支付前消耗 2 点势，并以 +5 伤害加值进行一次武器打击。"
+artwork = ExtResource("2")
+rarity = 0
+card_class = 1
+card_type = 0
+card_tags = 1
+damage_type = 0
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3")

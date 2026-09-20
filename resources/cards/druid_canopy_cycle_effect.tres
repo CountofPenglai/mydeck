@@ -4,5 +4,3 @@
 
 [resource]
 script = ExtResource("1_effect")
-upright_draw_count = 2
-shelter_draw_count = 2
