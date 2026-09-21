@@ -27,12 +27,22 @@ func save_run(run_state: PartyRunState) -> Error:
 		load_status = AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA
 		return ERR_FILE_UNRECOGNIZED
 	var payload := _serialize_run(run_state)
+	var contents := JSON.stringify(payload, "\t")
 	var file := FileAccess.open(temp_path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(payload, "\t"))
+	if not file.store_string(contents):
+		file.close()
+		return ERR_FILE_CANT_WRITE
 	file.flush()
+	var write_error := file.get_error()
 	file.close()
+	if write_error != OK:
+		return write_error
+	# Some backends do not expose flush errors through get_error(). Verify the
+	# closed temporary file before rotating either recoverable save.
+	if FileAccess.get_file_as_string(temp_path) != contents:
+		return ERR_FILE_CANT_WRITE
 	var rotate_primary := _primary_is_current()
 	if rotate_primary and FileAccess.file_exists(backup_path):
 		var remove_error := DirAccess.remove_absolute(backup_path)

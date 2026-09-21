@@ -7,6 +7,10 @@ class FailingStore extends AdventureSaveStore:
 		return ERR_CANT_CREATE
 
 func _ready() -> void:
+	if "--limited-save-child" in OS.get_cmdline_user_args():
+		_check_limited_write_child()
+		get_tree().quit(0 if failures == 0 else 1)
+		return
 	var session := AdventureSessionService.new()
 	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_session", "main_menu_diagnostic_legacy")
 	session.save_store.delete_save()
@@ -14,10 +18,52 @@ func _ready() -> void:
 		_check(false, "menu lifecycle API is missing")
 	else:
 		_check_lifecycle(session)
+		_check_real_write_failure()
 	session.save_store.delete_save()
 	session.free()
 	print("MAIN_MENU_SESSION: %s" % ("PASS" if failures == 0 else "FAIL"))
 	get_tree().quit(0 if failures == 0 else 1)
+
+func _check_real_write_failure() -> void:
+	if OS.get_name() not in ["macOS", "Linux"]:
+		print("MAIN_MENU_SESSION: file-size-limit probe skipped on this platform")
+		return
+	var store := AdventureSaveStore.new("main_menu_diagnostic_write_limit", "main_menu_diagnostic_legacy")
+	store.delete_save()
+	var session := AdventureSessionService.new()
+	session.save_store = store
+	_check(session.start_new_game(701, true).ok, "write-limit fixture created")
+	_check(store.save_run(session.current_run) == OK, "write-limit backup created")
+	var primary_bytes := FileAccess.get_file_as_string(store.save_path)
+	var backup_bytes := FileAccess.get_file_as_string(store.backup_path)
+	var output: Array = []
+	# Restrict only a child process: opening succeeds, writes over 512/1024 bytes fail.
+	var result := OS.execute("/bin/sh", PackedStringArray([
+		ProjectSettings.globalize_path("res://tools/diagnostics/run_with_file_limit.sh"),
+		OS.get_executable_path(), "--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"tools/diagnostics/main_menu_session_check.tscn", "--",
+		"--main-menu-diagnostics", "--limited-save-child",
+	]), output, true)
+	_check(result == 0, "real partial write is rejected: %s" % str(output))
+	_check(FileAccess.get_file_as_string(store.save_path) == primary_bytes, "partial write preserves primary")
+	_check(FileAccess.get_file_as_string(store.backup_path) == backup_bytes, "partial write preserves backup")
+	store.delete_save()
+	session.free()
+
+func _check_limited_write_child() -> void:
+	var session := AdventureSessionService.new()
+	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_write_limit", "main_menu_diagnostic_legacy")
+	session.current_run = session.save_store.load_run()
+	var original := session.current_run
+	_check(original != null, "limited child loads original run")
+	var result := session.start_new_game(702, true)
+	_check(not result.ok, "partial write reports failure")
+	_check(session.current_run == original, "partial write never publishes candidate")
+	var small_run := PartyRunState.new()
+	small_run.adventure_flags["write_limit_padding"] = "x".repeat(1500)
+	_check(session.save_store.save_run(small_run) != OK, "buffered write flushed incompletely is rejected")
+	_check(FileAccess.file_exists(session.save_store.temp_path), "failure occurred after temporary file opened")
+	session.free()
 
 func _check_lifecycle(session: AdventureSessionService) -> void:
 	var state: Dictionary = session.call("get_menu_state")
