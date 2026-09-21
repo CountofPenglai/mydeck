@@ -24,6 +24,8 @@ var pending_battle_scenario: BattleScenario
 
 
 func _ready() -> void:
+	if is_inside_tree() and self == get_node_or_null("/root/AdventureSession") and OS.get_cmdline_user_args().has("--main-menu-diagnostics"):
+		save_store = AdventureSaveStore.new("main_menu_diagnostic_autoload", "main_menu_diagnostic_legacy")
 	definition.floor_count = 2
 	current_run = save_store.load_run()
 	if current_run == null or current_run.pending_transaction == null:
@@ -48,31 +50,28 @@ func ensure_run() -> PartyRunState:
 
 
 func start_new_demo(seed_value: int = 0) -> PartyRunState:
-	if save_store.load_status == AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA:
-		status_message.emit("该存档版本不受支持，不会覆盖。")
+	var result := start_new_game(seed_value, true)
+	if not result.ok:
+		status_message.emit(result.message)
 		return null
-	var resolved_seed := seed_value
-	if resolved_seed == 0:
-		var seed_rng := RandomNumberGenerator.new()
-		seed_rng.randomize()
-		resolved_seed = seed_rng.randi()
-	var heroes: Array[CharacterState] = []
-	for path in HERO_PATHS:
-		var template := load(path) as CharacterState
-		if template == null:
-			continue
-		var hero := template.duplicate(true) as CharacterState
-		hero.adventure_source_path = path
-		hero.ensure_initialized()
-		hero.current_health = hero.get_max_health()
-		heroes.append(hero)
-	current_run = PartyRunState.new()
-	current_run.initialize_adventure(resolved_seed, heroes, definition)
-	current_run.floor_state = map_generator.generate(resolved_seed, 0, definition)
-	AdventureShopService.initialize_map(current_run)
-	pending_battle_scenario = null
-	_save_and_emit("新的两层冒险已生成。")
+	status_message.emit("新的两层冒险已生成。")
 	return current_run
+
+
+func get_menu_state() -> Dictionary:
+	return AdventureRunLifecycle.get_menu_state(self)
+
+
+func start_new_game(seed_value: int = 0, confirmed: bool = false) -> Dictionary:
+	return AdventureRunLifecycle.start_new_game(self, seed_value, confirmed)
+
+
+func prepare_continue() -> Dictionary:
+	return AdventureRunLifecycle.prepare_continue(self)
+
+
+func prepare_return_to_menu(from_battle: bool) -> Dictionary:
+	return AdventureRunLifecycle.prepare_return_to_menu(self, from_battle)
 
 
 func restart_same_seed() -> void:

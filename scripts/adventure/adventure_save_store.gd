@@ -88,6 +88,10 @@ func has_save() -> bool:
 	return FileAccess.file_exists(save_path) or FileAccess.file_exists(backup_path)
 
 
+func has_unsupported_schema() -> bool:
+	return _existing_save_has_unsupported_schema()
+
+
 func has_legacy_save() -> bool:
 	return FileAccess.file_exists(legacy_save_path) or FileAccess.file_exists(legacy_backup_path)
 
