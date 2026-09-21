@@ -68,7 +68,7 @@ func _build_home() -> void:
 	start_button.pressed.connect(_request_start)
 	continue_button.pressed.connect(func() -> void: _show_result(navigation.continue_game()))
 	quit_button.pressed.connect(func() -> void: get_tree().quit())
-	encyclopedia_button.disabled = true
+	encyclopedia_button.pressed.connect(func() -> void: _open_page(preload("res://scenes/ui/card_encyclopedia.tscn"), encyclopedia_button))
 	settings_button.disabled = true
 	var journey := VBoxContainer.new()
 	journey.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -105,6 +105,7 @@ func refresh_state() -> void:
 	var busy := navigation == null or navigation.transitioning
 	start_button.disabled = busy or not state.can_start
 	continue_button.disabled = busy or not state.can_continue
+	encyclopedia_button.disabled = busy
 	continue_button.tooltip_text = state.reason
 	start_button.tooltip_text = state.reason if not state.can_start else ""
 	summary_label.text = state.summary if not state.summary.is_empty() else "旅程尚未开启"
@@ -129,3 +130,17 @@ func _show_result(result: Dictionary) -> void:
 	if not result.ok:
 		refresh_state()
 		status_label.text = result.message
+
+
+func _open_page(packed: PackedScene, source: Button) -> void:
+	if page != null or navigation.transitioning:
+		return
+	page = packed.instantiate() as Control
+	page.connect("back_requested", func() -> void:
+		page.queue_free()
+		page = null
+		home.show()
+		source.grab_focus()
+	)
+	home.hide()
+	add_child(page)
