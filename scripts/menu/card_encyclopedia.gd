@@ -67,6 +67,8 @@ func _ready() -> void:
 	card_list.add_theme_color_override("font_color", MenuTheme.INK)
 	card_list.add_theme_stylebox_override("panel", MenuTheme.box(Color("#d7c8a2"), MenuTheme.MUTED))
 	card_list.add_theme_color_override("font_selected_color", Color("#fff2cd"))
+	card_list.add_theme_stylebox_override("selected", MenuTheme.box(Color("#4b4637"), MenuTheme.INK))
+	card_list.add_theme_stylebox_override("selected_focus", MenuTheme.box(Color("#4b4637"), MenuTheme.ACCENT, 2))
 	card_list.fixed_icon_size = Vector2i(40, 48)
 	columns.add_child(card_list)
 	var panel := PanelContainer.new()

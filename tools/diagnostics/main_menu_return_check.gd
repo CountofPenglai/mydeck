@@ -43,7 +43,7 @@ func _check_guard() -> void:
 
 func _check_return_menu() -> void:
 	var session := AdventureSessionService.new()
-	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_return_menu")
+	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_return_menu", "main_menu_diagnostic_return_legacy")
 	session.save_store.delete_save()
 	var navigation := GameNavigationService.new()
 	navigation.session = session
@@ -66,16 +66,32 @@ func _check_return_menu() -> void:
 	gate.ok = true
 	menu.confirmation.confirmed.emit()
 	_check(paths == ["res://scenes/main_menu_scene.tscn"] and not session.save_store.has_save(), "standalone exit creates no save")
+	get_tree().scene_changed.emit()
+	_check(session.start_new_game(127).ok, "failed transition fixture")
+	var original := session.current_run
+	var room := original.floor_state.get_adjacent_rooms(original.floor_state.current_room_id)[0]
+	var payload := AdventureBattleSetupService.create_payload(original, room, AdventureEnums.EncounterTier.WEAK)
+	original.begin_transaction(AdventureEnums.TransactionType.BATTLE, "transition_failure", payload)
+	session.save_store.save_run(original)
+	session.pending_battle_scenario = AdventureBattleScenarioBuilder.build(original, payload)
+	var original_scenario := session.pending_battle_scenario
+	original.party[0].current_health = 7
+	navigation.scene_switcher = func(_path: String) -> Error: return ERR_CANT_OPEN
+	var failed_return := navigation.return_to_menu(true)
+	_check(not failed_return.ok, "failed scene switch reports error")
+	_check(session.current_run == original and session.pending_battle_scenario == original_scenario, "failed scene switch keeps live battle references")
+	_check(session.current_run.party[0].current_health == 7, "failed scene switch keeps in-progress health")
 	menu.free()
 	navigation.free()
+	session.save_store.delete_save()
 	session.free()
 	await get_tree().process_frame
 
 func _check_map_roundtrip() -> void:
 	var session := AdventureSessionService.new()
-	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_map_return")
+	session.save_store = AdventureSaveStore.new("main_menu_diagnostic_map_return", "main_menu_diagnostic_return_legacy")
 	session.save_store.delete_save()
-	session.start_new_game(821)
+	_check(session.start_new_game(821).ok, "map fixture starts isolated game")
 	var navigation := GameNavigationService.new()
 	navigation.session = session
 	add_child(navigation)

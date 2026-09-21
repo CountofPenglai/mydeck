@@ -53,6 +53,11 @@ func _exercise_catalog() -> void:
 	add_child(page)
 	await get_tree().process_frame
 	page.show_card(dual, true)
+	var selected_style := page.card_list.get_theme_stylebox("selected") as StyleBoxFlat
+	var panel_style := page.card_list.get_theme_stylebox("panel") as StyleBoxFlat
+	var selected_background := panel_style.bg_color.blend(selected_style.bg_color)
+	var selected_foreground: Color = page.card_list.get_theme_color("font_selected_color")
+	_check(absf(selected_foreground.get_luminance() - selected_background.get_luminance()) > 0.35, "selected card text retains readable contrast")
 	_check(page.detail_title.text.contains("测试逆位") and page.detail_meta.text.contains("3 AP"), "reverse name and cost")
 	_check(page.detail_body.text.contains("逆位规则正文") and page.detail_rules.text.contains("逆位详细裁定"), "existing rules shown")
 	_check(page.find_child("PlayButton", true, false) == null, "encyclopedia is read-only")

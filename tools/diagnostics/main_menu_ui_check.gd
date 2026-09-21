@@ -8,6 +8,11 @@ func _ready() -> void:
 	else:
 		await _exercise_menu()
 	print("MAIN_MENU_UI: %s" % ("PASS" if failures == 0 else "FAIL"))
+	if failures == 0 and OS.get_cmdline_user_args().has("--test-menu-quit"):
+		var menu: Control = load("res://scenes/main_menu_scene.tscn").instantiate()
+		add_child(menu)
+		menu.find_child("QuitGameButton", true, false).pressed.emit()
+		return
 	get_tree().quit(0 if failures == 0 else 1)
 
 func _exercise_menu() -> void:
@@ -40,7 +45,7 @@ func _exercise_menu() -> void:
 	scene.new_game_confirmation.canceled.emit()
 	scene.new_game_confirmation.hide()
 	_check(FileAccess.get_file_as_string(session.save_store.save_path) == bytes, "cancel preserves progress")
-	navigation.continue_game()
+	resume.pressed.emit()
 	var result: Dictionary = navigation.start_game(true)
 	_check(not result.ok and paths.size() == 1, "repeated transition cannot overwrite game")
 	_check(FileAccess.get_file_as_string(session.save_store.save_path) == bytes, "duplicate start has no save side effect")
