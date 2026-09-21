@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 AdventureSession="*res://scripts/adventure/adventure_session.gd"
 GameNavigation="*res://scripts/menu/game_navigation.gd"
+DisplaySettings="*res://scripts/settings/display_settings_service.gd"
 
 [display]
 

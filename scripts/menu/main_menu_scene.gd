@@ -69,7 +69,7 @@ func _build_home() -> void:
 	continue_button.pressed.connect(func() -> void: _show_result(navigation.continue_game()))
 	quit_button.pressed.connect(func() -> void: get_tree().quit())
 	encyclopedia_button.pressed.connect(func() -> void: _open_page(preload("res://scenes/ui/card_encyclopedia.tscn"), encyclopedia_button))
-	settings_button.disabled = true
+	settings_button.pressed.connect(func() -> void: _open_page(preload("res://scenes/ui/settings_panel.tscn"), settings_button))
 	var journey := VBoxContainer.new()
 	journey.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	journey.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -106,6 +106,7 @@ func refresh_state() -> void:
 	start_button.disabled = busy or not state.can_start
 	continue_button.disabled = busy or not state.can_continue
 	encyclopedia_button.disabled = busy
+	settings_button.disabled = busy
 	continue_button.tooltip_text = state.reason
 	start_button.tooltip_text = state.reason if not state.can_start else ""
 	summary_label.text = state.summary if not state.summary.is_empty() else "旅程尚未开启"
