@@ -7,6 +7,7 @@ class_name BattleScenario
 @export var seed: int = 1001
 @export var players: Array[Resource] = []
 @export var enemies: Array[Resource] = []
+@export var danger_snapshot: Dictionary = {}
 @export_group("Battlefield Features")
 @export var generate_battlefield_features: bool = false
 @export_range(1, 8, 1) var feature_chapter: int = 1

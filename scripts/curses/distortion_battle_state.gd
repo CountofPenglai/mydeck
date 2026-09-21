@@ -2,6 +2,7 @@ extends RefCounted
 class_name DistortionBattleState
 
 var permanent_fields: PackedStringArray = []
+var danger_fields: PackedStringArray = []
 var field_source_counts: Dictionary = {}
 var manifested_cards: Array[CardData] = []
 var decay_snapshot: Array[CardData] = []
@@ -17,6 +18,7 @@ var bloodseeking_ready: bool = false
 
 func reset_for_battle(character: CharacterState = null) -> void:
 	permanent_fields.clear()
+	danger_fields.clear()
 	if character != null:
 		permanent_fields = character.selected_distortion_fields.duplicate()
 	field_source_counts.clear()
@@ -64,11 +66,14 @@ func unregister_manifestation(card: CardData) -> void:
 
 
 func has_field(field_id: String) -> bool:
-	return permanent_fields.has(field_id) or int(field_source_counts.get(field_id, 0)) > 0
+	return permanent_fields.has(field_id) or danger_fields.has(field_id) or int(field_source_counts.get(field_id, 0)) > 0
 
 
 func get_active_fields() -> PackedStringArray:
 	var result := permanent_fields.duplicate()
+	for field_id in danger_fields:
+		if not result.has(field_id):
+			result.append(field_id)
 	for field_id in field_source_counts:
 		var id := str(field_id)
 		if int(field_source_counts[field_id]) > 0 and not result.has(id):
@@ -77,7 +82,7 @@ func get_active_fields() -> PackedStringArray:
 
 
 func get_source_count(field_id: String) -> int:
-	return int(field_source_counts.get(field_id, 0)) + (1 if permanent_fields.has(field_id) else 0)
+	return int(field_source_counts.get(field_id, 0)) + (1 if permanent_fields.has(field_id) or danger_fields.has(field_id) else 0)
 
 
 func card_adds_new_field(card: CardData) -> bool:
@@ -113,6 +118,7 @@ func was_round_flag_used(flag_id: String, round_number: int) -> bool:
 func snapshot() -> Dictionary:
 	return {
 		"permanent_fields": permanent_fields.duplicate(),
+		"danger_fields": danger_fields.duplicate(),
 		"field_source_counts": field_source_counts.duplicate(true),
 		"manifested_cards": manifested_cards.duplicate(),
 		"decay_snapshot": decay_snapshot.duplicate(),
@@ -129,6 +135,7 @@ func snapshot() -> Dictionary:
 
 func restore(data: Dictionary) -> void:
 	permanent_fields = PackedStringArray(data.get("permanent_fields", []))
+	danger_fields = PackedStringArray(data.get("danger_fields", []))
 	field_source_counts = (data.get("field_source_counts", {}) as Dictionary).duplicate(true)
 	manifested_cards.assign(data.get("manifested_cards", []) as Array)
 	decay_snapshot.assign(data.get("decay_snapshot", []) as Array)

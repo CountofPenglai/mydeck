@@ -88,7 +88,7 @@ static func create_enemy(archetype: StringName, seed: int = -1) -> EnemyState:
 	var state := EnemyState.new()
 	state.enemy_data = data
 	if spec.has("fixed_max_health"):
-		state.runtime_state["max_health_override"] = int(spec.fixed_max_health)
+		state.fixed_max_health_override = int(spec.fixed_max_health)
 	state.generate_deck(seed)
 	state.current_health = state.get_max_health()
 	return state

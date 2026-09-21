@@ -132,6 +132,7 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 		enemy_state.reset_battle_runtime()
 		if enemy_state.enemy_data != null:
 			distortion_state.permanent_fields = enemy_state.enemy_data.permanent_distortion_fields.duplicate()
+			distortion_state.danger_fields = enemy_state.danger_mutation_fields.duplicate()
 
 
 func ensure_initialized(config: BattleConfig, rng: RandomNumberGenerator) -> void:

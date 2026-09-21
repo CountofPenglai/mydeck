@@ -22,14 +22,12 @@ func create_battle_reward(run_state: PartyRunState, room: AdventureRoomState, en
 		"max_cards": 2,
 		"max_equipment": 0,
 		"gold": 0,
-		"provisions": 0,
 		"ritual_points": 0,
 		"camp_supplies": 0,
 		"settled": false,
 	}
 	if room.room_type == AdventureEnums.RoomType.NORMAL_BATTLE:
 		_add_normal_card_candidates(reward, run_state.get_active_party(), encounter_tier, rng)
-		reward["provisions"] = 1 if rng.randf() < 0.2 else 0
 	elif room.room_type == AdventureEnums.RoomType.ELITE_BATTLE:
 		_add_elite_card_candidates(reward, run_state.get_active_party(), rng, 1)
 		reward["equipment"] = _equipment_candidates(
@@ -53,15 +51,32 @@ func create_battle_reward(run_state: PartyRunState, room: AdventureRoomState, en
 	return reward
 
 
-func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array[Dictionary]:
+
+## Constructs only the ordinary card choice. No event callback or fixed loot.
+func create_cards_only_reward(run_state: PartyRunState, room: AdventureRoomState, encounter_tier: int) -> Dictionary:
 	_ensure_catalog()
-	var existing = room.runtime_data.get("shop_stock", [])
-	if existing is Array and not existing.is_empty():
-		var sanitized := _sanitize_shop_stock(existing as Array)
-		room.runtime_data["shop_stock"] = sanitized.duplicate(true)
-		return sanitized
 	var rng := RandomNumberGenerator.new()
-	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "shop", room.room_id.hash() + run_state.floor_index * 1000)
+	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "reward", room.room_id.hash() + run_state.floor_index * 1000)
+	var reward := {
+		"room_id": room.room_id,
+		"reward_mode": "cards_only",
+		"cards": [],
+		"equipment": [],
+		"claimed_cards": [],
+		"claimed_equipment": [],
+		"max_cards": 2,
+		"max_equipment": 0,
+		"settled": false,
+	}
+	_add_normal_card_candidates(reward, run_state.get_active_party(), encounter_tier, rng)
+	return reward
+
+
+func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array[Dictionary]:
+	return room.shop_stock.duplicate(true) if room != null else []
+
+func generate_shop_stock(run_state: PartyRunState, rng: RandomNumberGenerator) -> Array[Dictionary]:
+	_ensure_catalog()
 	var stock: Array[Dictionary] = []
 	for hero in run_state.party:
 		if hero == null or hero.character_data == null:
@@ -78,31 +93,11 @@ func get_shop_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array
 	for index in range(mini(3, consumables.size())):
 		var consumable: ConsumableData = consumables[index]
 		stock.append(_stock_entry("consumable", consumable.resource_path, consumable.item_name, 12))
-	room.runtime_data["shop_stock"] = stock.duplicate(true)
 	return stock
 
 
 func get_wilderness_merchant_stock(run_state: PartyRunState, room: AdventureRoomState) -> Array[Dictionary]:
-	_ensure_catalog()
-	var existing = room.runtime_data.get("shop_stock", [])
-	if existing is Array and not existing.is_empty():
-		var sanitized := _sanitize_shop_stock(existing as Array)
-		room.runtime_data["shop_stock"] = sanitized.duplicate(true)
-		return sanitized
-	var rng := RandomNumberGenerator.new()
-	rng.seed = AdventureMapGenerator.derive_seed(run_state.run_seed, "wilderness_merchant", room.room_id.hash() + run_state.floor_index * 1000)
-	var stock: Array[Dictionary] = []
-	var consumables: Array[ConsumableData] = _consumable_pool.duplicate()
-	_shuffle(consumables, rng)
-	if not consumables.is_empty():
-		for index in range(3):
-			var consumable: ConsumableData = consumables[index % consumables.size()]
-			stock.append(_stock_entry("consumable", consumable.resource_path, consumable.item_name, 12))
-	for equipment in _pick_shop_equipment(run_state, rng, 2):
-		stock.append(_stock_entry("equipment", equipment.resource_path, equipment.item_name, _equipment_price(equipment.rarity)))
-	stock.append(_stock_entry("camp_supply", "", "扎营物资", 15))
-	room.runtime_data["shop_stock"] = stock.duplicate(true)
-	return stock
+	return room.shop_stock.duplicate(true) if room != null else []
 
 
 func create_card_stack(card_path: String, stack_id: String, card_class: int = -1) -> CardStack:

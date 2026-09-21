@@ -2,11 +2,8 @@ extends Resource
 class_name AdventureEconomyConfig
 
 @export var starting_gold: int = 40
-@export var first_floor_provisions: int = 14
-@export var later_floor_provisions: int = 10
 @export var camp_point_cap: int = 12
 @export var shelter_camp_points: int = 4
-@export var provision_price: int = 5
 @export var camp_supply_price: int = 15
 @export var card_removal_base_price: int = 40
 @export var card_removal_price_growth: int = 20

@@ -10,6 +10,10 @@ func _ready() -> void:
 		get_tree().quit(exit_code)
 		return
 	var map_scene := scene.instantiate() as AdventureMapScene
+	var diagnostic_session := AdventureSessionService.new()
+	diagnostic_session.save_store = AdventureSaveStore.new("hex_diagnostic_inventory_ui")
+	diagnostic_session.start_new_demo(20260921)
+	map_scene.session = diagnostic_session
 	add_child(map_scene)
 	await get_tree().process_frame
 	if map_scene.run_state == null or map_scene.run_state.party.is_empty():
@@ -37,7 +41,7 @@ func _ready() -> void:
 	await _test_warrior_reserve_inventory_ui(map_scene)
 	if not map_scene._camp_activity_description("ranger_dig").contains("第三次"):
 		_fail("INVENTORY_UI_DIAG: camp activity description is incomplete")
-	_test_repeatable_infusion_ui(map_scene)
+	await _test_repeatable_infusion_ui(map_scene)
 	if map_scene.enemy_health_spin_box == null:
 		_fail("INVENTORY_UI_DIAG: enemy health test control missing")
 	elif int(map_scene.enemy_health_spin_box.value) != map_scene.run_state.enemy_health_percent \
@@ -45,6 +49,9 @@ func _ready() -> void:
 			or int(map_scene.enemy_health_spin_box.max_value) != 1000:
 		_fail("INVENTORY_UI_DIAG: enemy health test control is out of sync")
 	print("INVENTORY_UI_DIAG: completed")
+	map_scene.free()
+	diagnostic_session.save_store.delete_save()
+	diagnostic_session.free()
 	get_tree().quit(exit_code)
 
 

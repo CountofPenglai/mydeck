@@ -26,18 +26,31 @@ var pending_battle_scenario: BattleScenario
 func _ready() -> void:
 	definition.floor_count = 2
 	current_run = save_store.load_run()
-	if current_run != null and current_run.pending_transaction != null \
-		and current_run.pending_transaction.transaction_type == AdventureEnums.TransactionType.BATTLE:
-		_rebuild_pending_battle_scenario()
+	if current_run == null or current_run.pending_transaction == null:
+		return
+	match current_run.pending_transaction.transaction_type:
+		AdventureEnums.TransactionType.BATTLE:
+			_rebuild_pending_battle_scenario()
+		AdventureEnums.TransactionType.MOVE:
+			_finish_pending_move()
+		AdventureEnums.TransactionType.SHOP:
+			var recovered := AdventureShopService.apply_pending_restock(current_run)
+			if recovered.get("ok", false):
+				_save_only()
 
 
 func ensure_run() -> PartyRunState:
 	if current_run == null:
+		if save_store.load_status != AdventureSaveSchema.LoadStatus.NONE:
+			return null
 		start_new_demo()
 	return current_run
 
 
 func start_new_demo(seed_value: int = 0) -> PartyRunState:
+	if save_store.load_status == AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA:
+		status_message.emit("该存档版本不受支持，不会覆盖。")
+		return null
 	var resolved_seed := seed_value
 	if resolved_seed == 0:
 		var seed_rng := RandomNumberGenerator.new()
@@ -56,6 +69,7 @@ func start_new_demo(seed_value: int = 0) -> PartyRunState:
 	current_run = PartyRunState.new()
 	current_run.initialize_adventure(resolved_seed, heroes, definition)
 	current_run.floor_state = map_generator.generate(resolved_seed, 0, definition)
+	AdventureShopService.initialize_map(current_run)
 	pending_battle_scenario = null
 	_save_and_emit("新的两层冒险已生成。")
 	return current_run
@@ -133,58 +147,61 @@ func set_enemy_health_percent(value: int) -> bool:
 	return true
 
 
-func request_move(target_room_id: String) -> Dictionary:
+func request_move(target_room_id: String, operation_id: String = "") -> Dictionary:
 	var run := ensure_run()
-	if run.run_complete or run.run_failed or run.floor_state == null:
-		return _failure("本次冒险已经结束。")
+	if run == null or run.run_complete or run.run_failed or run.floor_state == null:
+		return _failure("本次冒险不可继续。")
 	if has_pending_reward() or has_pending_event_reward():
 		return _failure("请先完成当前奖励选择。")
-	if run.pending_transaction != null and not run.pending_transaction.committed:
-		return _failure("当前仍有未完成的冒险事务。")
-	var floor := run.floor_state
-	if not floor.are_connected(floor.current_room_id, target_room_id):
-		return _failure("只能移动到相邻且有道路连接的房间。")
-	var target := floor.get_room(target_room_id)
-	if target == null:
-		return _failure("目标房间不存在。")
-	var move_serial := int(run.adventure_flags.get("move_serial", 0)) + 1
-	run.adventure_flags["move_serial"] = move_serial
-	var ambush_triggered := false
-	var shown_chance := 0
-	run.begin_transaction(AdventureEnums.TransactionType.MOVE, "move_%d" % move_serial, {
-		"from": floor.current_room_id,
-		"to": target_room_id,
-		"move_serial": move_serial,
-	})
-	_save_only()
-	if run.provisions > 0:
-		run.spend_provision()
-	else:
-		shown_chance = 20 if floor.ambush_chance <= 0 else floor.ambush_chance
-		if floor.watch_protection:
-			floor.watch_protection = false
-			floor.ambush_chance = 40
+	var serial := int(run.adventure_flags.get("move_serial", 0)) + 1
+	var id := operation_id if not operation_id.is_empty() else "move_%d" % serial
+	var result := AdventureMapOperationService.prepare_move(run, target_room_id, id)
+	if not result.ok:
+		return _failure(str(result.message))
+	if result.get("duplicate", false):
+		return result
+	run.adventure_flags["move_serial"] = serial
+	if not _save_only():
+		run.commit_transaction()
+		return _failure("移动尚未保存，未应用探索代价。")
+	return _finish_pending_move()
+
+
+func _finish_pending_move() -> Dictionary:
+	var result := AdventureMapOperationService.apply_pending_move(current_run)
+	if not result.ok:
+		return result
+	current_run.commit_transaction()
+	var room := current_run.floor_state.get_current_room()
+	_activate_current_room(room)
+	result["room"] = room
+	result["battle"] = has_pending_battle()
+	_save_and_emit("抵达%s，危险 %d。" % [room.get_display_name(), current_run.floor_state.danger])
+	return result
+
+
+func _activate_current_room(room: AdventureRoomState) -> void:
+	if room == null or room.completed:
+		return
+	if room.is_combat_room():
+		_prepare_battle_transaction(room, get_current_encounter_tier())
+	elif room.room_type == AdventureEnums.RoomType.EVENT:
+		var policy := AdventureEventVariantService.resolve(room.content_id, current_run.floor_state.danger)
+		room.danger_variant_id = str(policy.variant_id)
+		if policy.auto_battle:
+			_prepare_battle_transaction(room, get_current_encounter_tier(), {
+				"event_id": room.content_id, "event_battle": true,
+				"event_variant_id": policy.variant_id, "reward_mode": "cards_only",
+			})
 		else:
-			var rng := RandomNumberGenerator.new()
-			rng.seed = AdventureMapGenerator.derive_seed(run.run_seed, "ambush", move_serial + run.floor_index * 10000)
-			ambush_triggered = rng.randi_range(1, 100) <= shown_chance
-			floor.ambush_chance = 20 if ambush_triggered else mini(80, shown_chance + 20)
-	floor.current_room_id = target_room_id
-	target.visited = true
-	target.content_revealed = true
-	_initialize_room_runtime(target)
-	if ambush_triggered:
-		_prepare_battle_transaction(target, true, AdventureEnums.EncounterTier.AMBUSH)
-		_save_and_emit("绝境行军触发了伏击。")
-		return {"ok": true, "ambush": true, "chance": shown_chance, "room": target}
-	run.commit_transaction()
-	_save_and_emit("抵达%s。" % target.get_display_name())
-	return {"ok": true, "ambush": false, "chance": shown_chance, "room": target}
+			current_run.begin_transaction(AdventureEnums.TransactionType.EVENT, "event_%s" % room.room_id, {"room_id": room.room_id})
+	elif room.room_type == AdventureEnums.RoomType.SHELTER:
+		rest_at_current_shelter()
 
 
 func get_current_encounter_tier() -> int:
 	var run := ensure_run()
-	if run.floor_state == null:
+	if run == null or run.floor_state == null:
 		return AdventureEnums.EncounterTier.WEAK
 	var victories := run.floor_state.normal_battle_victories
 	if victories < 2:
@@ -195,8 +212,10 @@ func get_current_encounter_tier() -> int:
 
 
 func start_current_battle() -> bool:
+	if has_pending_battle():
+		return resume_pending_battle()
 	var run := ensure_run()
-	var room := run.floor_state.get_current_room() if run.floor_state != null else null
+	var room := run.floor_state.get_current_room() if run != null and run.floor_state != null else null
 	if room == null or not room.is_combat_room() or room.completed:
 		return false
 	var tier := get_current_encounter_tier()
@@ -204,16 +223,18 @@ func start_current_battle() -> bool:
 		tier = AdventureEnums.EncounterTier.ELITE
 	elif room.room_type == AdventureEnums.RoomType.BOSS_BATTLE:
 		tier = AdventureEnums.EncounterTier.BOSS
-	_prepare_battle_transaction(room, false, tier)
+	_prepare_battle_transaction(room, tier)
 	return _enter_pending_battle_scene()
 
 
 func start_event_battle(event_id: String) -> bool:
+	if has_pending_battle():
+		return resume_pending_battle()
 	var run := ensure_run()
-	var room := run.floor_state.get_current_room() if run.floor_state != null else null
-	if room == null or room.room_type != AdventureEnums.RoomType.EVENT or room.completed:
+	var room := run.floor_state.get_current_room() if run != null and run.floor_state != null else null
+	if room == null or room.room_type != AdventureEnums.RoomType.EVENT or room.completed or room.content_id != event_id:
 		return false
-	_prepare_battle_transaction(room, false, AdventureEnums.EncounterTier.ELITE, {
+	_prepare_battle_transaction(room, AdventureEnums.EncounterTier.ELITE, {
 		"event_id": event_id,
 		"event_battle": true,
 	})
@@ -251,7 +272,7 @@ func pending_battle_grants_reward() -> bool:
 	if not has_pending_battle():
 		return false
 	var payload := current_run.pending_transaction.payload
-	return not bool(payload.get("ambush", false)) and not bool(payload.get("event_battle", false)) \
+	return (not bool(payload.get("event_battle", false)) or str(payload.get("reward_mode", "")) == "cards_only") \
 		and current_run.floor_state != null \
 		and current_run.floor_state.get_room(str(payload.get("room_id", ""))) != null
 
@@ -271,7 +292,6 @@ func resolve_pending_battle_result(result: BattleResult) -> bool:
 	var payload := transaction.payload
 	var room := current_run.floor_state.get_room(str(payload.get("room_id", ""))) \
 		if current_run.floor_state != null else null
-	var is_ambush := bool(payload.get("ambush", false))
 	var event_battle := bool(payload.get("event_battle", false))
 	pending_battle_scenario = null
 	if not result.victory:
@@ -282,8 +302,10 @@ func resolve_pending_battle_result(result: BattleResult) -> bool:
 	for hero in current_run.party:
 		if hero != null and result.downed_hero_ids.has(hero.adventure_character_id):
 			hero.current_health = 1
-	if is_ambush:
-		current_run.commit_transaction()
+	if room != null and str(payload.get("reward_mode", "")) == "cards_only":
+		var tier := int(payload.get("encounter_tier", AdventureEnums.EncounterTier.WEAK))
+		current_run.adventure_flags["pending_reward"] = reward_service.create_cards_only_reward(current_run, room, tier)
+		current_run.begin_transaction(AdventureEnums.TransactionType.REWARD, "reward_%s" % room.room_id, {"room_id": room.room_id, "reward_mode": "cards_only"})
 	elif event_battle:
 		_complete_event_battle(str(payload.get("event_id", "")), room)
 		current_run.commit_transaction()
@@ -421,6 +443,7 @@ func settle_pending_event_reward() -> Dictionary:
 		return _failure("奖励已记录，但无法开始混乱之门战斗。")
 	if room != null and bool(reward.get("complete_room", true)):
 		room.completed = true
+	_finish_event_decision()
 	var message := str(reward.get("completion_message", "事件奖励结算完成。"))
 	_save_and_emit(message)
 	return {"ok": true, "message": message, "completed": room != null and room.completed}
@@ -505,6 +528,8 @@ func settle_pending_reward() -> void:
 		reward["gospel_declined"] = true
 	reward["settled"] = true
 	var room := current_run.floor_state.get_room(str(reward.get("room_id", "")))
+	if room != null and str(reward.get("reward_mode", "")) == "cards_only":
+		room.completed = true
 	current_run.commit_transaction()
 	if room != null and room.room_type == AdventureEnums.RoomType.BOSS_BATTLE:
 		if current_run.floor_index >= current_run.floor_count - 1:
@@ -520,8 +545,8 @@ func enter_next_floor() -> bool:
 	_heal_party_percent(0.25)
 	current_run.add_camp_points(definition.get_economy().shelter_camp_points, definition.get_economy().camp_point_cap)
 	current_run.floor_index += 1
-	current_run.add_provisions(definition.get_economy().later_floor_provisions)
 	current_run.floor_state = map_generator.generate(current_run.run_seed, current_run.floor_index, definition)
+	AdventureShopService.initialize_map(current_run)
 	current_run.adventure_flags.erase("interfloor_camp")
 	_save_and_emit("进入第 %d 层。" % (current_run.floor_index + 1))
 	return true
@@ -529,7 +554,7 @@ func enter_next_floor() -> bool:
 
 func rest_at_current_shelter() -> bool:
 	var room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
-	if room == null or room.rest_used:
+	if room == null or room.rest_used or not _camp_is_available():
 		return false
 	_ensure_camp_opened(room)
 	_heal_party_percent(0.25)
@@ -541,7 +566,7 @@ func rest_at_current_shelter() -> bool:
 
 func can_deliver_adventurer_remains() -> bool:
 	var room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
-	return room != null and room.shelter_type == AdventureEnums.ShelterType.OUTPOST \
+	return room != null and _camp_is_available() and room.shelter_type == AdventureEnums.ShelterType.OUTPOST \
 		and bool(current_run.adventure_flags.get("adventurer_remains", false)) \
 		and not has_pending_event_reward()
 
@@ -576,6 +601,8 @@ func begin_adventurer_remains_delivery() -> Dictionary:
 
 
 func use_camp_activity(activity_id: String, hero_id: String = "") -> bool:
+	if not _camp_is_available():
+		return false
 	var camp_room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
 	if camp_room == null and not bool(current_run.adventure_flags.get("interfloor_camp", false)):
 		return false
@@ -598,18 +625,6 @@ func use_camp_activity(activity_id: String, hero_id: String = "") -> bool:
 			if bool(current_run.adventure_flags.get("tactical_rehearsal", false)) or not current_run.spend_camp_points(2):
 				return false
 			current_run.adventure_flags["tactical_rehearsal"] = true
-		"scout":
-			var target := _find_scout_target()
-			if target == null or not current_run.spend_camp_points(1):
-				return false
-			target.content_revealed = true
-		"watch":
-			if not current_run.spend_camp_points(2):
-				return false
-			if current_run.floor_state.ambush_chance >= 40:
-				current_run.floor_state.ambush_chance = maxi(20, current_run.floor_state.ambush_chance - 40)
-			else:
-				current_run.floor_state.watch_protection = true
 		"sharpen":
 			if hero == null or hero.character_data == null or hero.character_data.character_class != CardEnums.CardClass.WARRIOR \
 				or bool(current_run.adventure_flags.get("sharpen_%s" % hero.adventure_character_id, false)) \
@@ -859,7 +874,7 @@ func choose_distortion_reward(hero_id: String, reward_id: String) -> bool:
 
 
 func exchange_camp_supply() -> bool:
-	if current_run == null or current_run.camp_supplies <= 0:
+	if not _camp_is_available() or current_run.camp_supplies <= 0:
 		return false
 	current_run.camp_supplies -= 1
 	current_run.add_camp_points(2, definition.get_economy().camp_point_cap)
@@ -868,14 +883,32 @@ func exchange_camp_supply() -> bool:
 
 
 func get_shop_stock() -> Array[Dictionary]:
-	var room := current_run.floor_state.get_current_room() if current_run != null and current_run.floor_state != null else null
-	if room == null or room.room_type not in [AdventureEnums.RoomType.SHOP, AdventureEnums.RoomType.EVENT]:
-		return []
-	return _get_room_shop_stock(room)
+	return AdventureShopService.get_stock(_current_room_of_type(AdventureEnums.RoomType.SHOP))
+
+
+func request_shop_restock(operation_id: String = "") -> Dictionary:
+	var room := _current_room_of_type(AdventureEnums.RoomType.SHOP)
+	if room == null or current_run.run_complete or current_run.run_failed or has_pending_reward() or has_pending_event_reward():
+		return _failure("当前不能重访商店。")
+	var serial := int(current_run.adventure_flags.get("shop_operation_serial", 0)) + 1
+	var id := operation_id if not operation_id.is_empty() else "shop_restock_%d" % serial
+	var result := AdventureShopService.prepare_restock(current_run, room.room_id, id)
+	if not result.get("ok", false) or result.get("duplicate", false):
+		return result
+	current_run.adventure_flags["shop_operation_serial"] = serial
+	if not _save_only():
+		current_run.commit_transaction()
+		return _failure("补货尚未保存，未扣除探索代价。")
+	result = AdventureShopService.apply_pending_restock(current_run)
+	if result.get("ok", false):
+		_save_and_emit("商店补充 1 件商品，危险增加 1。")
+	return result
 
 
 func buy_shop_entry(index: int) -> bool:
-	var room := current_run.floor_state.get_current_room()
+	var room := _current_room_of_type(AdventureEnums.RoomType.SHOP)
+	if room == null or _loadout_change_is_blocked():
+		return false
 	var stock := _get_room_shop_stock(room)
 	if index < 0 or index >= stock.size():
 		return false
@@ -910,23 +943,14 @@ func buy_shop_entry(index: int) -> bool:
 		return false
 	entry["sold"] = true
 	stock[index] = entry
-	room.runtime_data["shop_stock"] = stock
+	room.shop_stock = stock
 	_save_and_emit("购买了 %s。" % str(entry.get("name", "物品")))
-	return true
-
-
-func buy_provision() -> bool:
-	var price := definition.get_economy().provision_price
-	if current_run == null or not current_run.spend_gold(price):
-		return false
-	current_run.add_provisions(1)
-	_save_and_emit("购买 1 点补给。")
 	return true
 
 
 func buy_camp_supply() -> bool:
 	var price := definition.get_economy().camp_supply_price
-	if current_run == null or not current_run.spend_gold(price):
+	if _current_room_of_type(AdventureEnums.RoomType.SHOP) == null or _loadout_change_is_blocked() or not current_run.spend_gold(price):
 		return false
 	current_run.camp_supplies += 1
 	_save_and_emit("购买 1 份扎营物资。")
@@ -1006,10 +1030,19 @@ func get_event_selection(option_id: String) -> Dictionary:
 
 
 func resolve_current_event(option_id: String, selection_value: Variant = {}) -> Dictionary:
+	if has_pending_event_reward() or has_pending_reward() or has_pending_battle():
+		return _failure("请先完成当前战斗或奖励选择。")
 	var room := _current_room_of_type(AdventureEnums.RoomType.EVENT)
 	if room == null or room.completed:
 		return _failure("当前没有可结算事件。")
+	var offered := get_current_event_options(room).any(func(option: Dictionary) -> bool:
+		return str(option.get("id", "")) == option_id
+	)
+	if not offered:
+		return _failure("当前事件不提供该选项。")
 	if option_id == "leave":
+		_finish_event_decision()
+		_save_and_emit("本次事件选择已结束。")
 		return {"ok": true, "message": "你暂时离开了%s。事件保持未完成，回到这里时仍可继续选择。" % str(get_event_definition(room).get("title", "事件")), "completed": false}
 	var availability := _get_event_option_availability(room, option_id)
 	if not bool(availability.get("available", false)):
@@ -1115,8 +1148,8 @@ func resolve_current_event(option_id: String, selection_value: Variant = {}) -> 
 				_add_random_curse(hero, room.room_id.hash() + roll)
 				message = "掷骰结果：%d。%s 获得 1 个随机普通业。" % [roll, hero.get_character_name()]
 			elif roll <= 5:
-				current_run.add_provisions(2)
-				message = "掷骰结果：%d。团队补给 +2，现有 %d。" % [roll, current_run.provisions]
+				current_run.add_gold(5)
+				message = "掷骰结果：%d。团队金币 +5，现有 %d。" % [roll, current_run.gold]
 			else:
 				_create_pending_card_event_reward(room, hero, CardEnums.Rarity.RARE, "受咒游荡者 · 稀有牌三选一", "掷骰结果为 6。为 %s 从 3 张本职业稀有牌中选择 1 张。" % hero.get_character_name(), true)
 				message = "掷骰结果：6。已锁定 %s 的 3 张稀有牌候选，请继续选择 1 张。" % hero.get_character_name()
@@ -1183,46 +1216,18 @@ func resolve_current_event(option_id: String, selection_value: Variant = {}) -> 
 			return _failure("无法开始专属战斗。")
 		_:
 			return _failure("尚未实现该事件选择。")
+	_finish_event_decision()
 	_save_and_emit(message)
 	return {"ok": true, "message": message, "completed": room.completed}
 
 
 func get_event_definition(room: AdventureRoomState) -> Dictionary:
-	return AdventureContentCatalog.get_event_definition(room.content_id if room != null else "")
+	var danger := current_run.floor_state.danger if current_run != null and current_run.floor_state != null else 0
+	return AdventureEventVariantService.describe(room.content_id if room != null else "", danger)
 
 
-func _prepare_battle_transaction(room: AdventureRoomState, ambush: bool, tier: int, extra_payload: Dictionary = {}) -> void:
-	var payload := extra_payload.duplicate(true)
-	payload["room_id"] = room.room_id
-	payload["ambush"] = ambush
-	payload["encounter_tier"] = tier
-	payload["battle_seed"] = AdventureMapGenerator.derive_seed(current_run.run_seed, "encounter", room.room_id.hash() + current_run.floor_index * 1000 + (70000 if ambush else 0))
-	payload["starting_hand_bonus"] = 1 if bool(current_run.adventure_flags.get("tactical_rehearsal", false)) else 0
-	payload["enemy_health_percent"] = current_run.enemy_health_percent
-	var enemy_chapter := EnemyCatalogRouter.chapter_for_floor(current_run.floor_index)
-	payload["enemy_chapter"] = enemy_chapter
-	payload["battlefield_seed"] = AdventureMapGenerator.derive_seed(
-		int(payload["battle_seed"]),
-		"battlefield_layout",
-		0
-	)
-	payload["battlefield_generation_version"] = 1
-	payload["generate_battlefield_features"] = tier != AdventureEnums.EncounterTier.BOSS
-	payload["force_abyss_features"] = _roll_chapter_one_abyss(
-		enemy_chapter,
-		tier,
-		int(payload["battlefield_seed"])
-	)
-	current_run.adventure_flags.erase("tactical_rehearsal")
-	var last_key := "last_chapter_%d_encounter_%d" % [enemy_chapter, tier]
-	var bag_key := "chapter_%d_encounter_bag_%d" % [enemy_chapter, tier]
-	var bag_ids: Array = current_run.adventure_flags.get(bag_key, []) as Array
-	var draw := EnemyCatalogRouter.draw_encounter(enemy_chapter, tier, int(payload.battle_seed), bag_ids, str(current_run.adventure_flags.get(last_key, "")))
-	var encounter := draw.get("encounter", {}) as Dictionary
-	payload["encounter_id"] = str(encounter.get("id", ""))
-	payload["enemy_archetypes"] = encounter.get("enemies", []).duplicate()
-	current_run.adventure_flags[last_key] = payload.encounter_id
-	current_run.adventure_flags[bag_key] = draw.get("remaining_ids", [])
+func _prepare_battle_transaction(room: AdventureRoomState, tier: int, extra_payload: Dictionary = {}) -> void:
+	var payload := AdventureBattleSetupService.create_payload(current_run, room, tier, extra_payload)
 	current_run.begin_transaction(AdventureEnums.TransactionType.BATTLE, "battle_%s" % room.room_id, payload)
 	pending_battle_scenario = _build_battle_scenario(payload)
 	_save_only()
@@ -1235,61 +1240,11 @@ func _rebuild_pending_battle_scenario() -> void:
 
 
 func _build_battle_scenario(payload: Dictionary) -> BattleScenario:
-	var template := load("res://resources/battle/sample_battle_scenario.tres") as BattleScenario
-	if template == null:
-		return null
-	var scenario := template.duplicate(true) as BattleScenario
-	scenario.scene_prototype = null
-	scenario.players.clear()
-	for hero in current_run.get_active_party():
-		scenario.players.append(hero)
-	scenario.enemies.clear()
-	var tier := int(payload.get("encounter_tier", AdventureEnums.EncounterTier.WEAK))
-	var archetypes: Array = payload.get("enemy_archetypes", []) as Array
-	var fallback_chapter := 1 if not archetypes.is_empty() else EnemyCatalogRouter.chapter_for_floor(current_run.floor_index)
-	var enemy_chapter := int(payload.get("enemy_chapter", fallback_chapter))
-	if archetypes.is_empty():
-		var encounter := EnemyCatalogRouter.pick_encounter(enemy_chapter, tier, int(payload.get("battle_seed", current_run.run_seed)))
-		archetypes = encounter.get("enemies", []) as Array
-	var birth_index := 0
-	var enemy_health_percent := clampi(
-		int(payload.get("enemy_health_percent", current_run.enemy_health_percent)), 1, 1000
-	)
-	for archetype in archetypes:
-		var enemy_seed := AdventureMapGenerator.derive_seed(int(payload.get("battle_seed", current_run.run_seed)), "enemy_deck", birth_index)
-		var enemy := EnemyCatalogRouter.create_enemy(enemy_chapter, StringName(archetype), enemy_seed)
-		if enemy != null:
-			enemy.max_health_percent = enemy_health_percent
-			enemy.current_health = enemy.get_max_health()
-			scenario.enemies.append(enemy)
-		birth_index += 1
-	scenario.seed = int(payload.get("battle_seed", current_run.run_seed))
-	scenario.generate_battlefield_features = bool(payload.get("generate_battlefield_features", true))
-	scenario.feature_chapter = enemy_chapter
-	scenario.feature_encounter_tier = tier
-	scenario.feature_seed = int(payload.get("battlefield_seed", scenario.seed))
-	scenario.force_abyss_features = bool(payload.get("force_abyss_features", false))
-	if scenario.battle_config != null:
-		scenario.battle_config = scenario.battle_config.duplicate(true) as BattleConfig
-		scenario.battle_config.starting_hand_size += int(payload.get("starting_hand_bonus", 0))
-	return scenario
+	return AdventureBattleScenarioBuilder.build(current_run, payload)
 
 
 func _roll_chapter_one_abyss(chapter: int, tier: int, battlefield_seed: int) -> bool:
-	if current_run == null or chapter != 1 \
-			or (tier != AdventureEnums.EncounterTier.STRONG \
-			and tier != AdventureEnums.EncounterTier.ELITE):
-		return false
-	const MISS_KEY := "chapter_1_battlefield_abyss_misses"
-	var misses := int(current_run.adventure_flags.get(MISS_KEY, 0))
-	var generated := misses >= 2
-	if not generated:
-		var rng := RandomNumberGenerator.new()
-		rng.seed = AdventureMapGenerator.derive_seed(battlefield_seed, "abyss_roll", misses)
-		var chance := 75 if tier == AdventureEnums.EncounterTier.ELITE else 50
-		generated = rng.randi_range(1, 100) <= chance
-	current_run.adventure_flags[MISS_KEY] = 0 if generated else misses + 1
-	return generated
+	return AdventureBattleSetupService.roll_chapter_one_abyss(current_run, chapter, tier, battlefield_seed)
 
 
 func _enter_pending_battle_scene() -> bool:
@@ -1304,7 +1259,6 @@ func _apply_fixed_reward(room: AdventureRoomState, reward: Dictionary) -> void:
 	var gold := definition.get_economy().get_battle_gold(room.room_type, current_run.floor_index)
 	reward["gold"] = gold
 	current_run.add_gold(gold)
-	current_run.add_provisions(int(reward.get("provisions", 0)))
 	current_run.gain_ritual_points(int(reward.get("ritual_points", 0)))
 	current_run.camp_supplies += int(reward.get("camp_supplies", 0))
 
@@ -1453,6 +1407,7 @@ func _finish_pending_event_reward(message: String) -> Dictionary:
 	if room != null and bool(reward.get("complete_room", true)):
 		room.completed = true
 	current_run.adventure_flags.erase("pending_event_reward")
+	_finish_event_decision()
 	_save_and_emit(message)
 	return {"ok": true, "message": message, "completed": true}
 
@@ -1727,19 +1682,31 @@ func _ensure_camp_opened(room: AdventureRoomState) -> void:
 
 
 func _camp_is_available() -> bool:
-	return _current_room_of_type(AdventureEnums.RoomType.SHELTER) != null \
-		or (current_run != null and bool(current_run.adventure_flags.get("interfloor_camp", false)))
+	if current_run == null or current_run.run_complete or current_run.run_failed or has_pending_battle() or has_pending_reward() or has_pending_event_reward():
+		return false
+	var room := _current_room_of_type(AdventureEnums.RoomType.SHELTER)
+	return (room != null and not room.camp_visit_closed) or bool(current_run.adventure_flags.get("interfloor_camp", false))
 
 
-func _find_scout_target() -> AdventureRoomState:
-	if current_run == null or current_run.floor_state == null:
-		return null
-	var floor := current_run.floor_state
-	for room in floor.rooms:
-		if room != null and room.room_type == AdventureEnums.RoomType.EVENT and not room.visited \
-			and not room.content_revealed and floor.graph_distance(floor.current_room_id, room.room_id) <= 3:
-			return room
-	return null
+func get_scout_candidates() -> Array[String]:
+	if not _camp_is_available():
+		return []
+	return AdventureRevealService.get_candidates(current_run.floor_state, current_run.floor_state.current_room_id, 3)
+
+
+func request_scout(tile_ids: Array[String]) -> Dictionary:
+	if not _camp_is_available() or current_run.camp_points < 1:
+		return _failure("当前无法侦察，或扎营点不足。")
+	if not AdventureRevealService.reveal(current_run.floor_state, tile_ids):
+		return _failure("请选择范围 3 内至多 2 个尚未揭示的图格。")
+	current_run.spend_camp_points(1)
+	_save_and_emit("侦察揭示了 %d 个图格；危险度不变。" % tile_ids.size())
+	return {"ok": true, "revealed": tile_ids.duplicate()}
+
+
+func _finish_event_decision() -> void:
+	if current_run != null and current_run.pending_transaction != null and current_run.pending_transaction.transaction_type == AdventureEnums.TransactionType.EVENT:
+		current_run.commit_transaction()
 
 
 func _current_room_of_type(room_type: int) -> AdventureRoomState:
@@ -1775,10 +1742,11 @@ func _first_inventory_receiver() -> CharacterState:
 	return null
 
 
-func _save_only() -> void:
+func _save_only() -> bool:
 	var error := save_store.save_run(current_run)
 	if error != OK:
 		status_message.emit("自动存档失败：%s" % error_string(error))
+	return error == OK
 
 
 func _save_and_emit(message: String) -> void:

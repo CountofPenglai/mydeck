@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/adventure/adventure_map_scene.gd" id="1_scene"]
 
 [node name="AdventureMapScene" type="Control"]
-custom_minimum_size = Vector2(960, 540)
+custom_minimum_size = Vector2(800, 480)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

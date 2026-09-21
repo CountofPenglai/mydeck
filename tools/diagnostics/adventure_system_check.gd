@@ -268,7 +268,7 @@ func _test_map_generation() -> void:
 	for seed_value in range(1, 251):
 		for floor_index in range(2):
 			var floor := generator.generate(seed_value * 7919, floor_index, definition)
-			var errors := generator.validate(floor)
+			var errors: PackedStringArray = AdventureMapValidator.validate(floor)
 			if not errors.is_empty():
 				_fail("ADVENTURE_DIAG: seed %d floor %d invalid: %s" % [seed_value, floor_index, ", ".join(errors)])
 				return
@@ -303,7 +303,6 @@ func _test_save_round_trip() -> void:
 	var run := PartyRunState.new()
 	run.initialize_adventure(424242, heroes, definition)
 	run.gold = 73
-	run.provisions = 9
 	run.camp_points = 5
 	run.enemy_health_percent = 175
 	run.floor_state = AdventureMapGenerator.new().generate(run.run_seed, 0, definition)
@@ -322,7 +321,11 @@ func _test_save_round_trip() -> void:
 		"diag": [{"path": "res://resources/items/lion_greatsword.tres", "reward_class": CardEnums.CardClass.WARRIOR}],
 	}
 	run.equipment_class_miss_streaks = {str(CardEnums.CardClass.RANGER): 2}
-	run.begin_transaction(AdventureEnums.TransactionType.MOVE, "diag_move", {"roll": 17})
+	var next_room := run.floor_state.get_adjacent_rooms(run.floor_state.current_room_id)[0]
+	var prepared := AdventureMapOperationService.prepare_move(run, next_room.room_id, "diag_move")
+	if not bool(prepared.get("ok", false)):
+		_fail("ADVENTURE_DIAG: could not prepare a real move for save round trip")
+		return
 	var store := AdventureSaveStore.new("adventure_diagnostic")
 	store.delete_save()
 	var save_error := store.save_run(run)
@@ -334,7 +337,7 @@ func _test_save_round_trip() -> void:
 	if loaded == null:
 		_fail("ADVENTURE_DIAG: save did not load")
 		return
-	if loaded.run_seed != run.run_seed or loaded.gold != 73 or loaded.provisions != 9 or loaded.camp_points != 5 \
+	if loaded.run_seed != run.run_seed or loaded.gold != 73 or loaded.camp_points != 5 \
 			or loaded.enemy_health_percent != 175:
 		_fail("ADVENTURE_DIAG: scalar run state changed during round trip")
 	if loaded.party.size() != 3 or loaded.party[0].current_health != run.party[0].current_health:
@@ -357,6 +360,10 @@ func _test_save_round_trip() -> void:
 		_fail("ADVENTURE_DIAG: floor state changed during round trip")
 	if loaded.pending_transaction == null or loaded.pending_transaction.transaction_id != "diag_move":
 		_fail("ADVENTURE_DIAG: pending transaction changed during round trip")
+		return
+	var normalized_payload: Dictionary = JSON.parse_string(JSON.stringify(run.pending_transaction.payload))
+	if loaded.pending_transaction.payload != normalized_payload:
+		_fail("ADVENTURE_DIAG: prepared movement payload changed during round trip")
 	if loaded.equipment_reward_drawn_paths != run.equipment_reward_drawn_paths:
 		_fail("ADVENTURE_DIAG: equipment draw history changed during round trip")
 	if JSON.stringify(loaded.equipment_reward_offers) != JSON.stringify(run.equipment_reward_offers):
@@ -956,12 +963,16 @@ func _test_event_choices_and_feedback() -> void:
 		altar_run.party[1].adventure_character_id: 0,
 		altar_run.party[2].adventure_character_id: 2,
 	}
-	var curse_counts_before := [altar_run.party[0].curse_instances.size(), altar_run.party[1].curse_instances.size(), altar_run.party[2].curse_instances.size()]
+	var curse_depths_before := [_total_curse_depth(altar_run.party[0]), _total_curse_depth(altar_run.party[1]), _total_curse_depth(altar_run.party[2])]
+	var health_before := [altar_run.party[0].current_health, altar_run.party[1].current_health, altar_run.party[2].current_health]
 	var altar_result := altar_service.resolve_current_event("altar_resolve", {"curse_counts": counts})
 	if not bool(altar_result.get("ok", false)) or not str(altar_result.get("message", "")).contains(altar_run.party[0].get_character_name()) \
-			or altar_run.party[0].curse_instances.size() != curse_counts_before[0] + 1 \
-			or altar_run.party[1].curse_instances.size() != curse_counts_before[1] \
-			or altar_run.party[2].curse_instances.size() != curse_counts_before[2] + 2:
+			or _total_curse_depth(altar_run.party[0]) != curse_depths_before[0] + 1 \
+			or _total_curse_depth(altar_run.party[1]) != curse_depths_before[1] \
+			or _total_curse_depth(altar_run.party[2]) != curse_depths_before[2] + 2 \
+			or altar_run.party[0].current_health != mini(altar_run.party[0].get_max_health(), health_before[0] + 10) \
+			or altar_run.party[1].current_health != health_before[1] \
+			or altar_run.party[2].current_health != mini(altar_run.party[2].get_max_health(), health_before[2] + 20):
 		_fail("ADVENTURE_DIAG: fallen altar did not resolve explicit per-hero choices")
 	altar_service.save_store.delete_save()
 
@@ -986,15 +997,37 @@ func _test_event_choices_and_feedback() -> void:
 	map_scene.free()
 	wanderer_service.save_store.delete_save()
 
-	var merchant_service := _create_event_service("wilderness_merchant", "event_merchant_diagnostic")
-	var merchant_stock := merchant_service.get_shop_stock()
-	var merchant_kinds := {}
-	for stock_entry in merchant_stock:
-		merchant_kinds[str(stock_entry.get("kind", ""))] = int(merchant_kinds.get(str(stock_entry.get("kind", "")), 0)) + 1
-	if merchant_stock.size() != 6 or int(merchant_kinds.get("consumable", 0)) != 3 \
-			or int(merchant_kinds.get("equipment", 0)) != 2 or int(merchant_kinds.get("camp_supply", 0)) != 1:
-		_fail("ADVENTURE_DIAG: wilderness merchant stock does not match 3 consumables + 2 equipment + 1 camp supply")
-	merchant_service.save_store.delete_save()
+	var shop_service := AdventureSessionService.new()
+	shop_service.save_store = AdventureSaveStore.new("map_shop_event_diagnostic")
+	shop_service.save_store.delete_save()
+	var shop_run := shop_service.start_new_demo(818181)
+	var shop_rooms: Array[AdventureRoomState] = []
+	var has_wilderness_merchant := false
+	if shop_run != null and shop_run.floor_state != null:
+		for room in shop_run.floor_state.rooms:
+			if room == null:
+				continue
+			if room.room_type == AdventureEnums.RoomType.SHOP:
+				shop_rooms.append(room)
+			if room.content_id == "wilderness_merchant":
+				has_wilderness_merchant = true
+	if shop_rooms.size() != 2 or has_wilderness_merchant:
+		_fail("ADVENTURE_DIAG: generated floor must have exactly two shops and no wilderness merchant event")
+	else:
+		var hidden_shop := shop_rooms[0]
+		var stock_before := hidden_shop.shop_stock.duplicate(true)
+		var rng_before := shop_run.shop_rng_state
+		var first_read := AdventureShopService.get_stock(hidden_shop)
+		var second_read := AdventureShopService.get_stock(hidden_shop)
+		var stock_kinds := {}
+		for stock_entry in first_read:
+			stock_kinds[str(stock_entry.get("kind", ""))] = int(stock_kinds.get(str(stock_entry.get("kind", "")), 0)) + 1
+		if hidden_shop.content_revealed or first_read.is_empty() or first_read != second_read \
+				or hidden_shop.shop_stock != stock_before or shop_run.shop_rng_state != rng_before \
+				or int(stock_kinds.get("card", 0)) <= 0 or int(stock_kinds.get("equipment", 0)) <= 0 \
+				or int(stock_kinds.get("consumable", 0)) <= 0:
+			_fail("ADVENTURE_DIAG: hidden generated shop stock must contain cards, equipment, consumables, and remain a pure read")
+	shop_service.save_store.delete_save()
 
 	var chapel_service := _create_event_service("sealed_chapel", "event_chapel_diagnostic")
 	var chapel_room := chapel_service.current_run.floor_state.get_current_room()
@@ -1110,6 +1143,16 @@ func _create_event_service(event_id: String, save_slot: String) -> AdventureSess
 	return service
 
 
+func _total_curse_depth(hero: CharacterState) -> int:
+	var total := 0
+	if hero == null:
+		return total
+	for curse in hero.curse_instances:
+		if curse != null:
+			total += curse.depth
+	return total
+
+
 func _find_inventory_stack(hero: CharacterState, item: ItemData) -> InventoryStack:
 	for stack in hero.inventory:
 		if stack != null and stack.item_data == item:
@@ -1130,7 +1173,9 @@ func _find_button_with_text(root: Node, fragment: String) -> Button:
 func _floor_signature(floor: AdventureFloorState) -> String:
 	var entries := PackedStringArray()
 	for room in floor.rooms:
-		var neighbors := Array(room.neighbor_ids)
+		var neighbors := PackedStringArray()
+		for neighbor in floor.get_adjacent_rooms(room.room_id):
+			neighbors.append(neighbor.room_id)
 		neighbors.sort()
 		entries.append("%s@%d,%d#%d>%s" % [room.room_id, room.cell.x, room.cell.y, room.room_type, ",".join(neighbors)])
 	entries.sort()

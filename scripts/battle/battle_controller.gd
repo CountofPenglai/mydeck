@@ -2,6 +2,7 @@ extends RefCounted
 class_name BattleController
 
 const BattleHexGrid = preload("res://scripts/battle/battle_hex_grid.gd")
+const BattleDangerService = preload("res://scripts/adventure/adventure_battle_danger_service.gd")
 const BattleSurfaceState = preload("res://scripts/battle/battle_surface_state.gd")
 const BattlePathfinder = preload("res://scripts/battle/battle_pathfinder.gd")
 const BattlefieldFeatureGenerator = preload("res://scripts/battle/battlefield_feature_generator.gd")
@@ -154,13 +155,17 @@ func setup(new_scenario: BattleScenario) -> void:
 		units.append(unit)
 		player_units.append(unit)
 
+	var danger_slot := 0
 	for enemy_template in scenario.get_enemy_states():
+		var current_danger_slot := danger_slot
+		danger_slot += 1
 		if enemy_template == null:
 			continue
 		var enemy_state := _create_runtime_enemy_state(enemy_template)
 		if enemy_state == null:
 			continue
 		enemy_state.ensure_initialized(rng.randi())
+		BattleDangerService.apply_enemy(enemy_state, scenario.danger_snapshot, current_danger_slot)
 		enemy_state.current_health = enemy_state.get_max_health()
 		enemy_state.generate_deck(rng.randi())
 		var spawn_cell_value: Variant = _find_enemy_spawn_cell_for_enemy(enemy_state)
@@ -3383,6 +3388,10 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	damage_context.metadata["action_id"] = get_current_action_id()
 	for key in metadata:
 		damage_context.metadata[key] = metadata[key]
+	if source != null and not bool(metadata.get("fixed_damage", false)) and not bool(metadata.get("environmental", false)):
+		source.modify_outgoing_damage(damage_context)
+	damage_context.amount = BattleDangerService.scale_damage(damage_context.amount, source, metadata.merged({"target": target}))
+	damage_context.metadata["danger_scaled"] = source != null and source.enemy_state != null and source.enemy_state.danger_damage_bonus_percent > 0
 	target.modify_incoming_damage(damage_context)
 	if damage_context.prevented:
 		return 0
@@ -3406,8 +3415,6 @@ func apply_damage(source: BattleUnitState, target: BattleUnitState, amount: int,
 	if damage_context.prevented:
 		return 0
 	var is_environmental := bool(metadata.get("environmental", false))
-	if source != null and not bool(metadata.get("fixed_damage", false)) and not is_environmental:
-		source.modify_outgoing_damage(damage_context)
 	if bool(damage_context.metadata.get("converted_to_status", false)):
 		return 0
 
@@ -4535,6 +4542,8 @@ func spawn_enemy_unit(enemy_state: EnemyState, target_cell: Vector2i, starting_h
 	for existing in units:
 		if existing != null:
 			next_id = maxi(next_id, existing.unit_id + 1)
+	BattleDangerService.apply_enemy(enemy_state, scenario.danger_snapshot if scenario != null else {}, -1, true)
+	enemy_state.current_health = enemy_state.get_max_health()
 	var unit := BattleUnitState.new()
 	unit.setup_enemy(next_id, enemy_state, config.default_token_radius)
 	unit.battle_controller = self

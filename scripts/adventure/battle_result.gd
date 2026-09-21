@@ -4,7 +4,6 @@ class_name BattleResult
 @export var victory: bool = false
 @export var battle_id: String = ""
 @export var encounter_tier: int = AdventureEnums.EncounterTier.WEAK
-@export var is_ambush: bool = false
 @export var hero_health: Dictionary = {}
 @export var hero_ranger_elements: Dictionary = {}
 @export var downed_hero_ids: PackedStringArray = []

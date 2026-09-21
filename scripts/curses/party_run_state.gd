@@ -3,16 +3,17 @@ class_name PartyRunState
 
 const STARTING_RITUAL_POINTS := 3
 const MIN_RITUAL_DEBT := -2
-const SAVE_VERSION := 6
+const SAVE_VERSION := 7
 
 @export var ritual_points: int = STARTING_RITUAL_POINTS
 @export_group("Adventure")
 @export var save_version: int = SAVE_VERSION
 @export var run_seed: int = 0
+@export var shop_rng_seed: String = ""
+@export var shop_rng_state: String = ""
 @export var floor_index: int = 0
 @export var floor_count: int = 2
 @export var gold: int = 40
-@export var provisions: int = 14
 @export var camp_points: int = 0
 @export var camp_supplies: int = 0
 @export var card_removals_used: int = 0
@@ -33,10 +34,13 @@ func initialize_adventure(seed_value: int, heroes: Array[CharacterState], defini
 	var economy := resolved_definition.get_economy()
 	save_version = SAVE_VERSION
 	run_seed = seed_value
+	var shop_rng := RandomNumberGenerator.new()
+	shop_rng.seed = AdventureMapGenerator.derive_seed(seed_value, "shop_stock", 0)
+	shop_rng_seed = str(shop_rng.seed)
+	shop_rng_state = str(shop_rng.state)
 	floor_index = 0
 	floor_count = resolved_definition.floor_count
 	gold = economy.starting_gold
-	provisions = economy.first_floor_provisions
 	camp_points = 0
 	camp_supplies = 0
 	ritual_points = STARTING_RITUAL_POINTS
@@ -75,21 +79,6 @@ func spend_gold(amount: int) -> bool:
 	if amount < 0 or gold < amount:
 		return false
 	gold -= amount
-	return true
-
-
-func add_provisions(amount: int) -> int:
-	var actual := maxi(0, amount)
-	provisions += actual
-	if actual > 0 and floor_state != null:
-		floor_state.ambush_chance = 0
-	return actual
-
-
-func spend_provision() -> bool:
-	if provisions <= 0:
-		return false
-	provisions -= 1
 	return true
 
 

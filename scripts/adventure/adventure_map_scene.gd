@@ -7,10 +7,9 @@ var selected_room_id: String = ""
 
 var floor_label: Label
 var gold_label: Label
-var provisions_label: Label
 var camp_label: Label
 var ritual_label: Label
-var ambush_label: Label
+var danger_label: Label
 var seed_edit: LineEdit
 var enemy_health_spin_box: SpinBox
 var status_label: Label
@@ -32,7 +31,8 @@ var event_modal_feedback: Label
 
 
 func _ready() -> void:
-	session = get_node_or_null("/root/AdventureSession") as AdventureSessionService
+	if session == null:
+		session = get_node_or_null("/root/AdventureSession") as AdventureSessionService
 	if session == null:
 		push_error("AdventureSession autoload is missing.")
 		return
@@ -40,6 +40,9 @@ func _ready() -> void:
 	session.state_changed.connect(_refresh)
 	session.status_message.connect(_show_status)
 	run_state = session.ensure_run()
+	if run_state == null:
+		_show_start_required()
+		return
 	selected_room_id = run_state.floor_state.current_room_id
 	_refresh()
 	_show_pending_state()
@@ -70,7 +73,7 @@ func _build_ui() -> void:
 	map_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(map_panel)
 	map_view = AdventureMapView.new()
-	map_view.custom_minimum_size = Vector2(640.0, 420.0)
+	map_view.custom_minimum_size = Vector2(360.0, 280.0)
 	map_view.room_selected.connect(_on_room_selected)
 	map_view.room_hovered.connect(_on_room_hovered)
 	map_panel.add_child(map_view)
@@ -81,6 +84,7 @@ func _build_ui() -> void:
 	status_label = Label.new()
 	status_label.custom_minimum_size = Vector2(0.0, 26.0)
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	status_label.add_theme_color_override("font_color", Color("#d7c797"))
 	footer.add_child(status_label)
 	footer.add_child(_build_test_controls())
@@ -97,22 +101,19 @@ func _build_top_bar() -> Control:
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
 	panel.add_child(margin)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 12)
+	row.add_theme_constant_override("v_separation", 6)
 	margin.add_child(row)
 	floor_label = _top_label()
 	gold_label = _top_label()
-	provisions_label = _top_label()
 	camp_label = _top_label()
 	ritual_label = _top_label()
-	ambush_label = _top_label()
-	for label in [floor_label, gold_label, provisions_label, camp_label, ritual_label, ambush_label]:
+	danger_label = _top_label()
+	for label in [floor_label, gold_label, camp_label, ritual_label, danger_label]:
 		row.add_child(label)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spacer)
 	seed_edit = LineEdit.new()
-	seed_edit.custom_minimum_size = Vector2(150.0, 34.0)
+	seed_edit.custom_minimum_size = Vector2(130.0, 34.0)
 	seed_edit.placeholder_text = "冒险种子"
 	seed_edit.tooltip_text = "输入整数种子后开始新的 Demo 冒险"
 	row.add_child(seed_edit)
@@ -154,7 +155,7 @@ func _build_test_controls() -> Control:
 
 func _build_detail_panel() -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(330.0, 0.0)
+	panel.custom_minimum_size = Vector2(300.0, 0.0)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 14)
 	margin.add_theme_constant_override("margin_top", 14)
@@ -172,12 +173,12 @@ func _build_detail_panel() -> Control:
 	detail_body.bbcode_enabled = true
 	detail_body.fit_content = false
 	detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_body.custom_minimum_size = Vector2(0.0, 180.0)
+	detail_body.custom_minimum_size = Vector2(0.0, 140.0)
 	stack.add_child(detail_body)
 	var separator := HSeparator.new()
 	stack.add_child(separator)
 	var action_scroll := ScrollContainer.new()
-	action_scroll.custom_minimum_size = Vector2(0.0, 180.0)
+	action_scroll.custom_minimum_size = Vector2(0.0, 120.0)
 	action_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stack.add_child(action_scroll)
 	action_list = VBoxContainer.new()
@@ -238,14 +239,16 @@ func _build_modal_layer() -> void:
 
 func _refresh() -> void:
 	run_state = session.ensure_run()
+	if run_state == null:
+		_show_start_required()
+		return
 	if run_state.floor_state == null:
 		return
 	floor_label.text = "第 %d/%d 层" % [run_state.floor_index + 1, run_state.floor_count]
 	gold_label.text = "金币 %d" % run_state.gold
-	provisions_label.text = "补给 %d" % run_state.provisions
 	camp_label.text = "扎营 %d" % run_state.camp_points
 	ritual_label.text = "仪式 %d" % run_state.ritual_points
-	ambush_label.text = "伏击 %s" % ("免判定" if run_state.floor_state.watch_protection else "%d%%" % run_state.floor_state.ambush_chance)
+	danger_label.text = "危险 %d" % run_state.floor_state.danger
 	seed_edit.text = str(run_state.run_seed)
 	if enemy_health_spin_box != null:
 		syncing_enemy_health_control = true
@@ -267,60 +270,57 @@ func _refresh_detail(preview_room_id: String = "") -> void:
 		detail_title.text = "未选择房间"
 		detail_body.text = ""
 		return
-	var title := room.get_display_name()
-	if room.room_type == AdventureEnums.RoomType.SHELTER:
-		title = AdventureContentCatalog.get_shelter_name(room.shelter_type)
-	elif room.room_type == AdventureEnums.RoomType.EVENT and room.content_revealed:
-		title = str(session.get_event_definition(room).get("title", title))
-	detail_title.text = title
+	var presentation := AdventureMapPresentation.for_room(run_state.floor_state, room, selected_room_id)
+	detail_title.text = str(presentation.get("title", "未知图格"))
 	var state_text := "当前房间" if room.room_id == run_state.floor_state.current_room_id else ("已完成" if room.completed else ("已访问" if room.visited else "未访问"))
 	var lines := PackedStringArray([
 		"[color=#b9aa83]位置[/color]  (%d, %d)" % [room.cell.x, room.cell.y],
 		"[color=#b9aa83]状态[/color]  %s" % state_text,
 	])
-	if room.room_type == AdventureEnums.RoomType.NORMAL_BATTLE:
-		lines.append("[color=#b9aa83]怪池[/color]  %s" % AdventureEnums.encounter_tier_label(session.get_current_encounter_tier()))
+	if not room.content_revealed:
+		lines.append("\n内容将在首次进入时揭示。")
+		if room.high_value_marked:
+			lines.append("[color=#d7c797]侦察标记：高价值地点[/color]")
+	elif room.is_combat_room():
+		_append_encounter_preview(lines, room)
 	elif room.room_type == AdventureEnums.RoomType.SHELTER:
 		lines.append("\n[color=#d7c797]扎营活动[/color]")
-		for activity_id in ["bandage", "tactics", "scout", "watch", "sharpen", "ranger_dig", "druid_infusion"]:
+		for activity_id in ["bandage", "tactics", "scout", "sharpen", "ranger_dig", "druid_infusion"]:
 			lines.append("• %s" % _camp_activity_description(activity_id))
 		var ranger_id := _first_hero_id_for_class(CardEnums.CardClass.RANGER)
 		if not ranger_id.is_empty():
 			var progress := int(run_state.adventure_flags.get("ranger_dig_%s" % ranger_id, 0))
 			lines.append("[color=#b9aa83]挖掘进度[/color]  %d/3" % progress)
+		if room.camp_visit_closed:
+			lines.append("[color=#b9aa83]已离开，休整关闭。[/color]")
 	elif room.room_type == AdventureEnums.RoomType.EVENT:
-		if room.content_revealed:
-			var event := session.get_event_definition(room)
-			lines.append("[color=#b9aa83]风险[/color]  %s" % str(event.get("risk", "未知")))
-			lines.append("[color=#b9aa83]回报[/color]  %s" % str(event.get("reward", "未知")))
-			lines.append("\n%s" % str(event.get("summary", "")))
-			var rules := str(event.get("rules", ""))
-			if not rules.is_empty():
-				lines.append("\n[color=#d7c797]结算规则[/color]\n%s" % rules)
-			var event_options := session.get_current_event_options(room)
-			if not event_options.is_empty():
-				lines.append("\n[color=#d7c797]可选行动[/color]")
-				for option in event_options:
-					var option_line := "• [b]%s[/b]：%s" % [str(option.get("label", "选择")), str(option.get("preview", ""))]
-					if not bool(option.get("available", true)):
-						option_line += " [color=#d57568]不可用：%s[/color]" % str(option.get("reason", "条件不足"))
-					lines.append(option_line)
-		else:
-			lines.append("具体事件进入房间后揭示。")
+		var event := session.get_event_definition(room)
+		lines.append("[color=#b9aa83]风险[/color]  %s" % str(event.get("risk", "未知")))
+		lines.append("[color=#b9aa83]回报[/color]  %s" % str(event.get("reward", "未知")))
+		lines.append("\n%s" % str(event.get("summary", "")))
+		var rules := str(event.get("rules", ""))
+		if not rules.is_empty():
+			lines.append("\n[color=#d7c797]结算规则[/color]\n%s" % rules)
+		_append_encounter_preview(lines, room)
+		var event_options := session.get_current_event_options(room)
+		if not event_options.is_empty():
+			lines.append("\n[color=#d7c797]可选行动[/color]")
+			for option in event_options:
+				var option_line := "• [b]%s[/b]：%s" % [str(option.get("label", "选择")), str(option.get("preview", ""))]
+				if not bool(option.get("available", true)):
+					option_line += " [color=#d57568]不可用：%s[/color]" % str(option.get("reason", "条件不足"))
+				lines.append(option_line)
 	if displayed_room_id != selected_room_id:
 		lines.append("\n点击房间后可确认移动。")
 	elif room.room_id != run_state.floor_state.current_room_id:
-		if run_state.floor_state.are_connected(run_state.floor_state.current_room_id, room.room_id):
-			lines.append("\n移动消耗 1 补给。")
-			if run_state.provisions <= 0:
-				var chance := 20 if run_state.floor_state.ambush_chance <= 0 else run_state.floor_state.ambush_chance
-				lines.append("[color=#c45b52]本次伏击概率 %d%%[/color]" % chance)
+		if not AdventureTravelService.plan(run_state.floor_state, room.room_id).is_empty():
+			lines.append("\n沿已探索路线前往；首次探索会增加 1 点危险。")
 			_add_action("前往此处", _move_to_selected)
 		else:
 			lines.append("\n该房间当前不可直接到达。")
-	elif not room.completed:
+	elif room.content_revealed and not room.completed:
 		_build_current_room_actions(room)
-	elif room.room_type in [AdventureEnums.RoomType.SHELTER, AdventureEnums.RoomType.SHOP]:
+	elif room.content_revealed and room.room_type in [AdventureEnums.RoomType.SHELTER, AdventureEnums.RoomType.SHOP]:
 		_build_current_room_actions(room)
 	detail_body.text = "\n".join(lines)
 
@@ -330,13 +330,14 @@ func _build_current_room_actions(room: AdventureRoomState) -> void:
 		AdventureEnums.RoomType.NORMAL_BATTLE, AdventureEnums.RoomType.ELITE_BATTLE, AdventureEnums.RoomType.BOSS_BATTLE:
 			_add_action("开始战斗", _start_battle)
 		AdventureEnums.RoomType.SHELTER:
+			if room.camp_visit_closed:
+				return
 			_add_action("免费休息", _rest, room.rest_used)
 			if session.can_deliver_adventurer_remains():
 				_add_action("交付冒险者遗骨 · 本层装备三选一", _begin_remains_delivery, false, "选择装备和接收者后，遗骨任务物品消失。")
 			_add_action("包扎选中角色 (2)", _camp_action.bind("bandage"), false, _camp_activity_description("bandage"))
 			_add_action("战术推演 (2)", _camp_action.bind("tactics"), false, _camp_activity_description("tactics"))
-			_add_action("侦察 (1)", _camp_action.bind("scout"), false, _camp_activity_description("scout"))
-			_add_action("守夜 (2)", _camp_action.bind("watch"), false, _camp_activity_description("watch"))
+			_add_action("侦察 (1)", _show_scout_picker, false, _camp_activity_description("scout"))
 			_add_action("战士：磨砺兵锋 (3)", _camp_action.bind("sharpen"), false, _camp_activity_description("sharpen"))
 			var ranger_id := _first_hero_id_for_class(CardEnums.CardClass.RANGER)
 			var dig_progress := int(run_state.adventure_flags.get("ranger_dig_%s" % ranger_id, 0)) if not ranger_id.is_empty() else 0
@@ -378,8 +379,11 @@ func _build_shop_actions() -> void:
 	var room := run_state.floor_state.get_current_room()
 	if room != null and room.content_id == "wilderness_merchant":
 		return
-	_add_action("购买补给  5 金", _buy_provision)
 	_add_action("购买扎营物资  15 金", _buy_camp_supply)
+	var may_restock := room != null \
+		and room.shop_restock_count < 2 \
+		and bool(room.runtime_data.get("shop_revisit_available", false))
+	_add_action("重访补货 · 危险 +1", _request_shop_restock, not may_restock, "每个商店最多补货两次；需完成一次实际重访。")
 	var removal_price := session.definition.get_economy().get_card_removal_price(run_state.card_removals_used)
 	_add_action("删牌服务  %d 金" % removal_price, _show_card_removal, bool(room.runtime_data.get("card_removal_used", false)))
 
@@ -917,7 +921,7 @@ func _show_pending_state() -> void:
 	elif run_state.run_complete:
 		_show_simple_modal("Demo 通关", "第二层首领已被击败，本次冒险完成。", "关闭", _hide_modal)
 	elif run_state.pending_transaction != null and run_state.pending_transaction.transaction_type == AdventureEnums.TransactionType.BATTLE:
-		_show_simple_modal("伏击或战斗待处理", "遭遇已经锁定，继续后不会重新生成敌群。", "进入战斗", session.resume_pending_battle)
+		_show_simple_modal("战斗待处理", "遭遇已经锁定，继续后不会重新生成敌群。", "进入战斗", session.resume_pending_battle)
 	elif bool(run_state.adventure_flags.get("interfloor_camp", false)):
 		_show_simple_modal("层间营地", "队伍将在离开时休息并获得 4 点扎营点。", "进入下一层", _enter_next_floor)
 
@@ -930,8 +934,8 @@ func _show_reward_modal() -> void:
 	var max_cards := int(reward.get("max_cards", 0))
 	modal_title.text = "选择卡牌奖励 · %d/%d" % [claimed_cards.size(), max_cards]
 	var fixed := Label.new()
-	fixed.text = "金币 +%d   补给 +%d   仪式点 +%d   扎营物资 +%d" % [
-		int(reward.get("gold", 0)), int(reward.get("provisions", 0)), int(reward.get("ritual_points", 0)), int(reward.get("camp_supplies", 0)),
+	fixed.text = "金币 +%d   仪式点 +%d   扎营物资 +%d" % [
+		int(reward.get("gold", 0)), int(reward.get("ritual_points", 0)), int(reward.get("camp_supplies", 0)),
 	]
 	modal_body.add_child(fixed)
 	var hint := Label.new()
@@ -1145,7 +1149,9 @@ func _move_to_selected() -> void:
 	if bool(result.get("ok", false)):
 		selected_room_id = run_state.floor_state.current_room_id
 		_refresh()
-		if bool(result.get("ambush", false)):
+		if bool(result.get("battle", false)):
+			session.start_current_battle()
+		else:
 			_show_pending_state()
 
 
@@ -1155,6 +1161,61 @@ func _start_battle() -> void:
 
 func _rest() -> void:
 	session.rest_at_current_shelter()
+
+
+func _show_scout_picker() -> void:
+	var candidate_ids: Array[String] = session.get_scout_candidates()
+	if candidate_ids.is_empty():
+		_show_status("范围 3 内没有可侦察的未揭示图格。")
+		return
+	modal_layer.visible = true
+	modal_title.text = "侦察图格 · 最多选择 2 个"
+	_clear_children(modal_body)
+	var picker := AdventureScoutPicker.new()
+	picker.configure(run_state.floor_state, candidate_ids)
+	picker.confirmed.connect(_submit_scout)
+	modal_body.add_child(picker)
+	_add_modal_close_button()
+
+
+func _submit_scout(selected_ids: Array[String]) -> void:
+	if selected_ids.is_empty() or selected_ids.size() > 2:
+		_show_status("请选择一至两个图格。")
+		return
+	var result := session.request_scout(selected_ids)
+	if not bool(result.get("ok", false)):
+		_show_status(str(result.get("message", "侦察未完成。")))
+		return
+	_hide_modal()
+	_refresh()
+
+
+func _request_shop_restock() -> void:
+	var result := session.request_shop_restock()
+	if not bool(result.get("ok", false)):
+		_show_status(str(result.get("message", "商店无法补货。")))
+		return
+	_refresh()
+
+
+func _append_encounter_preview(lines: PackedStringArray, room: AdventureRoomState) -> void:
+	var preview := AdventureEncounterPreviewService.describe(run_state, room)
+	if preview.is_empty():
+		return
+	lines.append("[color=#b9aa83]%s[/color]" % str(preview.get("text", "")))
+	var snapshot: Dictionary = preview.get("danger_snapshot", {}) as Dictionary
+	var bonus_percent := int(snapshot.get("bonus_percent", 0))
+	if bonus_percent > 0:
+		lines.append("[color=#c45b52]危险修正：敌人生命与伤害 +%d%%[/color]" % bonus_percent)
+	for enemy_data in preview.get("enemies", []) as Array:
+		if not enemy_data is Dictionary:
+			continue
+		var enemy := enemy_data as Dictionary
+		var mutations := PackedStringArray(enemy.get("mutations", PackedStringArray()))
+		var suffix := ""
+		if not mutations.is_empty():
+			suffix = " · " + "、".join(mutations)
+		lines.append("• %s  HP %d%s" % [str(enemy.get("name", "敌人")), int(enemy.get("max_health", 0)), suffix])
 
 
 func _camp_action(activity_id: String) -> void:
@@ -1177,9 +1238,7 @@ func _camp_activity_description(activity_id: String) -> String:
 		"tactics":
 			return "战术推演（2）：全队下一场战斗起始手牌 +1。"
 		"scout":
-			return "侦察（1）：揭示距离 3 内一个尚未揭示的事件。"
-		"watch":
-			return "守夜（2）：降低绝境伏击率，或免除下一次零补给伏击判定。"
+			return "侦察（1）：选择距离 3 内至多两个尚未揭示的图格。"
 		"sharpen":
 			return "磨砺兵锋（3）：战士当前武器在本次冒险永久获得 +1 伤害加值；每次冒险一次。"
 		"ranger_dig":
@@ -1203,10 +1262,6 @@ func _begin_remains_delivery() -> void:
 
 func _buy_stock(index: int) -> void:
 	session.buy_shop_entry(index)
-
-
-func _buy_provision() -> void:
-	session.buy_provision()
 
 
 func _buy_camp_supply() -> void:
@@ -1644,11 +1699,17 @@ func _enter_next_floor() -> void:
 
 
 func _start_new_run() -> void:
+	if not _can_start_new_demo():
+		_show_status("该存档版本不受支持，不能新建以免覆盖。")
+		return
 	var seed_value := int(seed_edit.text) if seed_edit.text.is_valid_int() else 0
 	_show_new_run_confirmation(seed_value)
 
 
 func _start_random_run() -> void:
+	if not _can_start_new_demo():
+		_show_status("该存档版本不受支持，不能新建以免覆盖。")
+		return
 	_show_new_run_confirmation(0)
 
 
@@ -1674,14 +1735,61 @@ func _show_new_run_confirmation(seed_value: int) -> void:
 
 
 func _confirm_new_run(seed_value: int) -> void:
-	session.start_new_demo(seed_value)
-	run_state = session.current_run
+	var new_run := session.start_new_demo(seed_value)
+	if new_run == null:
+		_show_status("不能开始新冒险：当前存档受保护。")
+		return
+	run_state = new_run
 	selected_room_id = run_state.floor_state.current_room_id
 	_hide_modal()
 	_refresh()
 
 
+func _show_start_required() -> void:
+	if modal_layer == null:
+		return
+	var load_status := session.save_store.load_status
+	if load_status == AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA:
+		_show_simple_modal(
+			"未来版本存档受保护",
+			"检测到不受支持的新版本存档；不会读取或覆盖它。请使用兼容版本打开。",
+			"关闭",
+			_hide_modal
+		)
+		return
+	var description := "当前新存档无法继续加载。"
+	if load_status == AdventureSaveSchema.LoadStatus.LEGACY_SAVE_DETECTED:
+		description = "检测到旧版 adventure_run 存档，已隔离且不会被读取或改写。"
+	elif load_status == AdventureSaveSchema.LoadStatus.CORRUPT_SAVE:
+		description = "当前新存档损坏且没有可用备份；可开始一个全新的 Demo。"
+	_show_simple_modal(
+		"需要开始新的冒险",
+		description,
+		"开始新的 Demo",
+		_begin_new_run_from_gate
+	)
+
+
+func _begin_new_run_from_gate() -> void:
+	var new_run := session.start_new_demo()
+	if new_run == null:
+		_show_status("不能开始新冒险：当前存档受保护。")
+		return
+	run_state = new_run
+	selected_room_id = run_state.floor_state.current_room_id
+	_hide_modal()
+	_refresh()
+
+
+func _can_start_new_demo() -> bool:
+	return session != null and session.save_store != null \
+		and session.save_store.load_status != AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA
+
+
 func _copy_seed() -> void:
+	if run_state == null:
+		_show_status("尚未开始可复制种子的冒险。")
+		return
 	DisplayServer.clipboard_set(str(run_state.run_seed))
 	_show_status("种子已复制。")
 

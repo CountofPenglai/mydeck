@@ -1,6 +1,16 @@
 extends RefCounted
 class_name AdventureEnums
 
+enum BackType {
+	START,
+	MYSTERY,
+	BATTLE,
+	ELITE,
+	CAMP,
+	SHOP,
+	BOSS,
+}
+
 enum RoomType {
 	START,
 	NORMAL_BATTLE,
@@ -55,6 +65,26 @@ static func room_type_label(value: int) -> String:
 			return "事件"
 		_:
 			return "未知房间"
+
+
+static func back_type_label(value: int) -> String:
+	match value:
+		BackType.START:
+			return "起点"
+		BackType.MYSTERY:
+			return "?"
+		BackType.BATTLE:
+			return "普通战斗"
+		BackType.ELITE:
+			return "精英战斗"
+		BackType.CAMP:
+			return "营地"
+		BackType.SHOP:
+			return "商店"
+		BackType.BOSS:
+			return "首领"
+		_:
+			return "未知"
 
 
 static func room_symbol(value: int) -> String:

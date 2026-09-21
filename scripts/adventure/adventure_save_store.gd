@@ -4,18 +4,28 @@ class_name AdventureSaveStore
 var save_path: String
 var temp_path: String
 var backup_path: String
+var legacy_save_path: String
+var legacy_backup_path: String
+var load_status: AdventureSaveSchema.LoadStatus = AdventureSaveSchema.LoadStatus.NONE
+var legacy_save_detected := false
 
 
-func _init(slot_name: String = "adventure_run") -> void:
+func _init(slot_name: String = AdventureSaveSchema.SLOT_NAME, legacy_slot_name: String = AdventureSaveSchema.LEGACY_SLOT_NAME) -> void:
 	var safe_slot := slot_name.validate_filename()
+	var safe_legacy_slot := legacy_slot_name.validate_filename()
 	save_path = "user://%s.json" % safe_slot
 	temp_path = "user://%s.tmp" % safe_slot
 	backup_path = "user://%s.backup.json" % safe_slot
+	legacy_save_path = "user://%s.json" % safe_legacy_slot
+	legacy_backup_path = "user://%s.backup.json" % safe_legacy_slot
 
 
 func save_run(run_state: PartyRunState) -> Error:
 	if run_state == null:
 		return ERR_INVALID_PARAMETER
+	if _existing_save_has_unsupported_schema():
+		load_status = AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA
+		return ERR_FILE_UNRECOGNIZED
 	var payload := _serialize_run(run_state)
 	var file := FileAccess.open(temp_path, FileAccess.WRITE)
 	if file == null:
@@ -23,27 +33,63 @@ func save_run(run_state: PartyRunState) -> Error:
 	file.store_string(JSON.stringify(payload, "\t"))
 	file.flush()
 	file.close()
-	if FileAccess.file_exists(backup_path):
-		DirAccess.remove_absolute(backup_path)
-	if FileAccess.file_exists(save_path):
+	var rotate_primary := _primary_is_current()
+	if rotate_primary and FileAccess.file_exists(backup_path):
+		var remove_error := DirAccess.remove_absolute(backup_path)
+		if remove_error != OK:
+			return remove_error
+	if rotate_primary:
 		var backup_error := DirAccess.rename_absolute(save_path, backup_path)
 		if backup_error != OK:
 			return backup_error
 	var commit_error := DirAccess.rename_absolute(temp_path, save_path)
-	if commit_error != OK and FileAccess.file_exists(backup_path):
-		DirAccess.rename_absolute(backup_path, save_path)
+	if commit_error != OK and rotate_primary and FileAccess.file_exists(backup_path):
+		var restore_error := DirAccess.rename_absolute(backup_path, save_path)
+		if restore_error != OK:
+			return restore_error
 	return commit_error
 
 
+
+func _primary_is_current() -> bool:
+	if not FileAccess.file_exists(save_path):
+		return false
+	var payload: Variant = _read_payload(save_path)
+	return payload is Dictionary and AdventureSaveSchema.get_payload_status(payload as Dictionary) == AdventureSaveSchema.PayloadStatus.CURRENT
+
+
 func load_run() -> PartyRunState:
-	var result := _load_path(save_path)
-	if result == null:
-		result = _load_path(backup_path)
-	return result
+	legacy_save_detected = has_legacy_save()
+	load_status = AdventureSaveSchema.LoadStatus.NONE
+	if not FileAccess.file_exists(save_path):
+		if FileAccess.file_exists(backup_path):
+			return _load_compatible_backup()
+		if legacy_save_detected:
+			load_status = AdventureSaveSchema.LoadStatus.LEGACY_SAVE_DETECTED
+		return null
+	var primary_payload: Variant = _read_payload(save_path)
+	if primary_payload == null:
+		return _load_compatible_backup()
+	var primary_data := primary_payload as Dictionary
+	var primary_status := AdventureSaveSchema.get_payload_status(primary_data)
+	if primary_status == AdventureSaveSchema.PayloadStatus.UNSUPPORTED:
+		load_status = AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA
+		return null
+	if primary_status == AdventureSaveSchema.PayloadStatus.CORRUPT:
+		return _load_compatible_backup()
+	var result := _deserialize_run(primary_data)
+	if result != null:
+		load_status = AdventureSaveSchema.LoadStatus.LOADED_PRIMARY
+		return result
+	return _load_compatible_backup()
 
 
 func has_save() -> bool:
 	return FileAccess.file_exists(save_path) or FileAccess.file_exists(backup_path)
+
+
+func has_legacy_save() -> bool:
+	return FileAccess.file_exists(legacy_save_path) or FileAccess.file_exists(legacy_backup_path)
 
 
 func delete_save() -> void:
@@ -52,17 +98,56 @@ func delete_save() -> void:
 			DirAccess.remove_absolute(path)
 
 
-func _load_path(path: String) -> PartyRunState:
+func _read_payload(path: String):
 	if not FileAccess.file_exists(path):
 		return null
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return null
-	var parsed = JSON.parse_string(file.get_as_text())
+	var json := JSON.new()
+	var parse_error := json.parse(file.get_as_text())
 	file.close()
-	if not (parsed is Dictionary):
+	if parse_error != OK or not (json.data is Dictionary):
 		return null
-	return _deserialize_run(parsed as Dictionary)
+	return json.data as Dictionary
+
+
+func _load_compatible_backup() -> PartyRunState:
+	var backup_payload: Variant = _read_payload(backup_path)
+	if backup_payload == null:
+		load_status = AdventureSaveSchema.LoadStatus.CORRUPT_SAVE
+		return null
+	var backup_data := backup_payload as Dictionary
+	if backup_data.is_empty():
+		load_status = AdventureSaveSchema.LoadStatus.CORRUPT_SAVE
+		return null
+	var backup_status := AdventureSaveSchema.get_payload_status(backup_data)
+	if backup_status == AdventureSaveSchema.PayloadStatus.UNSUPPORTED:
+		load_status = AdventureSaveSchema.LoadStatus.UNSUPPORTED_SCHEMA
+		return null
+	if backup_status != AdventureSaveSchema.PayloadStatus.CURRENT:
+		load_status = AdventureSaveSchema.LoadStatus.CORRUPT_SAVE
+		return null
+	var result := _deserialize_run(backup_data)
+	if result == null:
+		load_status = AdventureSaveSchema.LoadStatus.CORRUPT_SAVE
+		return null
+	load_status = AdventureSaveSchema.LoadStatus.RESTORED_BACKUP
+	return result
+
+
+func _existing_save_has_unsupported_schema() -> bool:
+	for path in [save_path, backup_path]:
+		if not FileAccess.file_exists(path):
+			continue
+		var payload: Variant = _read_payload(path)
+		if payload == null:
+			continue
+		var save_data := payload as Dictionary
+		if not save_data.is_empty() \
+				and AdventureSaveSchema.get_version_status(save_data) == AdventureSaveSchema.PayloadStatus.UNSUPPORTED:
+			return true
+	return false
 
 
 func _serialize_run(run_state: PartyRunState) -> Dictionary:
@@ -71,12 +156,13 @@ func _serialize_run(run_state: PartyRunState) -> Dictionary:
 		if hero != null:
 			party_data.append(_serialize_character(hero))
 	return {
-		"version": PartyRunState.SAVE_VERSION,
+		"version": AdventureSaveSchema.VERSION,
 		"run_seed": run_state.run_seed,
+		"shop_rng_seed": run_state.shop_rng_seed,
+		"shop_rng_state": run_state.shop_rng_state,
 		"floor_index": run_state.floor_index,
 		"floor_count": run_state.floor_count,
 		"gold": run_state.gold,
-		"provisions": run_state.provisions,
 		"camp_points": run_state.camp_points,
 		"camp_supplies": run_state.camp_supplies,
 		"ritual_points": run_state.ritual_points,
@@ -101,10 +187,11 @@ func _deserialize_run(data: Dictionary) -> PartyRunState:
 	var result := PartyRunState.new()
 	result.save_version = PartyRunState.SAVE_VERSION
 	result.run_seed = int(data.get("run_seed", 0))
+	result.shop_rng_seed = str(data.get("shop_rng_seed", ""))
+	result.shop_rng_state = str(data.get("shop_rng_state", ""))
 	result.floor_index = int(data.get("floor_index", 0))
 	result.floor_count = int(data.get("floor_count", 2))
 	result.gold = int(data.get("gold", 40))
-	result.provisions = int(data.get("provisions", 14))
 	result.camp_points = int(data.get("camp_points", 0))
 	result.camp_supplies = int(data.get("camp_supplies", 0))
 	result.ritual_points = int(data.get("ritual_points", PartyRunState.STARTING_RITUAL_POINTS))

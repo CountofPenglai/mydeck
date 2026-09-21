@@ -5,6 +5,11 @@ class_name EnemyState
 @export var current_health: int = -1
 @export_range(1, 99, 1) var level: int = 1
 @export_range(1, 1000, 1) var max_health_percent: int = 100
+@export var fixed_max_health_override: int = -1
+@export var danger_bonus_percent: int = 0
+@export var danger_damage_bonus_percent: int = 0
+@export var danger_snapshot_seed: int = 0
+@export var danger_mutation_fields: PackedStringArray = []
 @export var deck: Array[CardStack] = []
 @export var extra_ap_bonus: int = 0
 @export var strength_bonus: int = 0
@@ -58,17 +63,25 @@ func get_rank_label() -> String:
 
 
 func get_max_health() -> int:
+	return get_max_health_with_danger(danger_bonus_percent)
+
+
+## Shared by runtime health and the read-only pre-battle danger assignment.
+func get_max_health_with_danger(bonus_percent: int) -> int:
 	if enemy_data == null:
 		return 0
 
 	var base_health: int
 	if runtime_state.has("max_health_override"):
 		base_health = int(runtime_state.max_health_override)
+	elif fixed_max_health_override > 0:
+		base_health = fixed_max_health_override
 	else:
 		var level_growth := maxi(0, level - 1) * get_strength() * HEALTH_GROWTH_PER_STRENGTH_LEVEL
 		base_health = enemy_data.base_max_health + get_strength() * MAX_HEALTH_PER_STRENGTH + level_growth \
 			+ int(runtime_state.get("max_health_bonus", 0))
-	return maxi(1, ceili(float(base_health) * float(max_health_percent) / 100.0))
+	var scaled := ceili(float(base_health) * float(max_health_percent) * float(100 + bonus_percent) / 10000.0)
+	return maxi(1, scaled + int(runtime_state.get("danger_unscaled_health_bonus", 0)))
 
 
 func get_attack() -> int:

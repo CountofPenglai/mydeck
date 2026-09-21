@@ -2,6 +2,7 @@ extends RefCounted
 class_name ChapterTwoEnemyRules
 
 const TEMPORARY_JINX := preload("res://resources/cards/monster_cards/temporary_jinx.tres")
+const BattleDangerService = preload("res://scripts/adventure/adventure_battle_danger_service.gd")
 const BLOOD_INDUSTRY := preload("res://resources/cards/curse_industry_blood.tres")
 const MUTATION_CARDS := [
 	preload("res://resources/cards/monster_cards/lashing_tentacle.tres"),
@@ -286,9 +287,12 @@ static func resolve_paladin_merge(controller: BattleController, paladin: BattleU
 	var state := ChapterTwoEnemyCatalog.create_enemy(&"military_god_remains", controller.rng.randi())
 	if state == null:
 		return
-	state.runtime_state["max_health_override"] = 75 + statue_health
+	BattleDangerService.transfer_form(paladin.enemy_state, state)
+	state.runtime_state["max_health_override"] = 75
+	state.runtime_state["danger_unscaled_health_bonus"] = statue_health
 	state.runtime_state["badges"] = badges.duplicate()
-	state.current_health = 75 + statue_health
+	state.current_health = state.get_max_health()
+	var previous_distortion := paladin.distortion_state.snapshot()
 	paladin.enemy_state = state
 	paladin.statuses.clear()
 	paladin.clear_armor({"controller": controller, "reason": "paladin_merge"})
@@ -298,6 +302,9 @@ static func resolve_paladin_merge(controller: BattleController, paladin: BattleU
 	paladin.exiled_pile.clear()
 	paladin.enchant_zone.clear()
 	paladin.distortion_state.reset_for_battle()
+	paladin.distortion_state.permanent_fields = state.enemy_data.permanent_distortion_fields.duplicate()
+	paladin.distortion_state.danger_fields = state.danger_mutation_fields.duplicate()
+	paladin.distortion_state.battle_flags = (previous_distortion.get("battle_flags", {}) as Dictionary).duplicate(true)
 	paladin.ensure_initialized(controller.config, controller.rng)
 	if statue != null:
 		paladin.set_hex_cell(statue.cell, controller.map_data)
@@ -441,7 +448,7 @@ static func _try_devour(controller: BattleController, unit: BattleUnitState) -> 
 		var base_damage := ally.enemy_state.get_active_weapon().base_damage if ally.enemy_state != null and ally.enemy_state.get_active_weapon() != null else 0
 		ally.set_current_health(0)
 		controller._notify_unit_death(unit, ally, {"reason": "blood_construct_devour"})
-		unit.enemy_state.runtime_state["max_health_bonus"] = int(unit.enemy_state.runtime_state.get("max_health_bonus", 0)) + health
+		unit.enemy_state.runtime_state["danger_unscaled_health_bonus"] = int(unit.enemy_state.runtime_state.get("danger_unscaled_health_bonus", 0)) + health
 		unit.enemy_state.current_health += health
 		unit.enemy_state.flat_damage_bonus += base_damage
 		controller._emit_log("%s 吞噬%s，获得其生命与武器伤害加值。" % [unit.get_display_name(), ally.get_display_name()])
