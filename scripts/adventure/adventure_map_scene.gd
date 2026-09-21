@@ -2,6 +2,8 @@ extends Control
 class_name AdventureMapScene
 
 var session: AdventureSessionService
+var navigation: GameNavigationService
+var menu_return_feedback: Label
 var run_state: PartyRunState
 var selected_room_id: String = ""
 
@@ -31,6 +33,8 @@ var event_modal_feedback: Label
 
 
 func _ready() -> void:
+	if navigation == null:
+		navigation = get_node_or_null("/root/GameNavigation") as GameNavigationService
 	if session == null:
 		session = get_node_or_null("/root/AdventureSession") as AdventureSessionService
 	if session == null:
@@ -130,6 +134,11 @@ func _build_top_bar() -> Control:
 	random_button.text = "随机新冒险"
 	random_button.pressed.connect(_start_random_run)
 	row.add_child(random_button)
+	var menu_button := Button.new()
+	menu_button.name = "MainMenuButton"
+	menu_button.text = "主菜单"
+	menu_button.pressed.connect(_return_to_main_menu)
+	row.add_child(menu_button)
 	return panel
 
 
@@ -235,6 +244,23 @@ func _build_modal_layer() -> void:
 	modal_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	modal_body.add_theme_constant_override("separation", 7)
 	scroll.add_child(modal_body)
+	var menu_button := Button.new()
+	menu_button.name = "ModalMainMenuButton"
+	menu_button.text = "保存并回到主菜单"
+	menu_button.pressed.connect(_return_to_main_menu)
+	stack.add_child(menu_button)
+	menu_return_feedback = Label.new()
+	menu_return_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stack.add_child(menu_return_feedback)
+
+
+func _return_to_main_menu() -> void:
+	if navigation == null:
+		return
+	var result := navigation.return_to_menu(false)
+	if not result.ok:
+		_show_status(result.message)
+		menu_return_feedback.text = result.message
 
 
 func _refresh() -> void:

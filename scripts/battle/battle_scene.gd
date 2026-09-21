@@ -88,6 +88,8 @@ var _refresh_scheduled := false
 var inspected_enemy: BattleUnitState
 var _hovered_map_cell := Vector2i(-9999, -9999)
 var _battle_log_lines := PackedStringArray()
+var _menu_return: BattleReturnMenu
+var _adventure_battle_bound := false
 
 @onready var map_view: BattleMapView = %MapView
 @onready var battle_hud_root: Control = %BattleHudRoot
@@ -131,6 +133,7 @@ func _ready() -> void:
 		var pending_scenario = adventure_session.call("consume_pending_battle_scenario")
 		if pending_scenario is BattleScenario:
 			startup_scenario = pending_scenario as BattleScenario
+			_adventure_battle_bound = true
 	if startup_scenario == null:
 		startup_scenario = DEFAULT_SCENARIO
 	if startup_scenario == DEFAULT_SCENARIO:
@@ -140,7 +143,22 @@ func _ready() -> void:
 		startup_scenario.enemies.append(ChapterOneEnemyCatalog.create_enemy(&"harpoon_fish", 1002))
 	controller.setup(startup_scenario)
 	selected_deploy_unit = controller.get_first_undeployed_player()
+	_menu_return = preload("res://scenes/ui/battle_return_menu.tscn").instantiate() as BattleReturnMenu
+	_menu_return.safety_probe = get_menu_return_state
+	resume_battle_button.get_parent().add_child(_menu_return)
 	_refresh()
+
+
+func get_menu_return_state() -> Dictionary:
+	if _adventure_result != null and _adventure_battle_bound:
+		return {"ok": false, "message": "请先通过战斗结果按钮结算本场战斗，再从地图返回。"}
+	var choosing := false
+	for popup in [_hand_card_choice_popup, _ordered_discard_popup, _draw_choice_popup, _manifest_popup]:
+		if popup != null and popup.visible:
+			choosing = true
+	var state := BattleNavigationGuard.check(controller, choosing)
+	state["standalone"] = not _adventure_battle_bound
+	return state
 
 
 func _exit_tree() -> void:
@@ -151,7 +169,11 @@ func _exit_tree() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
 		return
-	if restart_confirmation.visible:
+	if _menu_return != null and _menu_return.confirmation.visible:
+		_menu_return.confirmation.hide()
+	elif defeat_all_enemies_confirmation.visible:
+		defeat_all_enemies_confirmation.hide()
+	elif restart_confirmation.visible:
 		restart_confirmation.hide()
 	else:
 		_set_battle_menu_visible(not battle_menu.visible)
