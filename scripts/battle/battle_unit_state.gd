@@ -6,6 +6,7 @@ const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const MageCombatState = preload("res://scripts/mage/mage_combat_state.gd")
 const WarlockCombatState = preload("res://scripts/warlock/warlock_combat_state.gd")
 const DruidCombatState = preload("res://scripts/druid/druid_combat_state.gd")
+const BattleCurseSuppression = preload("res://scripts/curses/battle_curse_suppression.gd")
 const DRUID_TRANSFORMED_DAMAGE_REDUCTION := 1
 
 enum Faction {
@@ -32,6 +33,7 @@ var enchant_zone: Array[CardData] = []
 var curse_zone: Array[CurseInstance] = []
 var curse_wave: int = 0
 var curse_runtime_states: Dictionary = {}
+var curse_suppression := BattleCurseSuppression.new()
 var distortion_state := DistortionBattleState.new()
 var statuses: Array[StatusEffect] = []
 var battle_action_flags := {}
@@ -93,6 +95,7 @@ func setup_player(id: int, state: CharacterState, default_token_radius: float) -
 	block_lost_rounds.clear()
 	curse_wave = 0
 	curse_runtime_states.clear()
+	curse_suppression.clear()
 	distortion_state.reset_for_battle(character_state)
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
@@ -123,6 +126,7 @@ func setup_enemy(id: int, state: EnemyState, default_token_radius: float) -> voi
 	block_lost_rounds.clear()
 	curse_wave = 0
 	curse_runtime_states.clear()
+	curse_suppression.clear()
 	distortion_state.reset_for_battle()
 	_reset_druid_state()
 	ranger_state.reset_for_battle()
@@ -1484,7 +1488,12 @@ func pay_warlock_mana(amount: int, curse_wave_amount: int = 0, context: Dictiona
 
 func is_curse_effect_active(curse: CurseInstance) -> bool:
 	return curse != null and curse.is_active_in_curse_zone() \
+		and not curse_suppression.is_suppressed(curse) \
 		and (not is_warlock_adventurer() or not warlock_state.is_face_down(curse))
+
+
+func suppress_curse_for_battle(curse: CurseInstance) -> bool:
+	return curse != null and curse in curse_zone and curse_suppression.suppress(curse)
 
 
 func meets_warlock_hex_conditions(minimum_face_down_count: int, required_keywords: PackedStringArray = []) -> bool:
@@ -1666,6 +1675,8 @@ func set_druid_transformed(value: bool, context: Dictionary = {}) -> void:
 
 
 func get_druid_card_orientation(card: CardData) -> int:
+	if card != null and card.upright_play_ignores_form:
+		return CardEnums.DruidOrientation.UPRIGHT
 	if is_druid_transformed() and card != null and card.is_druid_dual_card:
 		return CardEnums.DruidOrientation.INVERTED
 
@@ -1870,7 +1881,7 @@ func should_exile_card_after_play(card: CardData) -> bool:
 	return bool(state.get("exile_after_play", false))
 
 
-func move_card_to_exile(card: CardData) -> bool:
+func move_card_to_exile(card: CardData, context: Dictionary = {}) -> bool:
 	if card == null:
 		return false
 	if exiled_pile.find(card) >= 0:
@@ -1888,7 +1899,7 @@ func move_card_to_exile(card: CardData) -> bool:
 		hand.remove_at(hand_index)
 		exiled_pile.append(card)
 		clear_card_runtime_state(card)
-		_notify_hand_size_changed(previous_hand_size, {"reason": "move_to_exile"})
+		_notify_hand_size_changed(previous_hand_size, context.merged({"reason": "move_to_exile"}, false))
 		return true
 	var simple_zones: Array = [draw_pile, discard_pile]
 	for zone_value in simple_zones:
@@ -1984,6 +1995,12 @@ func notify_after_strike(context: Dictionary = {}) -> void:
 
 func notify_before_strike(context: Dictionary = {}) -> Dictionary:
 	var event_context := _with_unit_context(context)
+	# Status event hooks are queued; context mutations needed by the resolver use
+	# this synchronous query pass so they exist before element/profile selection.
+	for status in statuses.duplicate():
+		if status != null and _script_defines_method(status, "modify_strike_context"):
+			status.modify_strike_context(self, event_context)
+	remove_expired_statuses()
 	_notify_equipment_effects("on_before_strike", [], event_context)
 	return event_context
 
@@ -2339,6 +2356,7 @@ func _is_negative_status(status: StatusEffect) -> bool:
 
 
 func _notify_hand_size_changed(previous_size: int, context: Dictionary = {}) -> void:
+	_notify_status_effects("on_hand_size_changed", [previous_size], _with_unit_context(context))
 	if previous_size <= 0 or not hand.is_empty() or battle_controller == null \
 			or battle_controller.battle_round <= 0 or not distortion_state.has_field("rock_scale") \
 			or distortion_state.was_round_flag_used("rock_scale", battle_controller.battle_round):
@@ -2608,12 +2626,21 @@ func _notify_curse_effects(method_name: String, extra_args: Array = [], context:
 		args.append_array(extra_args)
 		args.append(event_context)
 		_dispatch_trigger(
-			Callable(effect, method_name),
-			args,
+			Callable(self, "_execute_curse_trigger").bind(curse, effect, method_name, args),
+			[],
 			effect.effect_priority,
 			"%s.%s" % [curse.get_display_name(), method_name],
 			event_context
 		)
+
+
+func _execute_curse_trigger(curse: CurseInstance, effect: CurseEffect, method_name: String, args: Array) -> void:
+	# A trigger can wait behind other effects. Re-check here so a curse
+	# suppressed while it was queued cannot fire later in this battle.
+	if not is_curse_effect_active(curse) or effect == null or curse.definition == null \
+			or curse.definition.effect != effect or not effect.has_method(method_name):
+		return
+	effect.callv(method_name, args)
 
 
 func _dispatch_trigger(callback: Callable, args: Array, priority: int, label: String, context: Dictionary) -> void:

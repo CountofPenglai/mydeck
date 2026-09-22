@@ -17,7 +17,7 @@ func is_unit_target_allowed(context: Dictionary = {}, target: BattleUnitState = 
 	var user := context.get("user") as BattleUnitState
 	if user == null or target == null:
 		return false
-	return true if _is_upright(context) else target.faction != user.faction
+	return target != user if _is_upright(context) else target.faction != user.faction
 
 
 func are_targets_valid(context: Dictionary = {}, targets: Array = [], _write_log: bool = true) -> bool:

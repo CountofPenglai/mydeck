@@ -12,6 +12,10 @@ func can_pay_play_cost(_context: Dictionary = {}) -> bool:
 	return true
 
 
+func grants_elemental_surface_protection(_owner: BattleUnitState) -> bool:
+	return false
+
+
 func pay_play_cost(_context: Dictionary = {}) -> bool:
 	return true
 
@@ -200,6 +204,30 @@ func get_card_choice_options(_context: Dictionary = {}) -> Array[Dictionary]:
 
 func get_card_choice_prompt(_context: Dictionary = {}) -> String:
 	return "选择卡牌效果"
+
+
+# Preplay configuration is a generic, non-card-specific UI contract for cards
+# that need several independent decisions before targets and payment are known.
+func requires_preplay_configuration(_context: Dictionary = {}) -> bool:
+	return false
+
+
+func get_preplay_configuration(_context: Dictionary = {}) -> Dictionary:
+	return {}
+
+
+# Like preplay configuration, but evaluated only after the player has selected
+# a live target.  This keeps target-dependent decisions out of the controller.
+func requires_posttarget_configuration(_context: Dictionary = {}, _targets: Array = []) -> bool:
+	return false
+
+
+func get_posttarget_configuration(_context: Dictionary = {}, _targets: Array = []) -> Dictionary:
+	return {}
+
+
+func requires_preplay_cell(_context: Dictionary = {}) -> bool:
+	return false
 
 
 # A serializable choice is deliberately kept out of card text.  The UI stores

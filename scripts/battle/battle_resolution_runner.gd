@@ -2,6 +2,7 @@ extends RefCounted
 class_name BattleResolutionRunner
 
 const CARD_CHOICE_STATE := preload("res://scripts/battle/battle_card_choice_state.gd")
+const SELECTION_SERVICE := preload("res://scripts/battle/battle_selection_service.gd")
 
 signal hand_card_choice_requested(choice)
 signal hand_card_choice_cleared
@@ -26,6 +27,7 @@ var current_action_frame: BattleActionFrame
 var after_current_effect_queue: Array = []
 var attack_after_scopes: Array = []
 var pending_hand_card_choice
+var selection_service = SELECTION_SERVICE.new()
 var resolved_actions_in_pump: int = 0
 var current_frame_after_callback_started: bool = false
 var current_frame_ap_finalization_started: bool = false
@@ -75,10 +77,33 @@ func request_hand_card_choice(
 	min_count: int,
 	max_count: int,
 	prompt: String,
-	continuation: Callable
+	continuation: Callable,
+	card_filter: Callable = Callable()
+) -> bool:
+	return request_zone_card_choice(
+		owner,
+		source_card,
+		PackedStringArray(["hand"]),
+		min_count,
+		max_count,
+		prompt,
+		continuation,
+		card_filter
+	)
+
+
+func request_zone_card_choice(
+	owner: BattleUnitState,
+	source_card: CardData,
+	zones: PackedStringArray,
+	min_count: int,
+	max_count: int,
+	prompt: String,
+	continuation: Callable,
+	card_filter: Callable = Callable()
 ) -> bool:
 	if owner == null or source_card == null or not continuation.is_valid() \
-			or min_count < 0 or max_count < min_count:
+			or min_count < 0 or max_count < min_count or not selection_service.are_zones_valid(zones):
 		return false
 	# A suspended selection can only safely resume a normal action's open effect
 	# scope. Attack scopes have their own deferred callback contract.
@@ -88,6 +113,8 @@ func request_hand_card_choice(
 			controller._emit_log("当前结算阶段不支持手牌选择。")
 		return false
 	var choice: Variant = CARD_CHOICE_STATE.create(owner, source_card, min_count, max_count, prompt, continuation)
+	choice.zones = zones
+	choice.card_filter = card_filter
 	if choice.get_live_cards().is_empty():
 		# There is no player decision to make. Continue with an empty result rather
 		# than silently selecting a card or leaving the action permanently locked.
@@ -103,14 +130,11 @@ func submit_hand_card_choice(selected: Array[CardData]) -> bool:
 	var choice: Variant = pending_hand_card_choice
 	if choice == null:
 		return false
-	if selected.size() < choice.min_count or selected.size() > choice.max_count:
+	if not selection_service.validate(choice.owner, selected, choice.zones, choice.min_count, choice.max_count, choice.source_card):
 		return false
-	var live_cards: Array[CardData] = choice.get_live_cards()
-	var unique_cards := {}
 	for card in selected:
-		if card == null or card == choice.source_card or not live_cards.has(card) or unique_cards.has(card):
+		if choice.card_filter.is_valid() and not choice.card_filter.call(card):
 			return false
-		unique_cards[card] = true
 	var continuation: Callable = choice.continuation
 	pending_hand_card_choice = null
 	hand_card_choice_cleared.emit()
@@ -132,6 +156,7 @@ func cancel_pending_hand_card_choice() -> void:
 		return
 	pending_hand_card_choice = null
 	hand_card_choice_cleared.emit()
+	_resume_suspended_action()
 
 
 func enqueue_effect(callback: Callable, args: Array = [], priority: int = 0, label: String = "", context = null) -> void:

@@ -95,10 +95,13 @@ func _test_overgrowth_graft(controller: BattleController, druid: BattleUnitState
 	var card := template.duplicate() as CardData
 	druid.hand.assign([card])
 	druid.current_ap = 20
-	if not controller.play_card(druid, card, [druid]):
-		_fail("DRUID_REMAINING: graft upright play failed")
-	elif not druid.mana_zone.has(card) or not druid.has_status("druid_root"):
-		_fail("DRUID_REMAINING: graft upright must root target and enter owner mana")
+	var ap_before: int = druid.current_ap
+	if controller.play_card(druid, card, [druid]) or druid.current_ap != ap_before or not druid.hand.has(card):
+		_fail("DRUID_REMAINING: graft upright must reject self without spending")
+	if not controller.play_card(druid, card, [ally]):
+		_fail("DRUID_REMAINING: graft upright other-target play failed")
+	elif not druid.mana_zone.has(card) or not ally.has_status("druid_root"):
+		_fail("DRUID_REMAINING: graft upright must root another target and enter owner mana")
 
 	_reset_druid(druid, true)
 	enemy.statuses.clear()

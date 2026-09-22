@@ -308,6 +308,14 @@ func _refresh_class_actions(unit: BattleUnitState, controller: BattleController,
 	_clear_children(resource_action_list)
 	if unit == null or controller == null:
 		return
+	for hand_card in unit.hand:
+		if hand_card != null and hand_card.get_twin_spell_face() >= 0:
+			var twin_hint := Label.new()
+			twin_hint.text = "双生入区：从手牌点选双生法术，可免费置入法力区并检索相反牌面。"
+			twin_hint.tooltip_text = "仅实际查看牌库时洗牌；只查看弃牌堆不洗牌。"
+			twin_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			resource_action_list.add_child(twin_hint)
+			break
 	if interactive and controller.can_use_druid_prepare_transform(unit):
 		_add_class_action(
 			&"druid_transform",

@@ -1,6 +1,7 @@
 extends RefCounted
 class_name BattleCardChoiceState
 
+const SELECTION_SERVICE := preload("res://scripts/battle/battle_selection_service.gd")
 
 var owner: BattleUnitState
 var source_card: CardData
@@ -8,6 +9,8 @@ var min_count: int = 0
 var max_count: int = 0
 var prompt: String = ""
 var continuation: Callable
+var zones: PackedStringArray = PackedStringArray(["hand"])
+var card_filter: Callable
 
 
 static func create(
@@ -29,10 +32,8 @@ static func create(
 
 
 func get_live_cards() -> Array[CardData]:
-	var live_cards: Array[CardData] = []
-	if owner == null:
-		return live_cards
-	for card in owner.hand:
-		if card != null and card != source_card:
-			live_cards.append(card)
+	var live_cards := SELECTION_SERVICE.new().get_cards(owner, zones)
+	live_cards.erase(source_card)
+	if card_filter.is_valid():
+		live_cards = live_cards.filter(func(card: CardData) -> bool: return card_filter.call(card))
 	return live_cards

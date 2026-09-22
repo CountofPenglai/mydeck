@@ -245,6 +245,12 @@ static func _card_tag_line(card: CardData) -> String:
 		tags.append("余势")
 	if card.is_choice_one_card:
 		tags.append("选择一项")
+	var twin_face := card.get_twin_spell_face()
+	if twin_face >= 0:
+		tags.append("双生法术（%s）" % ("正位" if twin_face == CardEnums.DruidOrientation.UPRIGHT else "逆位"))
+		tags.append("自由入区：免费；检索至多1张相反牌面（查阅牌库才洗牌）")
+	if card.upright_play_ignores_form:
+		tags.append("正位不受形态影响")
 	if not card.mutation_fields.is_empty():
 		tags.append(card.get_mutation_label())
 	return "标签：%s" % "、".join(tags) if not tags.is_empty() else ""

@@ -34,6 +34,13 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	profile_context["equipment_slot"] = equipment_slot
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
 	profile_context = attacker.notify_before_strike(profile_context)
+	var druid_element := int(profile_context.get("druid_element", profile_context.get("surface_element", BattleSurfaceState.Element.NONE)))
+	if druid_element == BattleSurfaceState.Element.NONE and attacker.druid_transformed:
+		var foot_elements := controller.surface_state.get_readable_elements(attacker.cell)
+		if not foot_elements.is_empty():
+			druid_element = int(foot_elements[0])
+	profile_context["druid_element"] = druid_element
+	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.is_surface_protected(attacker)
 	var resolved_multiplier := damage_multiplier
 	if options.has("ranger_attack_multiplier"):
 		if bool(options.get("skip_ranger_ambush", false)):
@@ -110,6 +117,8 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	trigger_context.merge(profile_context)
 	attacker.notify_after_strike(trigger_context)
 	controller.resolve_ranger_after_strike(trigger_context)
+	controller.druid_element_rules.resolve_after_strike(attacker, target, trigger_context)
+	controller.druid_battle_rules.notify_strike_finished(attacker, target, trigger_context)
 	controller.enqueue_trigger(Callable(controller, "_emit_basic_attack_trigger"), [trigger_context], 0, "普通攻击触发", trigger_context)
 	return actual_damage
 
@@ -136,6 +145,13 @@ func perform_object_strike_with_modifier(
 		return 0
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
 	profile_context = attacker.notify_before_strike(profile_context)
+	var druid_element := int(profile_context.get("druid_element", profile_context.get("surface_element", BattleSurfaceState.Element.NONE)))
+	if druid_element == BattleSurfaceState.Element.NONE and attacker.druid_transformed:
+		var foot_elements := controller.surface_state.get_readable_elements(attacker.cell)
+		if not foot_elements.is_empty():
+			druid_element = int(foot_elements[0])
+	profile_context["druid_element"] = druid_element
+	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.is_surface_protected(attacker)
 	var damage_multiplier := controller.consume_ranger_stealth_for_attack(
 		attacker,
 		0.0,
@@ -218,6 +234,7 @@ func perform_object_strike_with_modifier(
 	trigger_context.merge(profile_context)
 	attacker.notify_after_strike(trigger_context)
 	controller.resolve_ranger_after_strike(trigger_context)
+	controller.druid_element_rules.resolve_after_strike(attacker, null, trigger_context)
 	controller.enqueue_trigger(
 		Callable(controller, "_emit_basic_attack_trigger"),
 		[trigger_context],

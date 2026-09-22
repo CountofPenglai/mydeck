@@ -7,9 +7,9 @@
 [resource]
 script = ExtResource("1_card_data")
 card_name = "法脉寄生"
-description = "对目标施加【根系】，然后将本牌移入你的法力区。"
-card_text = "对目标施加【根系】，然后将本牌移入你的法力区。\n【法力区】本牌提供X点法力，X等于战场上具有【根系】的角色数量。"
-resolution_rules = "正位目标为武器射程内任意角色（敌我及自身）。法力区效果：本牌提供X点法力，X等于战场上具有【根系】的存活角色数量，替代普通的1点产出。"
+description = "对另一名目标施加【根系】，然后将本牌移入你的法力区。"
+card_text = "对另一名目标施加【根系】，然后将本牌移入你的法力区。\n【法力区】本牌提供X点法力，X等于战场上具有【根系】的角色数量。"
+resolution_rules = "正位目标为武器射程内任意其他角色（敌我均可，不可自身）。法力区效果：本牌提供X点法力，X等于战场上具有【根系】的存活角色数量，替代普通的1点产出。"
 artwork = ExtResource("2_scroll")
 rarity = 2
 card_class = 4

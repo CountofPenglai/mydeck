@@ -265,7 +265,7 @@ func on_after_card_played(owner: BattleUnitState, _root: EquipmentData, _compone
 			if owner.druid_transformed and card != null:
 				_consume_projection_for_card(owner, runtime, card, context)
 		WeaponKind.DOUBLE_SLIME:
-			if owner.druid_transformed and card != null and card.is_twin_spell and runtime.get_counter(TWIN_SPELL_TURN, -1) != owner.turn_serial:
+			if owner.druid_transformed and card != null and card.get_twin_spell_face() >= 0 and runtime.get_counter(TWIN_SPELL_TURN, -1) != owner.turn_serial:
 				runtime.set_counter(TWIN_SPELL_TURN, owner.turn_serial)
 				owner.current_ap += 2
 

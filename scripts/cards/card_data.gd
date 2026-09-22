@@ -69,6 +69,21 @@ var bound_curse_instance: CurseInstance
 @export var auto_pay_resonance: bool = true
 @export var is_choice_one_card: bool = false
 @export var is_twin_spell: bool = false
+@export var twin_spell_face: int = -1
+@export var allow_twin_face_play: bool = false
+@export var upright_play_ignores_form: bool = false
+@export var upright_is_transformation: bool = false
+@export var inverted_is_transformation: bool = false
+
+
+func get_twin_spell_face() -> int:
+	if twin_spell_face >= 0:
+		return twin_spell_face
+	return CardEnums.DruidOrientation.INVERTED if is_twin_spell else -1
+
+
+func is_transformation_for_context(context: Dictionary = {}) -> bool:
+	return inverted_is_transformation if _is_inverted_context(context) else upright_is_transformation
 
 
 func get_printed_elements() -> Array[int]:
@@ -213,6 +228,26 @@ func get_card_choice_options(context: Dictionary = {}) -> Array[Dictionary]:
 
 func get_card_choice_prompt(context: Dictionary = {}) -> String:
 	return effect.get_card_choice_prompt(context) if effect != null else "选择卡牌效果"
+
+
+func requires_preplay_configuration(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_preplay_configuration(context)
+
+
+func get_preplay_configuration(context: Dictionary = {}) -> Dictionary:
+	return effect.get_preplay_configuration(context) if effect != null else {}
+
+
+func requires_posttarget_configuration(context: Dictionary = {}, targets: Array = []) -> bool:
+	return effect != null and effect.requires_posttarget_configuration(context, targets)
+
+
+func get_posttarget_configuration(context: Dictionary = {}, targets: Array = []) -> Dictionary:
+	return effect.get_posttarget_configuration(context, targets) if effect != null else {}
+
+
+func requires_preplay_cell(context: Dictionary = {}) -> bool:
+	return effect != null and effect.requires_preplay_cell(context)
 
 
 func requires_enemy_intent_choice(context: Dictionary = {}) -> bool:

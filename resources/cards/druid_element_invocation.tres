@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/druid_element_invocation_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "引灵"
+description = "共鸣1。选择1种基础元素，选择一项：向范围3内的1格施加该元素；或对武器范围内的1名敌人进行1次附带该元素增益的武器打击。"
+card_text = "共鸣1。选择1种基础元素，选择一项：\n· 向范围3内的1格施加该元素。\n· 对武器范围内的1名敌人进行1次附带该元素增益的武器打击。"
+resolution_rules = "未支付共鸣时选择1项；支付1点当前可用法力后可选择不同两项，先铺地表后打击。元素在收费前选定；打击指定该元素并替代通常元素读取。"
+artwork = ExtResource("2_art")
+rarity = 1
+card_class = 4
+card_type = 0
+card_tags = 2
+damage_type = 3
+target_type = 1
+ap_cost = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "赋灵"
+inverted_description = "选择1种基础元素。你和战场上其他具有【根系】的友方角色，各自的下一次武器打击附带该元素增益，持续至你的下回合开始。然后进行1次武器打击。"
+inverted_card_text = "选择1种基础元素。你和战场上其他具有【根系】的友方角色，各自的下一次武器打击附带该元素增益，持续至你的下回合开始。然后进行1次武器打击。"
+inverted_resolution_rules = "施放时快照自身及全场其他具有根系的友方；自身无需根系。最新同类附魔覆盖旧效果，移动或失根不撤销、新得根系不补发。每名受益者下一次武器打击消耗一次，按施放者下回合开始到期或施放者死亡清除。"
+inverted_ap_cost = 2
+inverted_target_type = 1
+resonance_cost = 1
+auto_pay_resonance = false

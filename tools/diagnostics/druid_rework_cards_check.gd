@@ -162,10 +162,17 @@ func _test_covenant_and_graft() -> void:
 	_expect(f.u.discard_pile.has(f.card), "covenant inverse does not enter mana")
 
 	f = _fixture("druid_overgrowth_graft", false)
+	var ap_before: int = f.u.current_ap
+	_expect(not f.c.play_card(f.u, f.card, [f.u]), "graft upright rejects its caster")
+	_expect(f.u.current_ap == ap_before and f.u.hand.has(f.card), "invalid graft self target costs nothing")
+	f = _fixture("druid_overgrowth_graft", false)
+	var graft_ally := _ally(f.c, f.u)
+	_expect(graft_ally != null and f.c.play_card(f.u, f.card, [graft_ally]), "graft upright can target another druid ally")
+	_expect(graft_ally.has_status("druid_root") and f.u.mana_zone.has(f.card), "graft roots another ally and explicitly enters owner's mana")
+	f = _fixture("druid_overgrowth_graft", false)
 	f.enemy.add_status(_root())
-	_expect(f.c.play_card(f.u, f.card, [f.u]), "graft upright can target self")
-	_expect(f.u.has_status("druid_root") and f.u.mana_zone.has(f.card), "graft roots target and explicitly enters owner's mana")
-	_expect(f.card.effect.get_mana_production(f.u, f.card, {"controller": f.c}) == 2, "graft replaces default production with global living-root count")
+	_expect(f.c.play_card(f.u, f.card, [f.enemy]), "graft upright can target an enemy")
+	_expect(f.card.effect.get_mana_production(f.u, f.card, {"controller": f.c}) == 1, "graft production still counts roots across factions")
 	_test_graft_follow_up_boundaries()
 	_test_graft_descendant_and_root_boundaries()
 

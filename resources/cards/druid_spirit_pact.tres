@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/druid_spirit_pact_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "灵契"
+description = "共鸣2。选择范围2内的1名友方角色，选择一项：抽2张牌；对其武器范围内最近的敌人进行1次具有【吸血】的武器打击；获得6点护甲。"
+card_text = "共鸣2。选择范围2内的1名友方角色，选择一项：\n· 该角色抽2张牌。\n· 该角色对其武器范围内最近的敌人进行1次具有【吸血】的武器打击。\n· 该角色获得6点护甲。"
+resolution_rules = "未支付共鸣时选1项；支付2点当前可用法力后可选任意数量的不同项并按正文顺序结算。自动打击按武器模式、距离和单位ID选择；吸血按实际生命伤害恢复打击者。"
+artwork = ExtResource("2_art")
+rarity = 1
+card_class = 4
+card_type = 0
+card_tags = 2
+damage_type = 3
+target_type = 1
+ap_cost = 2
+override_range = true
+card_range = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "协猎"
+inverted_description = "进行1次武器打击。直到你的下回合开始，范围2内其他具有【根系】的友方角色进行武器打击后，若其目标仍在你的武器范围内，你对同一目标进行1次武器打击。此效果每回合限一次。"
+inverted_card_text = "进行1次武器打击。直到你的下回合开始，范围2内其他具有【根系】的友方角色进行武器打击后，若其目标仍在你的武器范围内，你对同一目标进行1次武器打击。此效果每回合限一次。"
+inverted_resolution_rules = "首击及附属效果完成后获得状态。协助在友军打击及附属效果完成后再次校验目标存活、射程与合法性；每名角色新回合刷新机会。协助不触发协助；同一施放者重复打出仅刷新持续时间，不重置已用机会。"
+inverted_ap_cost = 2
+inverted_target_type = 1
+resonance_cost = 2
+auto_pay_resonance = false

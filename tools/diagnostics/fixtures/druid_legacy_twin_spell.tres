@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Resource" path="res://resources/cards/druid_binding_enchantment_effect.tres" id="2_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "旧双生夹具"
+card_class = 4
+card_type = 1
+target_type = 4
+ap_cost = 2
+effect = ExtResource("2_effect")
+is_druid_dual_card = true
+inverted_name = "旧双生逆位"
+inverted_ap_cost = 2
+inverted_target_type = 4
+is_twin_spell = true

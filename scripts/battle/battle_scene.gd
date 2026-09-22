@@ -2,6 +2,8 @@ extends Control
 class_name BattleScene
 
 const DEFAULT_SCENARIO := preload("res://resources/battle/sample_battle_scenario.tres")
+const ZONE_CARD_PICKER := preload("res://scripts/battle/ui/battle_zone_card_picker.gd")
+const PREPLAY_PANEL := preload("res://scripts/battle/ui/battle_preplay_panel.gd")
 
 enum InputMode {
 	NONE,
@@ -37,9 +39,15 @@ var _card_choice_list: VBoxContainer
 var _card_choice_card: CardData
 var _card_choice_play_mode: int = CardEnums.CardPlayMode.NORMAL
 var _card_choice_extra_context: Dictionary = {}
+var _preplay_panel: BattlePreplayPanel
+var _preplay_card: CardData
+var _preplay_play_mode: int = CardEnums.CardPlayMode.NORMAL
+var _preplay_extra_context: Dictionary = {}
+var _preplay_targets: Array = []
 var _hand_card_choice_popup: PopupPanel
 var _hand_card_choice_list: VBoxContainer
 var _hand_card_choice_selected: Array[CardData] = []
+var _zone_card_picker
 var _discard_popup: PopupPanel
 var _discard_list: VBoxContainer
 var _draw_choice_popup: PopupPanel
@@ -117,7 +125,13 @@ func _ready() -> void:
 	_create_weapon_choice_popup()
 	_create_play_choice_popup()
 	_create_card_choice_popup()
+	_create_preplay_popup()
 	_create_hand_card_choice_popup()
+	_zone_card_picker = ZONE_CARD_PICKER.new()
+	_zone_card_picker.selection_submitted.connect(_on_zone_card_picker_submitted)
+	_zone_card_picker.selection_cancelled.connect(_on_zone_card_picker_cancelled)
+	_zone_card_picker.zone_browsed.connect(_on_zone_card_picker_zone_browsed)
+	add_child(_zone_card_picker)
 	_create_discard_popup()
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
@@ -153,7 +167,7 @@ func get_menu_return_state() -> Dictionary:
 	if _adventure_result != null and _adventure_battle_bound:
 		return {"ok": false, "message": "请先通过战斗结果按钮结算本场战斗，再从地图返回。"}
 	var choosing := false
-	for popup in [_hand_card_choice_popup, _ordered_discard_popup, _draw_choice_popup, _manifest_popup]:
+	for popup in [_hand_card_choice_popup, _zone_card_picker, _ordered_discard_popup, _draw_choice_popup, _manifest_popup]:
 		if popup != null and popup.visible:
 			choosing = true
 	var state := BattleNavigationGuard.check(controller, choosing)
@@ -402,6 +416,16 @@ func _handle_card_target(
 	var target_type := _get_pending_card_target_type()
 	var play_context := pending_extra_context.duplicate()
 	play_context["equipment_slot"] = pending_equipment_slot
+	if bool(play_context.get("preplay_cell_pending", false)):
+		play_context.erase("preplay_cell_pending")
+		play_context["selected_cell"] = cell
+		if _get_card_target_type(pending_card, pending_play_mode, play_context) == CardEnums.TargetType.AREA:
+			played = controller.play_card(controller.current_unit, pending_card, [cell], play_context, pending_play_mode)
+			if played:
+				_clear_input()
+			return
+		_continue_card_with_extra_context(pending_card, pending_play_mode, play_context)
+		return
 	if target_type == CardEnums.TargetType.AREA:
 		played = controller.play_card(controller.current_unit, pending_card, [cell], play_context, pending_play_mode)
 	elif clicked_unit != null:
@@ -414,7 +438,12 @@ func _handle_card_target(
 		if pending_card.effect is RangerStealPlanCardEffect and not play_context.has("selected_enemy_card") and not clicked_unit.hand.is_empty():
 			_show_ranger_enemy_hand_choice(clicked_unit)
 			return
-		played = controller.play_card(controller.current_unit, pending_card, [clicked_unit], play_context, pending_play_mode)
+		var selected_targets: Array = [clicked_unit]
+		if _needs_posttarget_configuration(pending_card, pending_play_mode, play_context, selected_targets):
+			_show_posttarget_configuration(pending_card, pending_play_mode, play_context, selected_targets)
+			_refresh()
+			return
+		played = controller.play_card(controller.current_unit, pending_card, selected_targets, play_context, pending_play_mode)
 	elif clicked_object != null and pending_card.can_target_objects():
 		played = controller.play_card(
 			controller.current_unit,
@@ -634,10 +663,15 @@ func _select_card(card: CardData) -> void:
 
 	_clear_input()
 	var play_modes := _available_hand_play_modes(card)
+	if play_modes.is_empty() and controller.can_use_druid_twin_spell_entry(controller.current_unit, card):
+		if controller.use_druid_twin_spell_entry(controller.current_unit, card):
+			_append_log("双生入区：%s（免费检索相反牌面）" % card.card_name)
+			_refresh()
+			return
 	if play_modes.is_empty():
 		_append_log("%s 当前无法打出。" % card.card_name)
 		return
-	if play_modes.size() > 1:
+	if play_modes.size() > 1 or controller.can_use_druid_twin_spell_entry(controller.current_unit, card):
 		_show_play_choice(card, play_modes)
 		return
 
@@ -657,6 +691,10 @@ func _select_card_with_mode(card: CardData, play_mode: int) -> void:
 	}
 	if _needs_card_choice(card, play_mode):
 		_show_card_choice(card, play_mode)
+		_refresh()
+		return
+	if _needs_preplay_configuration(card, play_mode):
+		_show_preplay_configuration(card, play_mode)
 		_refresh()
 		return
 	if card.requires_ranger_recipe_choice(choice_context):
@@ -925,24 +963,25 @@ func _available_hand_play_modes(card: CardData) -> Array[int]:
 	return result
 
 
-func _get_card_target_type(card: CardData, play_mode: int) -> int:
+func _get_card_target_type(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> int:
 	if card == null:
 		return CardEnums.TargetType.NONE
 
-	var context := {
+	var context := extra_context.duplicate()
+	context.merge({
 		"controller": controller,
 		"user": controller.current_unit,
 		"card": card,
 		"equipment_slot": pending_equipment_slot,
 		"play_mode": play_mode,
-	}
+	}, true)
 	if controller.current_unit != null and controller.current_unit.has_method("get_druid_card_orientation"):
 		context["druid_orientation"] = controller.current_unit.get_druid_card_orientation(card)
 	return card.get_target_type_for_mode(play_mode, context)
 
 
 func _get_pending_card_target_type() -> int:
-	return _get_card_target_type(pending_card, pending_play_mode)
+	return _get_card_target_type(pending_card, pending_play_mode, pending_extra_context)
 
 
 func _is_direct_card_target(card: CardData, play_mode: int) -> bool:
@@ -987,6 +1026,16 @@ func _needs_inventory_weapon_choice(card: CardData, play_mode: int, extra_contex
 func _needs_card_choice(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
 	return card != null and not extra_context.has("card_choice") \
 		and card.requires_card_choice(_build_card_choice_context(card, play_mode, extra_context))
+
+
+func _needs_preplay_configuration(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
+	return card != null and not bool(extra_context.get("preplay_configured", false)) \
+		and card.requires_preplay_configuration(_build_card_choice_context(card, play_mode, extra_context))
+
+
+func _needs_posttarget_configuration(card: CardData, play_mode: int, extra_context: Dictionary, targets: Array) -> bool:
+	return card != null and not bool(extra_context.get("posttarget_configured", false)) \
+		and card.requires_posttarget_configuration(_build_card_choice_context(card, play_mode, extra_context), targets)
 
 
 func _play_direct_card(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> bool:
@@ -1117,6 +1166,68 @@ func _create_card_choice_popup() -> void:
 	_card_choice_list = VBoxContainer.new()
 	_card_choice_list.custom_minimum_size = Vector2(320, 0)
 	margin.add_child(_card_choice_list)
+
+
+func _create_preplay_popup() -> void:
+	_preplay_panel = PREPLAY_PANEL.new()
+	_preplay_panel.configuration_confirmed.connect(_on_preplay_configuration_confirmed)
+	_preplay_panel.configuration_cancelled.connect(_cancel_preplay_configuration)
+	add_child(_preplay_panel)
+
+
+func _show_preplay_configuration(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> void:
+	if card == null:
+		return
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var spec := card.get_preplay_configuration(context)
+	_preplay_card = card
+	_preplay_play_mode = play_mode
+	_preplay_extra_context = extra_context.duplicate()
+	_preplay_targets.clear()
+	_preplay_panel.show_configuration(spec)
+
+
+func _show_posttarget_configuration(card: CardData, play_mode: int, extra_context: Dictionary, targets: Array) -> void:
+	var context := _build_card_choice_context(card, play_mode, extra_context)
+	var spec := card.get_posttarget_configuration(context, targets)
+	_preplay_card = card
+	_preplay_play_mode = play_mode
+	_preplay_extra_context = extra_context.duplicate()
+	_preplay_targets = targets.duplicate()
+	_preplay_panel.show_configuration(spec)
+
+
+func _on_preplay_configuration_confirmed(configuration: Dictionary) -> void:
+	if _preplay_card == null:
+		return
+	var card := _preplay_card
+	var play_mode := _preplay_play_mode
+	var extra_context := _preplay_extra_context.duplicate()
+	var targets := _preplay_targets.duplicate()
+	extra_context.merge(configuration, true)
+	if targets.is_empty():
+		extra_context["preplay_configured"] = true
+	else:
+		extra_context["posttarget_configured"] = true
+	_preplay_card = null
+	_preplay_play_mode = CardEnums.CardPlayMode.NORMAL
+	_preplay_extra_context.clear()
+	_preplay_targets.clear()
+	if not targets.is_empty():
+		if controller.play_card(controller.current_unit, card, targets, extra_context, play_mode):
+			_clear_input()
+			_hide_discard_popup()
+		_refresh()
+		return
+	_continue_card_with_extra_context(card, play_mode, extra_context)
+
+
+func _cancel_preplay_configuration() -> void:
+	_preplay_card = null
+	_preplay_extra_context.clear()
+	if not _preplay_targets.is_empty():
+		_clear_input()
+	_preplay_targets.clear()
 
 
 func _create_hand_card_choice_popup() -> void:
@@ -1661,6 +1772,10 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 		_show_card_choice(card, play_mode, extra_context)
 		_refresh()
 		return
+	if _needs_preplay_configuration(card, play_mode, extra_context):
+		_show_preplay_configuration(card, play_mode, extra_context)
+		_refresh()
+		return
 	if card.requires_curse_choice(_build_card_choice_context(card, play_mode, extra_context)) and not extra_context.has("selected_curse"):
 		_show_curse_choice(card, play_mode, extra_context)
 		_refresh()
@@ -1683,6 +1798,16 @@ func _continue_card_with_extra_context(card: CardData, play_mode: int, extra_con
 		return
 	if card.requires_enemy_intent_choice(choice_context) and not extra_context.has("enemy_intent_choice"):
 		_show_intent_choice(card, play_mode, extra_context)
+		_refresh()
+		return
+	if card.requires_preplay_cell(choice_context) and not extra_context.has("selected_cell"):
+		pending_card = card
+		pending_play_mode = play_mode
+		pending_extra_context = extra_context.duplicate()
+		pending_extra_context["preplay_cell_pending"] = true
+		pending_equipment_slot = str(choice_context.get("equipment_slot", ""))
+		input_mode = InputMode.CARD_TARGET
+		_append_log("请先选择要施加元素的格子。")
 		_refresh()
 		return
 
@@ -1709,6 +1834,8 @@ func _build_card_choice_context(card: CardData, play_mode: int, extra_context: D
 		"card": card,
 		"equipment_slot": str(extra_context.get("equipment_slot", pending_equipment_slot)),
 	})
+	if controller.current_unit != null:
+		context["druid_orientation"] = controller.current_unit.get_druid_card_orientation(card)
 	return context
 
 
@@ -2080,6 +2207,11 @@ func _show_play_choice(card: CardData, play_modes: Array[int]) -> void:
 		button.text = _play_choice_button_text(card, play_mode)
 		button.pressed.connect(_on_play_choice_pressed.bind(play_mode))
 		_play_choice_list.add_child(button)
+	if controller.can_use_druid_twin_spell_entry(controller.current_unit, card):
+		var twin_entry := Button.new()
+		twin_entry.text = "双生入区：免费"
+		twin_entry.pressed.connect(_on_twin_entry_choice_pressed)
+		_play_choice_list.add_child(twin_entry)
 
 	_play_choice_popup.popup_centered()
 
@@ -2103,6 +2235,17 @@ func _on_play_choice_pressed(play_mode: int) -> void:
 	_play_choice_popup.hide()
 	if card != null:
 		_select_card_with_mode(card, play_mode)
+
+
+func _on_twin_entry_choice_pressed() -> void:
+	if _actions_locked():
+		return
+	var card := _play_choice_card
+	_play_choice_card = null
+	_play_choice_popup.hide()
+	if card != null and controller.use_druid_twin_spell_entry(controller.current_unit, card):
+		_append_log("双生入区：%s（免费检索相反牌面）" % card.card_name)
+		_refresh()
 
 
 func _show_card_choice(card: CardData, play_mode: int, extra_context: Dictionary = {}) -> void:
@@ -2184,10 +2327,18 @@ func _refresh_hand_card_choice_popup() -> void:
 	if runner == null or not runner.has_pending_hand_card_choice():
 		_hand_card_choice_selected.clear()
 		_hand_card_choice_popup.hide()
+		if _zone_card_picker != null:
+			_zone_card_picker.hide()
 		return
 	var choice = runner.get_pending_hand_card_choice()
 	if choice == null:
 		return
+	if choice.zones != PackedStringArray(["hand"]):
+		_hand_card_choice_popup.hide()
+		_zone_card_picker.show_choice(choice)
+		return
+	if _zone_card_picker != null:
+		_zone_card_picker.hide()
 	var live_cards: Array[CardData] = choice.get_live_cards()
 	for selected in _hand_card_choice_selected.duplicate():
 		if not live_cards.has(selected):
@@ -2210,6 +2361,11 @@ func _refresh_hand_card_choice_popup() -> void:
 	confirm.disabled = _hand_card_choice_selected.size() < int(choice.min_count)
 	confirm.pressed.connect(_submit_hand_card_choice)
 	_hand_card_choice_list.add_child(confirm)
+	if int(choice.min_count) == 0:
+		var skip := Button.new()
+		skip.text = "跳过"
+		skip.pressed.connect(_skip_hand_card_choice)
+		_hand_card_choice_list.add_child(skip)
 	if not _hand_card_choice_popup.visible:
 		_hand_card_choice_popup.popup_centered()
 
@@ -2234,6 +2390,35 @@ func _submit_hand_card_choice() -> void:
 		_hand_card_choice_selected.clear()
 		_hand_card_choice_popup.hide()
 		_refresh()
+
+
+func _skip_hand_card_choice() -> void:
+	_hand_card_choice_selected.clear()
+	_submit_hand_card_choice()
+
+
+func _on_zone_card_picker_submitted(selected: Array[CardData]) -> void:
+	if controller == null:
+		return
+	controller.resolution_runner.submit_hand_card_choice(selected)
+	_refresh_hand_card_choice_popup()
+	_refresh()
+
+
+func _on_zone_card_picker_cancelled() -> void:
+	if controller != null:
+		var choice = controller.resolution_runner.get_pending_hand_card_choice()
+		if choice != null:
+			controller.cancel_druid_twin_spell_entry(choice.source_card)
+		controller.resolution_runner.cancel_pending_hand_card_choice()
+		_refresh()
+
+
+func _on_zone_card_picker_zone_browsed(zone: String) -> void:
+	if zone == "draw" and controller != null:
+		var choice = controller.resolution_runner.get_pending_hand_card_choice()
+		if choice != null:
+			controller.mark_druid_twin_spell_deck_viewed(choice.source_card)
 
 
 func _on_hand_card_choice_popup_hidden() -> void:

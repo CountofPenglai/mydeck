@@ -18,6 +18,7 @@ target_type = 4
 ap_cost = 2
 effect = ExtResource("3_effect")
 is_druid_dual_card = true
+upright_is_transformation = true
 inverted_name = "冬眠甲壳"
 inverted_description = "获得等同于4加你的法力区牌数的护甲，抽1张牌。将本牌移入你的法力区。"
 inverted_card_text = "获得等同于4加你的法力区牌数的护甲，抽1张牌。将本牌移入你的法力区。"

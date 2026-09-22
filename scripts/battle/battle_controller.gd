@@ -14,6 +14,9 @@ const RangerBlindStatus = preload("res://scripts/status/ranger_blind_status.gd")
 const RangerCombatState = preload("res://scripts/ranger/ranger_combat_state.gd")
 const RangerSurfaceElementCollector = preload("res://scripts/ranger/ranger_surface_element_collector.gd")
 const DruidTurnRules = preload("res://scripts/druid/druid_turn_rules.gd")
+const DruidTwinSpellService = preload("res://scripts/druid/druid_twin_spell_service.gd")
+const DruidElementRules = preload("res://scripts/druid/druid_element_rules.gd")
+const DruidBattleRules = preload("res://scripts/druid/druid_battle_rules.gd")
 const MageInfusionState = preload("res://scripts/mage/mage_infusion_state.gd")
 const CurseCatalog = preload("res://scripts/curses/curse_catalog.gd")
 const EnemyIntentInterferenceService = preload("res://scripts/enemies/enemy_intent_interference_service.gd")
@@ -75,6 +78,10 @@ var action_resolution_active: bool = false
 var internal_action_submission_depth: int = 0
 var resolution_state_notification_active: bool = false
 var resolution_runner := BattleResolutionRunner.new()
+var druid_twin_spell_service := DruidTwinSpellService.new()
+var druid_element_rules := DruidElementRules.new()
+var druid_battle_rules := DruidBattleRules.new()
+var druid_twin_spell_deck_viewed: Dictionary = {}
 var targeting := BattleTargeting.new()
 var strike_resolver := BattleStrikeResolver.new()
 var trap_controller := BattleTrapController.new()
@@ -101,6 +108,9 @@ func setup(new_scenario: BattleScenario) -> void:
 		_reset_runtime_state()
 		surface_state.setup(map_data)
 		resolution_runner.setup(self)
+		druid_twin_spell_service.setup(self)
+		druid_element_rules.setup(self)
+		druid_battle_rules.setup(self)
 		targeting.setup(self)
 		strike_resolver.setup(self)
 		trap_controller.setup(self)
@@ -132,6 +142,9 @@ func setup(new_scenario: BattleScenario) -> void:
 		)
 		battle_objects.append_array(generated_objects)
 	resolution_runner.setup(self)
+	druid_twin_spell_service.setup(self)
+	druid_element_rules.setup(self)
+	druid_battle_rules.setup(self)
 	targeting.setup(self)
 	strike_resolver.setup(self)
 	trap_controller.setup(self)
@@ -419,6 +432,7 @@ func _resolve_turn_start_action(unit: BattleUnitState) -> void:
 
 	active_turn_serial += 1
 	unit.start_turn(config)
+	druid_battle_rules.expire_source_statuses(unit)
 	DruidTurnRules.resolve_turn_start(unit, {"controller": self, "phase": "turn_start"})
 	unit.notify_zone_turn_start({"controller": self, "phase": "turn_start"})
 	EnemyRuleDispatcher.on_turn_started(self, unit)
@@ -771,14 +785,15 @@ func get_movement_path(unit: BattleUnitState, cell: Vector2i) -> Array[Vector2i]
 		surface_state,
 		unit.cell,
 		cell,
-		func(candidate: Vector2i) -> bool: return candidate == unit.cell or targeting.is_unit_cell_clear(unit, candidate, false)
+		func(candidate: Vector2i) -> bool: return candidate == unit.cell or targeting.is_unit_cell_clear(unit, candidate, false),
+		druid_element_rules.is_surface_protected(unit)
 	)
 
 
 func _get_path_movement_cost(unit: BattleUnitState, path: Array[Vector2i]) -> int:
 	if unit != null and unit.is_flying():
 		return maxi(0, path.size() - 1)
-	return BattlePathfinder.get_path_cost(path, surface_state)
+	return BattlePathfinder.get_path_cost(path, surface_state, druid_element_rules.is_surface_protected(unit))
 
 
 func play_card(user: BattleUnitState, card: CardData, targets: Array, strike_context: Dictionary = {}, play_mode: int = CardEnums.CardPlayMode.NORMAL) -> bool:
@@ -1842,7 +1857,8 @@ func get_reachable_cells_for_ap(unit: BattleUnitState, ap_budget: int, apply_ap_
 		map_data,
 		surface_state,
 		unit.cell,
-		func(candidate: Vector2i) -> bool: return not blocked_cells.has(candidate)
+		func(candidate: Vector2i) -> bool: return not blocked_cells.has(candidate),
+		druid_element_rules.is_surface_protected(unit)
 	)
 	for cell in map_data.get_all_cells():
 		if not movement_costs.has(cell):
@@ -2238,6 +2254,61 @@ func can_use_druid_prepare_transform(unit: BattleUnitState) -> bool:
 	return true
 
 
+func can_use_druid_twin_spell_entry(unit: BattleUnitState, card: CardData) -> bool:
+	return druid_twin_spell_service.can_begin(unit, card)
+
+
+func use_druid_twin_spell_entry(unit: BattleUnitState, card: CardData) -> bool:
+	if not can_use_druid_twin_spell_entry(unit, card):
+		return false
+	return push_action_frame(BattleActionFrame.create(
+		Callable(self, "_resolve_druid_twin_spell_entry"),
+		[unit, card],
+		0,
+		"%s 双生法术入区" % unit.get_display_name(),
+		{"unit": unit, "source_card": card, "druid_twin_spell_free_entry": true}
+	))
+
+
+func _resolve_druid_twin_spell_entry(unit: BattleUnitState, card: CardData) -> void:
+	if unit == null or card == null or not unit.has_card_in_hand(card) or card.get_twin_spell_face() < 0:
+		return
+	var candidates := druid_twin_spell_service.get_candidates(unit, card)
+	if candidates.is_empty():
+		druid_twin_spell_service.execute(unit, card)
+		state_changed.emit()
+		return
+	druid_twin_spell_deck_viewed[card] = false
+	resolution_runner.request_zone_card_choice(
+		unit,
+		card,
+		PackedStringArray(["draw", "discard"]),
+		0,
+		1,
+		"双生法术：选择至多一张相反牌面卡牌",
+		Callable(self, "_resolve_druid_twin_spell_choice").bind(unit, card),
+		Callable(druid_twin_spell_service, "is_candidate_for").bind(card)
+	)
+
+
+func _resolve_druid_twin_spell_choice(selected: Array[CardData], unit: BattleUnitState, card: CardData) -> void:
+	var chosen: CardData = selected[0] as CardData if not selected.is_empty() else null
+	var searched_deck: bool = bool(druid_twin_spell_deck_viewed.get(card, false))
+	druid_twin_spell_deck_viewed.erase(card)
+	druid_twin_spell_service.execute(unit, card, chosen, searched_deck)
+	state_changed.emit()
+
+
+func mark_druid_twin_spell_deck_viewed(card: CardData) -> void:
+	if card != null:
+		druid_twin_spell_deck_viewed[card] = true
+
+
+func cancel_druid_twin_spell_entry(card: CardData) -> void:
+	if card != null:
+		druid_twin_spell_deck_viewed.erase(card)
+
+
 func use_druid_prepare_transform(unit: BattleUnitState, selected_card: CardData = null) -> bool:
 	if is_resolving_actions() or resolution_state_notification_active:
 		return false
@@ -2402,11 +2473,11 @@ func _is_druid_card_play_state_valid(user: BattleUnitState, card: CardData, writ
 		return true
 
 	var orientation := _get_druid_orientation_for_card(user, card)
+	if card.get_twin_spell_face() == orientation and not card.allow_twin_face_play:
+		if write_log:
+			_emit_log("%s 是双生法术，不能以%s打出。" % [card.card_name, CardEnums.druid_orientation_label(orientation)])
+		return false
 	if orientation == CardEnums.DruidOrientation.INVERTED:
-		if card.is_twin_spell:
-			if write_log:
-				_emit_log("%s 是双生法术，不能以逆位打出。" % card.card_name)
-			return false
 		if not card.allow_inverted_play:
 			if write_log:
 				_emit_log("%s 当前不能逆位打出。" % card.card_name)
@@ -2426,11 +2497,12 @@ func _try_pay_druid_resonance(user: BattleUnitState, card: CardData, context: Ca
 	if not user.is_druid():
 		return true
 	var resonance_cost := user.get_card_resonance_cost(card, {"controller": self, "card": card})
-	if resonance_cost <= 0 or not card.auto_pay_resonance:
+	var wants_resonance := bool(context.extra.get("pay_resonance", false))
+	if resonance_cost <= 0 or (not card.auto_pay_resonance and not wants_resonance):
 		return true
 	if not user.can_pay_mana(resonance_cost):
 		context.extra["druid_resonance_paid"] = false
-		return true
+		return not wants_resonance
 	if not user.pay_mana(resonance_cost, {"controller": self, "card": card, "reason": "resonance"}):
 		_emit_log("%s 共鸣支付失败。" % card.card_name)
 		return false
@@ -2988,6 +3060,8 @@ func _apply_burn(target: BattleUnitState, damage: int, turns: int) -> void:
 func get_surface_damage_bonus(unit: BattleUnitState) -> int:
 	if unit == null:
 		return 0
+	if druid_element_rules.is_surface_protected(unit) and surface_state.get_ground_effect(unit.cell) == BattleSurfaceState.Element.POISON_BOG:
+		return 2 if surface_state.get_air_effect(unit.cell) == BattleSurfaceState.Element.BLAZE else 0
 	return surface_state.get_damage_bonus(unit.cell)
 
 
@@ -2998,6 +3072,8 @@ func get_surface_damage_reduction(unit: BattleUnitState, context: Dictionary = {
 	var is_ranged := damage_context != null \
 		and not bool(damage_context.metadata.get("ignore_ranged_surface_reduction", false)) \
 		and int(damage_context.metadata.get("range_type", -1)) == EquipmentData.WeaponRangeType.RANGED
+	if druid_element_rules.is_surface_protected(unit):
+		return 1 if is_ranged and surface_state.get_air_effect(unit.cell) == BattleSurfaceState.Element.STEAM else 0
 	return surface_state.get_damage_reduction(unit.cell, is_ranged)
 
 
@@ -3032,8 +3108,8 @@ func _get_effective_attack_range_at_cell(attacker: BattleUnitState, target_cell:
 	var attack_range := attacker.get_attack_range_for_targeting(equipment_slot, range_context) if range_only else attacker.get_attack_range(equipment_slot, range_context)
 	var profile := attacker.build_strike_profile_object(equipment_slot)
 	if profile.primary_range_type == EquipmentData.WeaponRangeType.RANGED:
-		if surface_state.is_ranged_range_capped(attacker.cell) \
-				or surface_state.is_ranged_range_capped(target_cell):
+		if (surface_state.is_ranged_range_capped(attacker.cell) or surface_state.is_ranged_range_capped(target_cell)) \
+				and not druid_element_rules.is_surface_protected(attacker):
 			attack_range = mini(attack_range, 2)
 	return attack_range
 
@@ -3045,9 +3121,9 @@ func process_surface_entry(unit: BattleUnitState, cell: Vector2i) -> bool:
 		return false
 	if surface_state.is_terrain_effective(cell, BattleSurfaceState.Terrain.MAGMA_FISSURE):
 		apply_environment_damage(unit, 3, "\u5ca9\u6d46\u88c2\u9699")
-	if surface_state.get_ground_effect(cell) == BattleSurfaceState.Element.LAVA:
-		apply_environment_damage(unit, 3, "\u7194\u5ca9")
-	return surface_state.stops_movement_on_entry(cell)
+	if surface_state.get_ground_effect(cell) == BattleSurfaceState.Element.LAVA and not druid_element_rules.is_surface_protected(unit):
+		apply_environment_damage(unit, 3, "\u7194\u5ca9", {"surface_origin": true})
+	return surface_state.stops_movement_on_entry(cell) and not druid_element_rules.is_surface_protected(unit)
 
 
 func _apply_surface_turn_start(unit: BattleUnitState) -> void:
@@ -3057,8 +3133,8 @@ func _apply_surface_turn_start(unit: BattleUnitState) -> void:
 		return
 	if surface_state.is_terrain_effective(unit.cell, BattleSurfaceState.Terrain.MAGMA_FISSURE):
 		apply_environment_damage(unit, 3, "\u5ca9\u6d46\u88c2\u9699")
-	if surface_state.get_ground_effect(unit.cell) == BattleSurfaceState.Element.LAVA:
-		apply_environment_damage(unit, 3, "\u7194\u5ca9")
+	if surface_state.get_ground_effect(unit.cell) == BattleSurfaceState.Element.LAVA and not druid_element_rules.is_surface_protected(unit):
+		apply_environment_damage(unit, 3, "\u7194\u5ca9", {"surface_origin": true})
 
 
 func _resolve_surface_reaction(cell: Vector2i, reaction: int, context: Dictionary) -> void:
@@ -3066,7 +3142,7 @@ func _resolve_surface_reaction(cell: Vector2i, reaction: int, context: Dictionar
 	var battle_object := get_battle_object_at_cell(cell)
 	match reaction:
 		BattleSurfaceState.Element.STEAM:
-			if unit != null and not unit.is_flying():
+			if unit != null and not unit.is_flying() and not druid_element_rules.is_surface_protected(unit):
 				force_move_away(
 					unit,
 					context.get("source_cell", cell) as Vector2i,
@@ -3074,24 +3150,24 @@ func _resolve_surface_reaction(cell: Vector2i, reaction: int, context: Dictionar
 					context.get("source") as BattleUnitState
 				)
 		BattleSurfaceState.Element.LAVA:
-			if unit != null and not unit.is_flying():
-				apply_environment_damage(unit, 3, "\u7194\u5ca9\u751f\u6210")
+			if unit != null and not unit.is_flying() and not druid_element_rules.is_surface_protected(unit):
+				apply_environment_damage(unit, 3, "\u7194\u5ca9\u751f\u6210", {"surface_origin": true})
 			if battle_object != null:
 				apply_object_damage(null, battle_object, 3, "\u7194\u5ca9\u751f\u6210", {"environmental": true})
 		BattleSurfaceState.Element.BLAZE:
-			if unit != null and not unit.is_flying():
+			if unit != null and not unit.is_flying() and not druid_element_rules.is_surface_protected(unit):
 				apply_environment_damage(unit, 2, "\u70c8\u7130\u751f\u6210")
 			if battle_object != null:
 				apply_object_damage(null, battle_object, 2, "\u70c8\u7130\u751f\u6210", {"environmental": true})
 		BattleSurfaceState.Element.ICE:
-			if unit != null and not unit.is_flying():
+			if unit != null and not unit.is_flying() and not druid_element_rules.is_surface_protected(unit):
 				var surcharge := RangerMoveSurchargeStatus.new()
 				surcharge.stacks = 1
 				surcharge.surcharge = 1
 				unit.remove_status(surcharge.status_id)
 				unit.add_status(surcharge)
 		BattleSurfaceState.Element.SANDSTORM:
-			if unit != null and not unit.is_flying():
+			if unit != null and not unit.is_flying() and not druid_element_rules.is_surface_protected(unit):
 				var blind := RangerBlindStatus.new()
 				blind.stacks = 1
 				blind.maximum_range = 2
@@ -3517,6 +3593,7 @@ func _notify_unit_death(source: BattleUnitState, target: BattleUnitState, contex
 	if EnemyRuleDispatcher.try_handle_lethal(self, source, target, context):
 		return
 	target.battle_action_flags["death_notified"] = true
+	druid_battle_rules.clear_source_statuses(target)
 	target.notify_death(context)
 	if source != null and source != target:
 		source.notify_kill(target, context)

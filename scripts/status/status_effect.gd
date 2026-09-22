@@ -59,6 +59,10 @@ func on_card_discarded(_unit: BattleUnitState, _card: CardData, _context: Dictio
 	pass
 
 
+func on_hand_size_changed(_unit: BattleUnitState, _previous_size: int, _context: Dictionary = {}) -> void:
+	pass
+
+
 func on_card_entered_special_zone(_unit: BattleUnitState, _card: CardData, _zone_name: String, _context: Dictionary = {}) -> void:
 	pass
 
@@ -84,6 +88,16 @@ func on_after_life_gained(_unit: BattleUnitState, _context: Dictionary = {}) -> 
 
 
 func on_after_strike(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_before_strike(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
+	pass
+
+
+# This is intentionally synchronous: strike profile/context consumers run before
+# queued status triggers, so a one-shot pre-strike modifier must be queryable now.
+func modify_strike_context(_unit: BattleUnitState, _context: Dictionary = {}) -> void:
 	pass
 
 
