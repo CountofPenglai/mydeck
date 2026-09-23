@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_spirit_whisper_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "万灵低语"
+description = "双生法术。本牌正位可以主动打出。弃置所有其他手牌，展示牌库顶等量的牌。每展示1张攻击牌，你的下一次武器打击获得+4伤害加值；每展示1张变形牌，为生命值最低的受伤友方角色恢复4点生命；每展示1张双生法术牌，你获得1 AP。然后将展示的牌加入手牌。"
+card_text = "双生法术。本牌正位可以主动打出。弃置所有其他手牌，展示牌库顶等量的牌。每展示1张攻击牌，你的下一次武器打击获得+4伤害加值；每展示1张变形牌，为生命值最低的受伤友方角色恢复4点生命；每展示1张双生法术牌，你获得1 AP。然后将展示的牌加入手牌。"
+resolution_rules = "支付2 AP后，先弃置所有其他手牌并结算附属效果；固定展示数量后展示顶牌，依攻击、变形、双生法术顺序处理；治疗每次重选当前生命最低的受伤友方；展示牌最后进入手牌，均不视为抽牌。下一次武器打击加值在自己回合结束时失效。"
+artwork = ExtResource("2_scroll")
+rarity = 2
+card_class = 4
+card_type = 1
+target_type = 0
+ap_cost = 2
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+is_twin_spell = true
+twin_spell_face = 0
+allow_twin_face_play = true
+allow_inverted_play = false
+inverted_name = "盘根守望"
+inverted_description = "本牌位于你的法力区时，当你成为敌人卡牌的目标，对范围3内所有敌人施加【根系】，然后获得等同于范围3内具有【根系】的角色数×3的护甲。将这张牌置入弃牌堆。"
+inverted_card_text = "本牌位于你的法力区时，当你成为敌人卡牌的目标，对范围3内所有敌人施加【根系】，然后获得等同于范围3内具有【根系】的角色数×3的护甲。将这张牌置入弃牌堆。"
+inverted_resolution_rules = "仅法力区中的一次性响应。敌方卡牌最终确认以持有者为目标、费用成功后且该牌效果前触发；先施加范围3根系，再按范围内根系角色（敌我及自身）×3获得护甲，最后移入弃牌堆。"
+inverted_ap_cost = 2
+inverted_target_type = 0

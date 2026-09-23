@@ -1056,6 +1056,56 @@ func _resolve_paid_card_effect(frame: BattleCardFrame, context_dict: Dictionary)
 		var target := target_value as BattleUnitState
 		if should_cancel_hostile_effect(frame.user, target, frame.card.card_name, frame.card):
 			return
+	if frame.user.faction == BattleUnitState.Faction.ENEMY:
+		var raw_declaration: Array = frame.card.get_target_declaration(context_dict, frame.targets)
+		var declaration: Array[BattleUnitState] = []
+		for target_value in raw_declaration:
+			var declared_target := target_value as BattleUnitState
+			if declared_target != null:
+				declaration.append(declared_target)
+		context_dict["confirmed_target_declaration"] = declaration
+		var notified_targets: Array[BattleUnitState] = []
+		for target_value in declaration:
+			var target := target_value as BattleUnitState
+			if target != null and not notified_targets.has(target):
+				notified_targets.append(target)
+		if not notified_targets.is_empty():
+			resolution_runner.begin_descendant_scope()
+			for target in notified_targets:
+				target.notify_zone_owner_targeted({
+					"controller": self,
+					"source": frame.user,
+					"source_card": frame.card,
+					"target": target,
+					"action_id": get_current_action_id(),
+				})
+			resolution_runner.end_descendant_scope()
+	_execute_paid_card_effect(frame, context_dict)
+
+
+func _execute_paid_card_effect(frame: BattleCardFrame, context_dict: Dictionary) -> void:
+	if frame == null or not frame.resolved_successfully or frame.user == null or frame.card == null:
+		return
+	if not frame.user.is_alive():
+		_emit_log("%s 在目标响应后已无法行动，%s 的效果未执行。" % [frame.user.get_display_name(), frame.card.card_name])
+		return
+	var source_is_valid := frame.user.has_card_in_hand(frame.card)
+	if frame.context.play_mode == CardEnums.CardPlayMode.MOMENTUM:
+		source_is_valid = frame.user.has_card_in_exile(frame.card)
+	if not source_is_valid:
+		_emit_log("%s 在目标响应后已不在预期区域，效果未执行。" % frame.card.card_name)
+		return
+	if frame.user.faction == BattleUnitState.Faction.ENEMY and not _targets_are_valid(
+			frame.user,
+			frame.card,
+			frame.targets,
+			false,
+			frame.context.equipment_slot,
+			frame.context.play_mode,
+			context_dict
+	):
+		_emit_log("%s 的原始目标在响应后已失效，效果未执行。" % frame.card.card_name)
+		return
 	var duplicate_targets := frame.user.get_equipment_card_duplicate_targets(frame.card, frame.targets, context_dict)
 	frame.card.play(context_dict, frame.targets)
 	for duplicate_target in duplicate_targets:
@@ -2438,6 +2488,8 @@ func finish_card_to_exile(frame: BattleCardFrame) -> void:
 
 func finish_druid_card_to_mana(frame: BattleCardFrame) -> void:
 	if frame == null or frame.user == null or frame.card == null:
+		return
+	if frame.context != null and bool(frame.context.extra.get("druid_mana_entry_committed", false)):
 		return
 	var context := {
 		"controller": self,

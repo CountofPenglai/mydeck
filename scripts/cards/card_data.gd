@@ -153,6 +153,10 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], write_log:
 	return effect.are_targets_valid(context, targets, write_log)
 
 
+func get_target_declaration(context: Dictionary = {}, targets: Array = []) -> Array[BattleUnitState]:
+	return effect.get_target_declaration(context, targets) if effect != null else []
+
+
 func play(context: Dictionary = {}, targets: Array = []) -> void:
 	if effect == null:
 		return

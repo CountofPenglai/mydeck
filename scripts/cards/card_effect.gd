@@ -16,6 +16,10 @@ func grants_elemental_surface_protection(_owner: BattleUnitState) -> bool:
 	return false
 
 
+func grants_druid_extra_earth(_owner: BattleUnitState) -> bool:
+	return false
+
+
 func pay_play_cost(_context: Dictionary = {}) -> bool:
 	return true
 
@@ -78,6 +82,14 @@ func are_targets_valid(_context: Dictionary = {}, _targets: Array = [], _write_l
 	return true
 
 
+func get_target_declaration(_context: Dictionary = {}, targets: Array = []) -> Array[BattleUnitState]:
+	var result: Array[BattleUnitState] = []
+	for target_value in targets:
+		if target_value is BattleUnitState:
+			result.append(target_value as BattleUnitState)
+	return result
+
+
 func play(_context: Dictionary = {}, _targets: Array = []) -> void:
 	pass
 
@@ -111,6 +123,10 @@ func on_self_drawn(_owner: BattleUnitState, _card: CardData, _context: Dictionar
 
 
 func on_zone_owner_card_discarded(_owner: BattleUnitState, _zone_card: CardData, _discarded_card: CardData, _context: Dictionary = {}) -> void:
+	pass
+
+
+func on_zone_owner_targeted(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> void:
 	pass
 
 
@@ -152,6 +168,19 @@ func on_zone_owner_armor_changed(_owner: BattleUnitState, _zone_card: CardData, 
 
 func get_zone_owner_damage_reduction(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> int:
 	return 0
+
+
+# Zone effects that modify weapon profiles use this query path.  The caller
+# passes `strike` only while constructing a weapon-strike profile, so ordinary
+# card damage never inherits a zone's strike-only bonus.
+func get_zone_owner_damage_bonus(_owner: BattleUnitState, _zone_card: CardData, _context: Dictionary = {}) -> int:
+	return 0
+
+
+# Most zone cards intentionally stack.  Effects with a same-name nonstacking
+# rule can return a stable key so the shared damage queries count them once.
+func get_zone_effect_deduplication_key(_zone_card: CardData, _context: Dictionary = {}) -> String:
+	return ""
 
 
 func requires_weapon_choice(_context: Dictionary = {}) -> bool:

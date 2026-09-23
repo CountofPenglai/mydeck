@@ -7,6 +7,7 @@ signal selection_cancelled
 signal zone_browsed(zone: String)
 
 var _list := VBoxContainer.new()
+var _scroll := ScrollContainer.new()
 var _selected: Array[CardData] = []
 var _choice
 var _active_zone: String = ""
@@ -23,7 +24,12 @@ func _ready() -> void:
 	margin.add_theme_constant_override("margin_bottom", 12)
 	add_child(margin)
 	_list.custom_minimum_size = Vector2(360, 0)
-	margin.add_child(_list)
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(_scroll)
+	_scroll.add_child(_list)
 
 
 func show_choice(choice) -> void:
@@ -72,8 +78,19 @@ func show_choice(choice) -> void:
 	cancel.text = "取消"
 	cancel.pressed.connect(_cancel_selection)
 	_list.add_child(cancel)
+	_present_choice()
+
+
+func _present_choice() -> void:
 	if not visible:
-		popup_centered()
+		popup_centered(BattleChoicePopupLayout.size_for(self, _scroll, _list))
+	call_deferred("_resize_and_center")
+
+
+func _resize_and_center() -> void:
+	if _choice == null:
+		return
+	BattleChoicePopupLayout.resize_and_center(self, BattleChoicePopupLayout.size_for(self, _scroll, _list))
 
 
 func _on_card_toggled(pressed: bool, card: CardData) -> void:

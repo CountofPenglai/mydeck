@@ -56,7 +56,7 @@ func expire_source_statuses(source: BattleUnitState) -> void:
 			continue
 		for status_value in owner.statuses.duplicate():
 			var status := status_value as StatusEffect
-			if status == null or not (status is DruidElementChargeStatus or status is DruidAssistStatus):
+			if status == null or not (status is DruidElementChargeStatus or status is DruidAssistStatus or status is DruidRootOathStatus):
 				continue
 			if int(status.get("source_unit_id")) == source.unit_id and source.turn_serial >= int(status.get("expires_on_source_turn")):
 				owner.statuses.erase(status)
@@ -71,7 +71,7 @@ func clear_source_statuses(source: BattleUnitState) -> void:
 			continue
 		for status_value in owner.statuses.duplicate():
 			var status := status_value as StatusEffect
-			if status != null and (status is DruidElementChargeStatus or status is DruidAssistStatus) and int(status.get("source_unit_id")) == source.unit_id:
+			if status != null and (status is DruidElementChargeStatus or status is DruidAssistStatus or status is DruidRootOathStatus) and int(status.get("source_unit_id")) == source.unit_id:
 				owner.statuses.erase(status)
 
 

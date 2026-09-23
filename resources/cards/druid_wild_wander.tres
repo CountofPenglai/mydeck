@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card_data"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_scroll"]
+[ext_resource type="Resource" path="res://resources/cards/druid_wild_wander_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card_data")
+card_name = "随风入野"
+description = "这张牌的效果不受变形状态影响。将这张牌置入你的法力区，然后传送至范围7内的1个元素地表空格。"
+card_text = "这张牌的效果不受变形状态影响。将这张牌置入你的法力区，然后传送至范围7内的1个元素地表空格。"
+resolution_rules = "先将本牌实际置入法力区并完成入区通知，再传送至范围7内合法且未被占据的元素地表空格；不立即产法。"
+artwork = ExtResource("2_scroll")
+rarity = 2
+card_class = 4
+card_type = 1
+target_type = 3
+ap_cost = 1
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+is_twin_spell = true
+twin_spell_face = 1
+upright_play_ignores_form = true
+allow_inverted_play = false
+inverted_name = "万物为途"
+inverted_description = "双生法术。本牌位于你的法力区时，你免受元素地表的负面效果，你的武器打击额外附带土元素增益。"
+inverted_card_text = "双生法术。本牌位于你的法力区时，你免受元素地表的负面效果，你的武器打击额外附带土元素增益。"
+inverted_resolution_rules = "双生法术，不能直接主动打出。本牌在法力区时提供元素地表负面效果保护，并让每次武器打击额外获得一次土元素增益。"
+inverted_ap_cost = 1
+inverted_target_type = 0

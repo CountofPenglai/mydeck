@@ -28,6 +28,10 @@
 
 Godot 会写入 `%APPDATA%\Godot`。在 Codex 受限沙箱中运行时，应按 [environment_memory.md](non_project_docs/environment_memory.md) 的说明申请沙箱外执行。
 
+## 当前卡牌内容
+
+德鲁伊现有 17 张顶层 `CardData`（基础 3、稀有 8、史诗 6），全项目顶层玩家牌为 78 张。本轮新增的四张史诗已进入显式奖励池与图鉴，不修改初始卡组；卡面与详细裁定见[德鲁伊牌表](docs/card_lists/druid.md)和[机制记录](docs/card_lists/druid_rework_mechanics.md)。平衡实测仍待后续。
+
 ## 目录
 
 | 路径 | 作用 |

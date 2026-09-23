@@ -25,10 +25,19 @@ func resolve_after_strike(attacker: BattleUnitState, target: BattleUnitState, co
 
 
 func is_surface_protected(unit: BattleUnitState) -> bool:
+	return _mana_zone_has_effect(unit, "grants_elemental_surface_protection")
+
+
+func has_extra_earth(unit: BattleUnitState) -> bool:
+	return _mana_zone_has_effect(unit, "grants_druid_extra_earth")
+
+
+func _mana_zone_has_effect(unit: BattleUnitState, method_name: String) -> bool:
 	if unit == null:
 		return false
 	for card in unit.mana_zone:
-		if card != null and card.effect != null and card.effect.grants_elemental_surface_protection(unit):
+		if card != null and card.effect != null and card.effect.has_method(method_name) \
+				and bool(card.effect.call(method_name, unit)):
 			return true
 	return false
 

@@ -47,7 +47,7 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], _write_log
 	var user := context.get("user") as BattleUnitState
 	if controller == null or user == null:
 		return false
-	if kind in [Kind.HUNKER_HIDE, Kind.EMPTY_EYE, Kind.ENLIGHTENED_TUMOR, Kind.STAMPEDING_FEET, Kind.TEMPORARY_JINX]:
+	if kind in [Kind.HUNKER_HIDE, Kind.EMPTY_EYE, Kind.ENLIGHTENED_TUMOR, Kind.EXTRA_LIMBS, Kind.STAMPEDING_FEET, Kind.TEMPORARY_JINX]:
 		return targets.is_empty() or (targets.size() == 1 and targets[0] == user)
 	if kind == Kind.SUBMERGE:
 		return targets.size() == 1 and targets[0] is Vector2i and _is_valid_water_cell(controller, user, targets[0])
@@ -61,6 +61,18 @@ func are_targets_valid(context: Dictionary = {}, targets: Array = [], _write_log
 	if kind == Kind.APPROACH_BITE:
 		allowed_range += 1
 	return user.cell_distance_to(target) <= allowed_range
+
+
+func get_target_declaration(context: Dictionary = {}, targets: Array = []) -> Array[BattleUnitState]:
+	var controller := context.get("controller") as BattleController
+	var user := context.get("user") as BattleUnitState
+	if controller == null or user == null:
+		return super.get_target_declaration(context, targets)
+	if kind == Kind.EXTRA_LIMBS:
+		return _get_even_segment_targets(controller, user, 3)
+	if kind == Kind.STAMPEDING_FEET:
+		return _get_stamping_targets(controller, user)
+	return super.get_target_declaration(context, targets)
 
 
 func provides_area_target_cells() -> bool:
@@ -120,7 +132,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			if dealt > 0:
 				controller.heal_unit(user, user, dealt, "觅血口器吸血")
 		Kind.EXTRA_LIMBS:
-			_deal_even_segments(controller, user, card, 3)
+			_deal_even_segments(controller, user, card, _get_confirmed_targets(context, controller, user, 3))
 		Kind.SCORCH_SAC:
 			_deal_typed_damage(controller, user, target, card, 3, CardEnums.DamageType.INTELLIGENCE, "灼喉囊")
 			if target != null:
@@ -139,7 +151,7 @@ func play(context: Dictionary = {}, targets: Array = []) -> void:
 			_discard_random_other(user, card, controller)
 			_add_temporary_jinx(target, controller)
 		Kind.STAMPEDING_FEET:
-			_strike_all_in_range(controller, user, card, "奔踏畸足")
+			_strike_all_in_range(controller, user, card, "奔踏畸足", _get_confirmed_stamping_targets(context, controller, user))
 		Kind.TEMPORARY_JINX:
 			pass
 
@@ -204,12 +216,12 @@ func _apply_stun(target: BattleUnitState, amount: int) -> void:
 	target.add_status(stun)
 
 
-func _deal_even_segments(controller: BattleController, user: BattleUnitState, card: CardData, segment_count: int) -> void:
+func _get_even_segment_targets(controller: BattleController, user: BattleUnitState, segment_count: int) -> Array[BattleUnitState]:
 	var targets := controller.get_opposing_units(user)
 	var attack_range := user.get_attack_range()
 	targets = targets.filter(func(target: BattleUnitState) -> bool: return user.cell_distance_to(target) <= attack_range)
 	if targets.is_empty():
-		return
+		return []
 	targets.sort_custom(func(a: BattleUnitState, b: BattleUnitState) -> bool:
 		var da := user.cell_distance_to(a)
 		var db := user.cell_distance_to(b)
@@ -219,10 +231,29 @@ func _deal_even_segments(controller: BattleController, user: BattleUnitState, ca
 			return a.get_current_health() < b.get_current_health()
 		return a.turn_order_index < b.turn_order_index
 	)
-	var damage_type := user.build_strike_profile_object().primary_damage_type
+	var result: Array[BattleUnitState] = []
+	if targets.is_empty():
+		return result
 	for index in range(segment_count):
-		var target := targets[index % targets.size()]
-		if target.is_alive():
+		result.append(targets[index % targets.size()] as BattleUnitState)
+	return result
+
+
+func _get_confirmed_targets(context: Dictionary, controller: BattleController, user: BattleUnitState, segment_count: int) -> Array[BattleUnitState]:
+	var declaration := context.get("confirmed_target_declaration", []) as Array
+	var result: Array[BattleUnitState] = []
+	for target_value in declaration:
+		var target := target_value as BattleUnitState
+		if target != null:
+			result.append(target)
+	return result if not result.is_empty() else _get_even_segment_targets(controller, user, segment_count)
+
+
+func _deal_even_segments(controller: BattleController, user: BattleUnitState, card: CardData, targets: Array[BattleUnitState]) -> void:
+	var damage_type := user.build_strike_profile_object().primary_damage_type
+	for target in targets:
+		if target != null and target.is_alive() and target.is_deployed and target.faction != user.faction \
+				and user.cell_distance_to(target) <= user.get_attack_range():
 			_deal_typed_damage(controller, user, target, card, 1, damage_type, "增生附肢")
 
 
@@ -264,7 +295,26 @@ func _add_temporary_jinx(target: BattleUnitState, controller: BattleController) 
 	target.shuffle_draw_pile(controller.rng)
 
 
-func _strike_all_in_range(controller: BattleController, user: BattleUnitState, card: CardData, label: String) -> void:
+func _get_stamping_targets(controller: BattleController, user: BattleUnitState) -> Array[BattleUnitState]:
+	var result: Array[BattleUnitState] = []
 	for target in controller.get_opposing_units(user):
-		if target.is_alive() and user.cell_distance_to(target) <= controller.get_effective_attack_range_against(user, target):
+		if target != null and target.is_alive() and target.is_deployed and user.cell_distance_to(target) <= controller.get_effective_attack_range_against(user, target):
+			result.append(target)
+	return result
+
+
+func _get_confirmed_stamping_targets(context: Dictionary, controller: BattleController, user: BattleUnitState) -> Array[BattleUnitState]:
+	var declaration := context.get("confirmed_target_declaration", []) as Array
+	var result: Array[BattleUnitState] = []
+	for target_value in declaration:
+		var target := target_value as BattleUnitState
+		if target != null:
+			result.append(target)
+	return result if not result.is_empty() else _get_stamping_targets(controller, user)
+
+
+func _strike_all_in_range(controller: BattleController, user: BattleUnitState, card: CardData, label: String, targets: Array[BattleUnitState]) -> void:
+	for target in targets:
+		if target != null and target.is_alive() and target.is_deployed and target.faction != user.faction \
+				and user.cell_distance_to(target) <= controller.get_effective_attack_range_against(user, target):
 			controller.perform_strike(user, target, card, label)

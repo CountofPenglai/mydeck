@@ -32,15 +32,17 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	profile_context["target"] = target
 	profile_context["label"] = label
 	profile_context["equipment_slot"] = equipment_slot
+	profile_context["strike"] = true
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
 	profile_context = attacker.notify_before_strike(profile_context)
+	var spirit_whisper_bonus := int(profile_context.get("druid_spirit_whisper_next_strike_bonus", 0))
 	var druid_element := int(profile_context.get("druid_element", profile_context.get("surface_element", BattleSurfaceState.Element.NONE)))
 	if druid_element == BattleSurfaceState.Element.NONE and attacker.druid_transformed:
 		var foot_elements := controller.surface_state.get_readable_elements(attacker.cell)
 		if not foot_elements.is_empty():
 			druid_element = int(foot_elements[0])
 	profile_context["druid_element"] = druid_element
-	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.is_surface_protected(attacker)
+	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.has_extra_earth(attacker)
 	var resolved_multiplier := damage_multiplier
 	if options.has("ranger_attack_multiplier"):
 		if bool(options.get("skip_ranger_ambush", false)):
@@ -62,7 +64,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 			profile_context
 		)
 	var primary_weapon_damage := int(options.get("primary_base_damage_override", profile.primary_base_damage))
-	var primary_base_damage := maxi(0, primary_weapon_damage + profile.primary_damage_bonus + damage_modifier)
+	var primary_base_damage := maxi(0, primary_weapon_damage + profile.primary_damage_bonus + damage_modifier + spirit_whisper_bonus)
 	var primary_damage := _apply_damage_multiplier(primary_base_damage, resolved_multiplier)
 	var damage_metadata := {
 		"strike": true,
@@ -79,7 +81,7 @@ func perform_strike_with_modifier_and_multiplier(attacker: BattleUnitState, targ
 	]
 
 	if profile.add_offhand and target.is_alive():
-		var offhand_base_damage := maxi(0, profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier)
+		var offhand_base_damage := maxi(0, profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier + spirit_whisper_bonus)
 		var offhand_damage := _apply_damage_multiplier(offhand_base_damage, resolved_multiplier)
 		var offhand_actual := controller.apply_damage(attacker, target, offhand_damage, "%s（副手）" % label, {
 			"strike": true,
@@ -140,18 +142,20 @@ func perform_object_strike_with_modifier(
 		"target_object": target,
 		"label": label,
 		"equipment_slot": equipment_slot,
+		"strike": true,
 	}
 	if not attacker.can_use_attack_mode(equipment_slot, profile_context):
 		return 0
 	var profile := attacker.build_strike_profile_object(equipment_slot, profile_context)
 	profile_context = attacker.notify_before_strike(profile_context)
+	var spirit_whisper_bonus := int(profile_context.get("druid_spirit_whisper_next_strike_bonus", 0))
 	var druid_element := int(profile_context.get("druid_element", profile_context.get("surface_element", BattleSurfaceState.Element.NONE)))
 	if druid_element == BattleSurfaceState.Element.NONE and attacker.druid_transformed:
 		var foot_elements := controller.surface_state.get_readable_elements(attacker.cell)
 		if not foot_elements.is_empty():
 			druid_element = int(foot_elements[0])
 	profile_context["druid_element"] = druid_element
-	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.is_surface_protected(attacker)
+	profile_context["druid_extra_earth"] = bool(profile_context.get("druid_extra_earth", false)) or controller.druid_element_rules.has_extra_earth(attacker)
 	var damage_multiplier := controller.consume_ranger_stealth_for_attack(
 		attacker,
 		0.0,
@@ -159,7 +163,7 @@ func perform_object_strike_with_modifier(
 	)
 	var primary_damage := maxi(
 		0,
-		profile.primary_base_damage + profile.primary_damage_bonus + damage_modifier
+		profile.primary_base_damage + profile.primary_damage_bonus + damage_modifier + spirit_whisper_bonus
 	)
 	primary_damage = _apply_damage_multiplier(primary_damage, damage_multiplier)
 	var actual_damage := controller.apply_object_damage(
@@ -186,7 +190,7 @@ func perform_object_strike_with_modifier(
 	if profile.add_offhand and target.can_be_damaged():
 		var offhand_damage := maxi(
 			0,
-			profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier
+			profile.offhand_base_damage + profile.offhand_damage_bonus + damage_modifier + spirit_whisper_bonus
 		)
 		offhand_damage = _apply_damage_multiplier(offhand_damage, damage_multiplier)
 		var offhand_actual := controller.apply_object_damage(

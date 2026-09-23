@@ -122,7 +122,7 @@ func _test_new_cards_are_cataloged_with_top_level_counts() -> void:
 			if card.rarity == CardEnums.Rarity.BASIC: basic += 1
 			elif card.rarity == CardEnums.Rarity.RARE: rare += 1
 			elif card.rarity == CardEnums.Rarity.EPIC: epic += 1
-	_expect(top_level == 74 and druid_total == 13 and basic == 3 and rare == 8 and epic == 2, "top-level pool is 74 cards; druid is 13 (3 basic, 8 rare, 2 epic)")
+	_expect(top_level == 78 and druid_total == 17 and basic == 3 and rare == 8 and epic == 6, "top-level pool is 78 cards; druid is 17 (3 basic, 8 rare, 6 epic)")
 
 
 func _expect(condition: bool, label: String) -> void:

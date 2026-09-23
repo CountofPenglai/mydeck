@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://assets/art/cards/scroll_card_background.png" id="2_art"]
+[ext_resource type="Resource" path="res://resources/cards/druid_wellspring_return_effect.tres" id="3_effect"]
+
+[resource]
+script = ExtResource("1_card")
+card_name = "灵泉归流"
+description = "将至多5张法力区中的牌移回你的手牌，然后获得3点法力。"
+card_text = "将至多5张法力区中的牌移回你的手牌，然后获得3点法力。"
+resolution_rules = "选择0至5张自己的法力区卡牌移回手牌；离区效果立即停止，随后获得3点法力。"
+artwork = ExtResource("2_art")
+rarity = 2
+card_class = 4
+card_type = 0
+target_type = 0
+ap_cost = 3
+effect = ExtResource("3_effect")
+is_druid_dual_card = true
+inverted_name = "怒潮奔涌"
+inverted_description = "若你的法力值大于手牌数，抽牌直到手牌数等于法力值。然后进行至多X次武器打击，X为本次效果直接抽取的牌数。"
+inverted_card_text = "若你的法力值大于手牌数，抽牌直到手牌数等于法力值。然后进行至多X次武器打击，X为本次效果直接抽取的牌数。"
+inverted_resolution_rules = "按开始时法力与手牌数固定补牌数；仅实际直接抽到的牌决定打击上限。每次重新选择合法敌人，可随时结束。"
+inverted_ap_cost = 3
+inverted_target_type = 0

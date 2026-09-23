@@ -3,6 +3,7 @@ class_name BattleScene
 
 const DEFAULT_SCENARIO := preload("res://resources/battle/sample_battle_scenario.tres")
 const ZONE_CARD_PICKER := preload("res://scripts/battle/ui/battle_zone_card_picker.gd")
+const UNIT_TARGET_PICKER := preload("res://scripts/battle/ui/battle_unit_target_picker.gd")
 const PREPLAY_PANEL := preload("res://scripts/battle/ui/battle_preplay_panel.gd")
 
 enum InputMode {
@@ -48,6 +49,7 @@ var _hand_card_choice_popup: PopupPanel
 var _hand_card_choice_list: VBoxContainer
 var _hand_card_choice_selected: Array[CardData] = []
 var _zone_card_picker
+var _unit_target_picker
 var _discard_popup: PopupPanel
 var _discard_list: VBoxContainer
 var _draw_choice_popup: PopupPanel
@@ -127,11 +129,17 @@ func _ready() -> void:
 	_create_card_choice_popup()
 	_create_preplay_popup()
 	_create_hand_card_choice_popup()
+	_unit_target_picker = UNIT_TARGET_PICKER.new()
+	_unit_target_picker.target_submitted.connect(_submit_unit_target_choice)
+	_unit_target_picker.selection_cancelled.connect(_cancel_unit_target_choice)
+	add_child(_unit_target_picker)
 	_zone_card_picker = ZONE_CARD_PICKER.new()
 	_zone_card_picker.selection_submitted.connect(_on_zone_card_picker_submitted)
 	_zone_card_picker.selection_cancelled.connect(_on_zone_card_picker_cancelled)
 	_zone_card_picker.zone_browsed.connect(_on_zone_card_picker_zone_browsed)
 	add_child(_zone_card_picker)
+	controller.resolution_runner.unit_target_choice_requested.connect(_on_unit_target_choice_requested)
+	controller.resolution_runner.unit_target_choice_cleared.connect(_schedule_refresh)
 	_create_discard_popup()
 	_create_draw_choice_popup()
 	_create_ordered_discard_choice_popup()
@@ -167,7 +175,7 @@ func get_menu_return_state() -> Dictionary:
 	if _adventure_result != null and _adventure_battle_bound:
 		return {"ok": false, "message": "请先通过战斗结果按钮结算本场战斗，再从地图返回。"}
 	var choosing := false
-	for popup in [_hand_card_choice_popup, _zone_card_picker, _ordered_discard_popup, _draw_choice_popup, _manifest_popup]:
+	for popup in [_hand_card_choice_popup, _zone_card_picker, _unit_target_picker, _ordered_discard_popup, _draw_choice_popup, _manifest_popup]:
 		if popup != null and popup.visible:
 			choosing = true
 	var state := BattleNavigationGuard.check(controller, choosing)
@@ -178,6 +186,7 @@ func get_menu_return_state() -> Dictionary:
 func _exit_tree() -> void:
 	if controller != null and controller.resolution_runner != null:
 		controller.resolution_runner.cancel_pending_hand_card_choice()
+		controller.resolution_runner.cancel_pending_unit_target_choice()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -251,6 +260,10 @@ func _schedule_refresh() -> void:
 		return
 	_refresh_scheduled = true
 	call_deferred("_run_scheduled_refresh")
+
+
+func _on_unit_target_choice_requested(_choice) -> void:
+	_schedule_refresh()
 
 
 func _run_scheduled_refresh() -> void:
@@ -786,6 +799,7 @@ func _refresh() -> void:
 	if _actions_locked():
 		_hide_action_popups()
 	_refresh_hand_card_choice_popup()
+	_refresh_unit_target_choice_popup()
 	battle_hud_root.refresh_view()
 	_refresh_discard_popup()
 	_refresh_curse_popup()
@@ -1059,7 +1073,7 @@ func _append_log(message: String) -> void:
 	_battle_log_lines.append(message)
 	while _battle_log_lines.size() > 100:
 		_battle_log_lines.remove_at(0)
-	if battle_hud_root != null:
+	if battle_hud_root != null and battle_hud_root.is_inside_tree():
 		battle_hud_root.call("append_log_message", message)
 
 
@@ -2408,7 +2422,7 @@ func _on_zone_card_picker_submitted(selected: Array[CardData]) -> void:
 func _on_zone_card_picker_cancelled() -> void:
 	if controller != null:
 		var choice = controller.resolution_runner.get_pending_hand_card_choice()
-		if choice != null:
+		if choice != null and not bool(choice.cancel_submits_empty):
 			controller.cancel_druid_twin_spell_entry(choice.source_card)
 		controller.resolution_runner.cancel_pending_hand_card_choice()
 		_refresh()
@@ -2424,6 +2438,28 @@ func _on_zone_card_picker_zone_browsed(zone: String) -> void:
 func _on_hand_card_choice_popup_hidden() -> void:
 	if controller != null and controller.resolution_runner.has_pending_hand_card_choice() and is_inside_tree():
 		call_deferred("_refresh_hand_card_choice_popup")
+
+
+func _refresh_unit_target_choice_popup() -> void:
+	if _unit_target_picker == null or controller == null:
+		return
+	var runner := controller.resolution_runner
+	_unit_target_picker.show_choice(runner.get_pending_unit_target_choice() if runner != null else null)
+
+
+func _submit_unit_target_choice(target: BattleUnitState = null) -> void:
+	if controller == null:
+		return
+	controller.resolution_runner.submit_unit_target_choice(target)
+	# Always rebuild from the runner's live choice. Rejected stale buttons must
+	# remain recoverable, while a synchronously requested successor stays open.
+	_refresh()
+
+
+func _cancel_unit_target_choice() -> void:
+	if controller != null:
+		controller.resolution_runner.cancel_pending_unit_target_choice()
+		_refresh()
 
 
 func _hide_discard_popup() -> void:

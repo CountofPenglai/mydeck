@@ -11,6 +11,7 @@ var prompt: String = ""
 var continuation: Callable
 var zones: PackedStringArray = PackedStringArray(["hand"])
 var card_filter: Callable
+var cancel_submits_empty := false
 
 
 static func create(

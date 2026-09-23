@@ -608,6 +608,10 @@ func notify_after_card_played(card: CardData, context: Dictionary = {}) -> void:
 	_resolve_distortion_after_card(card, event_context)
 
 
+func notify_zone_owner_targeted(context: Dictionary = {}) -> void:
+	_notify_zone_card_effects("on_zone_owner_targeted", [], _with_unit_context(context))
+
+
 func notify_ranger_stealth_cancelled(context: Dictionary = {}) -> void:
 	var event_context := _with_unit_context(context)
 	_notify_status_effects("on_ranger_stealth_cancelled", [], event_context)
@@ -810,14 +814,38 @@ func notify_action_category_used(category: int, context: Dictionary = {}) -> voi
 
 func get_zone_damage_reduction(context: Dictionary = {}) -> int:
 	var reduction := 0
+	var applied_keys := {}
 	for zone_name in ["mana", "enchant"]:
 		var cards := _get_special_zone(zone_name)
 		for zone_card in cards.duplicate():
 			if zone_card == null or zone_card.effect == null:
 				continue
 			var event_context := _with_zone_context(zone_name, zone_card, context)
+			var key: String = zone_card.effect.get_zone_effect_deduplication_key(zone_card, event_context)
+			if not key.is_empty() and applied_keys.has(key):
+				continue
+			if not key.is_empty():
+				applied_keys[key] = true
 			reduction += maxi(0, zone_card.effect.get_zone_owner_damage_reduction(self, zone_card, event_context))
 	return reduction + get_curse_damage_reduction(context)
+
+
+func get_zone_damage_bonus(context: Dictionary = {}) -> int:
+	var bonus := 0
+	var applied_keys := {}
+	for zone_name in ["mana", "enchant"]:
+		var cards := _get_special_zone(zone_name)
+		for zone_card in cards.duplicate():
+			if zone_card == null or zone_card.effect == null:
+				continue
+			var event_context := _with_zone_context(zone_name, zone_card, context)
+			var key: String = zone_card.effect.get_zone_effect_deduplication_key(zone_card, event_context)
+			if not key.is_empty() and applied_keys.has(key):
+				continue
+			if not key.is_empty():
+				applied_keys[key] = true
+			bonus += zone_card.effect.get_zone_owner_damage_bonus(self, zone_card, event_context)
+	return bonus
 
 
 func modify_incoming_damage(damage_context: DamageContext) -> void:
@@ -949,6 +977,11 @@ func _get_attack_range(equipment_slot: String, context: Dictionary, range_only: 
 func build_strike_profile_object(equipment_slot: String = "", context: Dictionary = {}) -> StrikeProfile:
 	var merged_context := context.duplicate()
 	merged_context["unit"] = self
+	# Profile construction is the shared read-only representation of a weapon
+	# strike, including UI previews.  It must expose durable strike modifiers,
+	# but it does not dispatch or consume one-shot pre-strike statuses.
+	if not merged_context.has("strike"):
+		merged_context["strike"] = true
 	if character_state != null:
 		merged_context["weapon_face_override"] = get_active_weapon_face_index()
 		var profile := character_state.build_strike_profile_object(equipment_slot, merged_context)
@@ -1236,6 +1269,32 @@ func draw_cards_detailed(count: int, rng: RandomNumberGenerator, context: Dictio
 		_notify_draw_action_completed(drawn_cards, context)
 
 	return drawn_cards
+
+
+func reveal_top_cards(count: int, rng: RandomNumberGenerator, context: Dictionary = {}) -> Array[CardData]:
+	var revealed_cards: Array[CardData] = []
+	for _i in range(maxi(0, count)):
+		if draw_pile.is_empty() and not discard_pile.is_empty():
+			if not can_auto_reshuffle(context):
+				break
+			_notify_curse_effects("on_before_reshuffle", [], _with_unit_context(context))
+			if not is_alive():
+				break
+			draw_pile.assign(discard_pile)
+			discard_pile.clear()
+			_shuffle_cards(draw_pile, rng)
+		if draw_pile.is_empty():
+			break
+		revealed_cards.append(draw_pile.pop_back() as CardData)
+	return revealed_cards
+
+
+func add_revealed_cards_to_hand(cards: Array[CardData], context: Dictionary = {}) -> void:
+	if cards.is_empty():
+		return
+	var previous_hand_size := hand.size()
+	hand.append_array(cards)
+	_notify_hand_size_changed(previous_hand_size, context.merged({"reason": "reveal_to_hand"}, false))
 
 
 func mill_cards(count: int, context: Dictionary = {}) -> Array[CardData]:
@@ -1594,6 +1653,15 @@ func remove_card_from_mana_zone(card: CardData) -> bool:
 	if index < 0:
 		return false
 	mana_zone.remove_at(index)
+	return true
+
+
+func move_mana_card_to_hand(card: CardData, context: Dictionary = {}) -> bool:
+	if not remove_card_from_mana_zone(card):
+		return false
+	var previous_hand_size := hand.size()
+	hand.append(card)
+	_notify_hand_size_changed(previous_hand_size, context.merged({"reason": "mana_to_hand"}, false))
 	return true
 
 
@@ -2603,12 +2671,19 @@ func _notify_zone_card_effects_in_zone(cards: Array[CardData], zone_name: String
 		args.append_array(extra_args)
 		args.append(event_context)
 		_dispatch_trigger(
-			Callable(zone_card.effect, method_name),
-			args,
+			Callable(self, "_execute_zone_card_trigger").bind(zone_name, zone_card, zone_card.effect, method_name, args),
+			[],
 			zone_card.effect.effect_priority,
 			"%s.%s" % [zone_card.card_name, method_name],
 			event_context
 		)
+
+
+func _execute_zone_card_trigger(zone_name: String, zone_card: CardData, effect: CardEffect, method_name: String, args: Array) -> void:
+	if zone_card == null or effect == null or not _get_special_zone(zone_name).has(zone_card) \
+			or zone_card.effect != effect or not _script_defines_method(effect, method_name):
+		return
+	effect.callv(method_name, args)
 
 
 func _notify_curse_effects(method_name: String, extra_args: Array = [], context: Dictionary = {}) -> void:

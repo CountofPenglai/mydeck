@@ -10,7 +10,7 @@ static func check(controller: BattleController, ui_choice_pending: bool) -> Dict
 			or runner.queue_depth > 0 or runner.is_attack_scope_active() or runner.get_current_effect_queue_size() > 0 \
 			or not runner.after_current_effect_queue.is_empty():
 		return _blocked("当前行动尚未完全结算，请稍候。")
-	if ui_choice_pending or runner.has_pending_hand_card_choice():
+	if ui_choice_pending or runner.has_pending_hand_card_choice() or runner.has_pending_unit_target_choice():
 		return _blocked("请先完成当前选择，再返回主菜单。")
 	for unit in controller.player_units:
 		if unit.ranger_state.pending_hand_discard_count > 0:
